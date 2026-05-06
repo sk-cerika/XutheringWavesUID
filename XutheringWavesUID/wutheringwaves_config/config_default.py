@@ -91,7 +91,9 @@ CONFIG_DEFAULT: Dict[str, GSC] = {
         "有token才能进排行",
         True,
     ),
-    "GachaRankMin": GsIntConfig("抽卡排行最小抽数阈值", "抽卡排行中只显示总抽数达到此阈值的玩家", 1000),
+    "GachaRankMin": GsIntConfig(
+        "抽卡排行最小抽数阈值", "抽卡排行中只显示总抽数达到此阈值的玩家", 1000
+    ),
     "DelInvalidCookie": GsBoolConfig(
         "每天定时删除无效token",
         "每天定时删除无效token",
@@ -102,7 +104,9 @@ CONFIG_DEFAULT: Dict[str, GSC] = {
         "每天自动下载全部资源时间设置（时，分），将在该时间点后一小时内随机时间下载资源，注意可能伴随重启，请避开自动签到",
         ["22", "0"],
     ),
-    "AnnMinuteCheck": GsIntConfig("公告推送时间检测（单位min）", "公告推送时间检测（单位min）", 10, 60),
+    "AnnMinuteCheck": GsIntConfig(
+        "公告推送时间检测（单位min）", "公告推送时间检测（单位min）", 10, 60
+    ),
     "RefreshInterval": GsIntConfig(
         "刷新全部面板间隔，重启生效（单位秒）",
         "刷新全部面板间隔，重启生效（单位秒）",
@@ -135,7 +139,9 @@ CONFIG_DEFAULT: Dict[str, GSC] = {
         "是否可以使用uid直接查询练度",
         True,
     ),
-    "MaxBindNum": GsIntConfig("绑定特征码限制数量（未登录）", "绑定特征码限制数量（未登录）", 2, 100),
+    "MaxBindNum": GsIntConfig(
+        "绑定特征码限制数量（未登录）", "绑定特征码限制数量（未登录）", 2, 100
+    ),
     "WavesToken": GsStrConfig(
         "鸣潮全排行token",
         "鸣潮全排行token",
@@ -286,5 +292,20 @@ CONFIG_DEFAULT: Dict[str, GSC] = {
         "抽卡网页查看功能",
         "开启后，用户可发送【抽卡页面/抽卡网页/网页抽卡记录】打开网页查看抽卡详细记录。外置登录需外置登录部署时支持此功能",
         False,
+    ),
+    "WavesAtViewGacha": GsBoolConfig(
+        "@他人查看抽卡记录",
+        "开启后，群聊中可 @ 已登录用户查询其抽卡记录，要求同群且对方已登录（有 cookie）",
+        False,
+    ),
+    "WavesScheduledRefreshPanel": GsBoolConfig(
+        "定时刷新所有用户面板（重启生效）",
+        "开启后，每天定时为所有已登录用户批量刷新角色面板缓存，依赖 RefreshCardConcurrency 控制并发",
+        False,
+    ),
+    "WavesScheduledRefreshTime": GsListStrConfig(
+        "定时刷新面板时间（重启生效）",
+        "每天定时刷新所有用户面板的时间设置（时, 分），将在该时间点后一小时内随机时间执行，建议避开自动签到时段",
+        ["4", "0"],
     ),
 }
