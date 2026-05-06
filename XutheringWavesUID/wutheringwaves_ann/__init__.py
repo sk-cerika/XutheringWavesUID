@@ -18,7 +18,9 @@ from ..utils.waves_api import waves_api
 from ..utils.hint import error_reply
 from ..utils.at_help import ruser_id
 from ..utils.error_reply import WAVES_CODE_102
-from ..utils.database.models import WavesBind
+from ..utils.constants import WAVES_GAME_ID
+from ..utils.database.models import WavesBind, WavesUser
+from ..utils.database.waves_user_sdk import WavesUserSdk
 from ..wutheringwaves_config import WutheringWavesConfig
 from ..wutheringwaves_config.ann_config import get_ann_new_ids, set_ann_new_ids
 from ..utils.resource.RESOURCE_PATH import ANN_CARD_PATH, BAKE_PATH, CALENDAR_PATH, WIKI_CACHE_PATH
@@ -83,20 +85,51 @@ async def anniv_report_(bot: Bot, ev: Event):
     if not anniv_report_lock.acquire(f"{user_id}_{uid}"):
         return
     try:
-        is_self_ck, ck = await waves_api.get_ck_result(uid, user_id, ev.bot_id)
-        if not ck or not is_self_ck:
-            return await bot.send(error_reply(WAVES_CODE_102))
-
         waves_token = WutheringWavesConfig.get_config("WavesToken").data
         if not waves_token:
-            return
+            return await bot.send("未配置 WavesToken（总排行 token），请先在配置中填写")
 
-        result = await anniv_report(uid, waves_token)
+        waves_user = await WavesUser.select_waves_user(
+            uid, user_id, ev.bot_id, game_id=WAVES_GAME_ID
+        )
+        if not waves_user or not waves_user.cookie:
+            return await bot.send(error_reply(WAVES_CODE_102))
+
+        result = await anniv_report(
+            uid,
+            waves_token,
+            waves_user.cookie,
+            waves_user.did or "",
+        )
         if isinstance(result, str):
             return await bot.send(result)
+        if result.new_token or result.new_bat:
+            update_data = {"status": ""}
+            if result.new_token:
+                update_data["cookie"] = result.new_token
+            if result.new_bat:
+                update_data["bat"] = result.new_bat
+            if waves_user.did:
+                update_data["did"] = waves_user.did
+            await WavesUser.update_data_by_data(
+                select_data={
+                    "user_id": user_id,
+                    "bot_id": ev.bot_id,
+                    "uid": uid,
+                    "game_id": WAVES_GAME_ID,
+                },
+                update_data=update_data,
+            )
+            if result.bat_expires_in > 0:
+                await WavesUserSdk.update_bat_expires_at(
+                    user_id,
+                    ev.bot_id,
+                    uid,
+                    int(time.time()) + result.bat_expires_in,
+                )
         from base64 import b64encode
         from gsuid_core.segment import MessageSegment
-        nodes = [f"base64://{b64encode(p).decode()}" for p in result]
+        nodes = [f"base64://{b64encode(p).decode()}" for p in result.parts]
         if ev.group_id:
             await bot.send(" 周年报告已完成", at_sender=True)
         await bot.send(MessageSegment.node(nodes))

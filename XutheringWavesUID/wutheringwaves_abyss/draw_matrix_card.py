@@ -529,16 +529,20 @@ async def _draw_matrix_detail_html(
             return img_bytes
         else:
             logger.warning("[鸣潮] Playwright 渲染返回空, 回退到文本")
-            return _draw_matrix_text_fallback(uid, matrix_detail)
+            return _draw_matrix_text_fallback(uid, matrix_detail, user_pref)
 
     except Exception as e:
         logger.exception(f"[鸣潮] 矩阵Detail HTML渲染失败: {e}")
-        return _draw_matrix_text_fallback(uid, matrix_detail)
+        return _draw_matrix_text_fallback(uid, matrix_detail, user_pref)
 
 
-def _draw_matrix_text_fallback(uid: str, matrix_detail: MatrixDetail) -> str:
+def _draw_matrix_text_fallback(
+    uid: str,
+    matrix_detail: MatrixDetail,
+    user_pref: str = "",
+) -> str:
     """文本回退 (无 PIL / HTML 时)"""
-    lines = [f"[终焉矩阵] 特征码: {hide_uid(uid)}"]
+    lines = [f"[终焉矩阵] 特征码: {hide_uid(uid, user_pref=user_pref)}"]
     for mode in matrix_detail.modeDetails:
         if not mode.hasRecord:
             continue

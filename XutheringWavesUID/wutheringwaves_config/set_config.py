@@ -4,7 +4,7 @@ from gsuid_core.models import Event
 from ..utils.constants import WAVES_GAME_ID
 from ..utils.name_convert import is_valid_char_name, alias_to_char_name
 from ..utils.database.models import WavesUser
-from ..utils.util import hide_uid
+from ..utils.util import get_hide_uid_pref, hide_uid
 
 WAVES_USER_MAP = {
     "体力背景": "stamina_bg",
@@ -42,7 +42,10 @@ async def set_waves_user_value(ev: Event, func: str, uid: str, value: str):
             masked_uid = hide_uid(uid, user_pref=value)
             action = "已开启" if value == "on" else "已关闭"
             return f"{action}隐藏UID!\n特征码[{masked_uid}]"
-        masked_uid = hide_uid(uid)
+        masked_uid = hide_uid(
+            uid,
+            user_pref=await get_hide_uid_pref(uid, ev.user_id, ev.bot_id),
+        )
         if func == "体力背景":
             if not value:
                 return f"已重置体力背景为默认!\n特征码[{masked_uid}]"

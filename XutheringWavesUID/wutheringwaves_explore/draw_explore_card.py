@@ -3,7 +3,7 @@ from gsuid_core.logger import logger
 from gsuid_core.data_store import get_res_path
 
 from ..utils.hint import error_reply
-from ..utils.util import hide_uid
+from ..utils.util import get_hide_uid_pref, hide_uid
 from ..utils.waves_api import waves_api
 from ..wutheringwaves_config import WutheringWavesConfig, PREFIX
 from ..utils.error_reply import WAVES_CODE_102
@@ -74,6 +74,7 @@ async def draw_explore_img(ev: Event, uid: str, user_id: str):
         is_self_ck, ck = await waves_api.get_ck_result(uid, user_id, ev.bot_id)
         if not ck:
             return error_reply(WAVES_CODE_102)
+        user_pref = await get_hide_uid_pref(uid, user_id, ev.bot_id)
 
         account_info_res = await waves_api.get_base_info(uid, ck)
         if not account_info_res.success:
@@ -173,7 +174,7 @@ async def draw_explore_img(ev: Event, uid: str, user_id: str):
 
         context = {
             "user_name": account_info.name,
-            "user_id": hide_uid(account_info.id),
+            "user_id": hide_uid(account_info.id, user_pref=user_pref),
             "level": account_info.level,
             "world_level": account_info.worldLevel,
             "show_stats": account_info.is_full,

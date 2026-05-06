@@ -48,7 +48,7 @@ CONFIG_DEFAULT: Dict[str, GSC] = {
     "WavesGuideMaxSize": GsIntConfig(
         "攻略图片最大大小(M)",
         "发送攻略图片前会自动转为jpg格式，若超过此大小则自动压缩，单位MB",
-        5,
+        2,
         50,
     ),
     "WavesLoginUrl": GsStrConfig(

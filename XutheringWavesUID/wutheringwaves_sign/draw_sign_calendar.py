@@ -9,7 +9,7 @@ from gsuid_core.models import Event
 from ..utils.api.model import AccountBaseInfo, SignInInitData, SignInSurfaceData
 from ..utils.api.request_util import KuroApiResp
 from ..utils.at_help import ruser_id
-from ..utils.util import hide_uid
+from ..utils.util import get_hide_uid_pref, hide_uid
 from ..utils.error_reply import ERROR_CODE, WAVES_CODE_102, WAVES_CODE_103
 from ..utils.render_utils import render_html, get_image_b64_with_cache
 from ..utils.resource.RESOURCE_PATH import (
@@ -20,9 +20,11 @@ from ..utils.waves_api import waves_api
 
 
 async def draw_sign_calendar(uid: str, ev: Event) -> Optional[bytes | str]:
-    ck = await waves_api.get_self_waves_ck(uid, ruser_id(ev), ev.bot_id)
+    user_id = ruser_id(ev)
+    ck = await waves_api.get_self_waves_ck(uid, user_id, ev.bot_id)
     if not ck:
         return ERROR_CODE[WAVES_CODE_102]
+    user_pref = await get_hide_uid_pref(uid, user_id, ev.bot_id)
 
     # 并行请求三个 API
     import asyncio
@@ -142,7 +144,7 @@ async def draw_sign_calendar(uid: str, ev: Event) -> Optional[bytes | str]:
         "month_textColor": month_textColor,
         "cycle_titleColor": cycle_titleColor,
         "role_name": role_name,
-        "uid": hide_uid(uid),
+        "uid": hide_uid(uid, user_pref=user_pref),
         "month": month,
         "sign_num": sign_data.sigInNum,
         "omission_num": sign_data.omissionNnm,

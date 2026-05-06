@@ -10,7 +10,7 @@ from gsuid_core.utils.image.utils import sget
 from gsuid_core.utils.image.convert import convert_img
 
 from ..utils import hint
-from ..utils.util import hide_uid
+from ..utils.util import get_hide_uid_pref, hide_uid
 from ..utils.image import (
     GOLD,
     GREY,
@@ -86,6 +86,7 @@ async def draw_explore_img(ev: Event, uid: str, user_id: str):
     is_self_ck, ck = await waves_api.get_ck_result(uid, user_id, ev.bot_id)
     if not ck:
         return hint.error_reply(WAVES_CODE_102)
+    user_pref = await get_hide_uid_pref(uid, user_id, ev.bot_id)
     # 账户数据
     account_info = await waves_api.get_base_info(uid, ck)
     if not account_info.success:
@@ -127,7 +128,13 @@ async def draw_explore_img(ev: Event, uid: str, user_id: str):
     base_info_bg = Image.open(TEXT_PATH / "base_info_bg.png")
     base_info_draw = ImageDraw.Draw(base_info_bg)
     base_info_draw.text((275, 120), f"{account_info.name[:10]}", "white", waves_font_30, "lm")
-    base_info_draw.text((226, 173), f"特征码:  {hide_uid(account_info.id)}", GOLD, waves_font_25, "lm")
+    base_info_draw.text(
+        (226, 173),
+        f"特征码:  {hide_uid(account_info.id, user_pref=user_pref)}",
+        GOLD,
+        waves_font_25,
+        "lm",
+    )
     img.paste(base_info_bg, (75, 20), base_info_bg)
 
     # 账号基本信息，由于可能会没有，放在一起

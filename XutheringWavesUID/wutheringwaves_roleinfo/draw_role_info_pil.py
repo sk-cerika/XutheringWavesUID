@@ -8,7 +8,8 @@ from gsuid_core.utils.image.convert import convert_img
 
 from ..wutheringwaves_config import PREFIX
 
-from ..utils.util import hide_uid
+from ..utils.at_help import ruser_id
+from ..utils.util import get_hide_uid_pref, hide_uid
 from ..utils.image import (
     GOLD,
     GREY,
@@ -42,6 +43,7 @@ TEXT_PATH = Path(__file__).parent / "texture2d"
 
 
 async def draw_role_img(uid: str, ck: str, ev: Event):
+    user_pref = await get_hide_uid_pref(uid, ruser_id(ev), ev.bot_id)
     # succ, game_info = await waves_api.get_game_role_info(ck)
     # if not succ:
     #     return game_info
@@ -207,7 +209,13 @@ async def draw_role_img(uid: str, ck: str, ev: Event):
     base_info_bg = Image.open(TEXT_PATH / "base_info_bg.png")
     base_info_draw = ImageDraw.Draw(base_info_bg)
     base_info_draw.text((275, 120), f"{account_info.name[:10]}", "white", waves_font_30, "lm")
-    base_info_draw.text((226, 173), f"特征码:  {hide_uid(account_info.id)}", GOLD, waves_font_25, "lm")
+    base_info_draw.text(
+        (226, 173),
+        f"特征码:  {hide_uid(account_info.id, user_pref=user_pref)}",
+        GOLD,
+        waves_font_25,
+        "lm",
+    )
     card_img.paste(base_info_bg, (35, 170), base_info_bg)
 
     # 头像 头像环

@@ -13,7 +13,7 @@ from gsuid_core.utils.image.convert import convert_img
 from gsuid_core.utils.image.image_tools import crop_center_img
 
 from ..utils.at_help import ruser_id
-from ..utils.util import hide_uid
+from ..utils.util import get_hide_uid_pref, hide_uid
 from ..utils.waves_api import waves_api
 from ..wutheringwaves_config import PREFIX
 from ..utils.database.models import WavesBind
@@ -134,7 +134,8 @@ def _build_usage_hint(period_list: PeriodList) -> str:
 
 
 async def process_uid(uid, ev, period_param: Optional[Union[int, str]]) -> Optional[Union[Dict[str, Any], str]]:
-    ck = await waves_api.get_self_waves_ck(uid, ruser_id(ev), ev.bot_id)
+    user_id = ruser_id(ev)
+    ck = await waves_api.get_self_waves_ck(uid, user_id, ev.bot_id)
     if not ck:
         return None
 
@@ -198,6 +199,7 @@ async def process_uid(uid, ev, period_param: Optional[Union[int, str]]) -> Optio
         "period_node": period_node,
         "period_detail": period_detail,
         "account_info": account_info,
+        "user_pref": await get_hide_uid_pref(uid, user_id, ev.bot_id),
     }
 
 
@@ -260,6 +262,7 @@ async def _draw_period_img(ev: Event, valid: Dict):
     period_detail: PeriodDetail = valid["period_detail"]
     account_info: AccountBaseInfo = valid["account_info"]
     period_node: Period = valid["period_node"]
+    user_pref: str = valid.get("user_pref", "")
 
     # Calculate layout positions FIRST to determine canvas size
     # Calculate tabs height
@@ -328,7 +331,13 @@ async def _draw_period_img(ev: Event, valid: Dict):
     title_img = Image.open(TEXT_PATH / "top-bg.png")
     title_img_draw = ImageDraw.Draw(title_img)
     title_img_draw.text((240, 75), f"{account_info.name}", "black", waves_font_36, "lm")
-    title_img_draw.text((240, 140), f"特征码: {hide_uid(account_info.id)}", "black", waves_font_24, "lm")
+    title_img_draw.text(
+        (240, 140),
+        f"特征码: {hide_uid(account_info.id, user_pref=user_pref)}",
+        "black",
+        waves_font_24,
+        "lm",
+    )
 
     avatar_img = await draw_pic_with_ring(ev)
     title_img.paste(avatar_img, (27, 8), avatar_img)
