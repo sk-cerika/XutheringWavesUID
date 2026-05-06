@@ -19,7 +19,7 @@ TOWER_REFRESH_SECONDS = 28 * 24 * 60 * 60
 TOWER_BASE_PERIOD = 29
 
 
-MATRIX_BASE_TIME = datetime(2026, 4, 30, 4, 0, 0, tzinfo=CHINA_TZ)
+MATRIX_BASE_TIME = datetime(2026, 5, 7, 4, 0, 0, tzinfo=CHINA_TZ)
 MATRIX_BASE_TIMESTAMP = int(MATRIX_BASE_TIME.astimezone(timezone.utc).timestamp())
 
 MATRIX_REFRESH_SECONDS = 42 * 24 * 60 * 60
@@ -124,7 +124,7 @@ def get_tower_period_number(reference_time: Optional[datetime] = None) -> int:
 def get_matrix_period_number(reference_time: Optional[datetime] = None) -> int:
     """获取当前矩阵的期数
 
-    2026-04-30 04:00 (CST) 为第 3 / 第 4 期分界，此前为第 3 期，此后每 42 天进 1 期
+    2026-05-07 04:00 (CST) 为第 3 / 第 4 期分界，此前为第 3 期，此后每 42 天进 1 期
     """
     ref_time = reference_time or datetime.now(CHINA_TZ)
     if ref_time < MATRIX_BASE_TIME:
