@@ -308,4 +308,10 @@ CONFIG_DEFAULT: Dict[str, GSC] = {
         "每天定时刷新所有用户面板的时间设置（时, 分），将在该时间点后一小时内随机时间执行，建议避开自动签到时段",
         ["4", "0"],
     ),
+    "WavesAutoRefreshOnView": GsBoolConfig(
+        "查角色面板时自动先刷新",
+        "开启后，发送【ww<角色名>面板】查询单角色面板时自动先刷新该角色再渲染。"
+        "仅对查自己面板生效，伤害/PK/换装/极限/查别人 等场景跳过；尊重 RefreshSingleCharInterval 冷却",
+        False,
+    ),
 }
