@@ -1,14 +1,15 @@
 """功能 2：定时为所有有 cookie 的用户批量刷新角色面板。
 
 设计：
-- 配置项 ``WavesScheduledRefreshPanel`` (开关，默认关) +
-  ``WavesScheduledRefreshTime`` ([时, 分]，默认 ["4","0"])，格式与 ``ResourceDownloadTime`` 对齐。
+- 配置项 ``WavesScheduledRefreshTime`` ([时, 分]，默认 ["4","0"])，格式与
+  ``ResourceDownloadTime`` 对齐。
 - 复用 ``utils.refresh_char_detail.refresh_char`` 作为单用户刷新核心；
   复用 ``utils.refresh_char_detail.semaphore_manager`` 作并发盖板（默认 ``RefreshCardConcurrency`` = 10）。
 - ``refresh_char`` 仅依赖 ``ev.bot_id`` 与 ``ev.sender``；定时场景没有真 Event，
   用 ``SimpleNamespace`` 构造最小 mock。
 - ``WavesUser.get_waves_all_user`` 已经是"status 正常 + cookie 非空"的全量入口，直接用。
-- 模块导入即根据配置开关决定是否注册 cron 任务，**不**重启不生效（与 ``ResourceDownloadTime`` 一致）。
+- **任务无条件注册**到 GsCore 的 ``scheduler``（仿 ``auto_download_resource`` 的注册方式），
+  不再用配置开关控制。是否运行交给 GsCore 调度页的"暂停/恢复"按钮，便于运维。
 - 同时提供一个 ``pm=1`` 主人手动触发命令 ``ww刷新全部用户面板``，用于调试和手动补刷。
 """
 
@@ -91,13 +92,22 @@ async def refresh_all_users() -> Tuple[int, int, int]:
     return len(results), ok, fail
 
 
-# ===== Scheduler 注册 =====
-# 仿 wutheringwaves_resource/__init__.py:107-114 的注册方式
+async def auto_refresh_panel():
+    """cron 入口：跑前先 0~1h 随机抖动避免多 bot 同 host 同时打 API。"""
+    delay = random.randint(0, 3600)
+    if delay:
+        await asyncio.sleep(delay)
+    logger.info("[鸣潮·定时刷面板] 开始执行")
+    await refresh_all_users()
 
-_enabled = bool(WutheringWavesConfig.get_config("WavesScheduledRefreshPanel").data)
+
+# ===== Scheduler 注册 =====
+# 无条件注册（仿 wutheringwaves_resource/__init__.py:107-114 的 ResourceDownloadTime 范式）。
+# 不用的话在 GsCore 调度页直接"暂停"该任务即可，不再依赖配置开关。
+
 _sched_time = WutheringWavesConfig.get_config("WavesScheduledRefreshTime").data
 
-if _enabled and _sched_time and len(_sched_time) == 2:
+if _sched_time and len(_sched_time) == 2:
     try:
         _hour = int(_sched_time[0])
         _minute = int(_sched_time[1])
@@ -106,15 +116,6 @@ if _enabled and _sched_time and len(_sched_time) == 2:
         _minute = -1
 
     if 0 <= _hour < 24 and 0 <= _minute < 60:
-
-        async def auto_refresh_panel():
-            # 0~1 小时随机抖动，避免多 bot 同 host 同时打 API
-            delay = random.randint(0, 3600)
-            if delay:
-                await asyncio.sleep(delay)
-            logger.info("[鸣潮·定时刷面板] 开始执行")
-            await refresh_all_users()
-
         scheduler.add_job(
             auto_refresh_panel,
             "cron",
@@ -122,13 +123,16 @@ if _enabled and _sched_time and len(_sched_time) == 2:
             hour=_hour,
             minute=_minute,
         )
-        logger.info(f"[鸣潮·定时刷面板] 已注册定时任务: {_hour:02d}:{_minute:02d}")
+        logger.info(
+            f"[鸣潮·定时刷面板] 已注册定时任务: {_hour:02d}:{_minute:02d}"
+            "（如不需要请在 GsCore 调度页暂停 ww_scheduled_refresh_panel）"
+        )
     else:
         logger.warning(
             f"[鸣潮·定时刷面板] 时间配置异常 hour={_sched_time[0]} minute={_sched_time[1]}，跳过注册"
         )
-elif _enabled:
-    logger.warning("[鸣潮·定时刷面板] 已开启但时间配置缺失或格式错误，跳过注册")
+else:
+    logger.warning("[鸣潮·定时刷面板] 时间配置缺失或格式错误，跳过注册")
 
 
 # ===== 主人手动触发命令 =====

@@ -8,3 +8,4 @@
 
 from . import at_view_gacha  # noqa: F401  功能1: @他人查看抽卡记录
 from . import scheduled_refresh  # noqa: F401  功能2: 定时刷新所有有 cookie 用户的面板
+from . import auto_refresh_on_view  # noqa: F401  功能3: ww<角色名>面板 自动先刷新再查看
