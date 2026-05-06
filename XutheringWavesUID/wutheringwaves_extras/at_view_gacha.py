@@ -95,5 +95,16 @@ async def at_view_gacha_handler(bot: Bot, ev: Event):
     logger.info(
         f"[鸣潮·@查抽卡] inviter={inviter_id} target={target_id} uid={target_uid} group={ev.group_id}"
     )
-    im = await draw_card(target_uid, ev)
+    # 临时改写 ev 使 draw_card 内部按被 @ 用户取头像 / 隐藏偏好 / 自身 ck，
+    # 调完 finally 还原避免污染外层 hook（user_activity / bot_send）。
+    # 详见 utils/image.py:552 get_event_avatar 取头像优先级；ev.sender 清空后会
+    # 走 onebot + ev.user_id 兜底分支拿被 @ 用户的 QQ 头像。
+    _orig_user_id, _orig_sender, _orig_at = ev.user_id, ev.sender, ev.at
+    try:
+        ev.user_id = target_id
+        ev.sender = {}
+        ev.at = ""
+        im = await draw_card(target_uid, ev)
+    finally:
+        ev.user_id, ev.sender, ev.at = _orig_user_id, _orig_sender, _orig_at
     await bot.send(im)
