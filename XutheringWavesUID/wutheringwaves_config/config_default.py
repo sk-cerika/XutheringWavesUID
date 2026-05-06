@@ -298,14 +298,10 @@ CONFIG_DEFAULT: Dict[str, GSC] = {
         "开启后，群聊中可 @ 已登录用户查询其抽卡记录，要求同群且对方已登录（有 cookie）",
         False,
     ),
-    "WavesScheduledRefreshPanel": GsBoolConfig(
-        "定时刷新所有用户面板（重启生效）",
-        "开启后，每天定时为所有已登录用户批量刷新角色面板缓存，依赖 RefreshCardConcurrency 控制并发",
-        False,
-    ),
     "WavesScheduledRefreshTime": GsListStrConfig(
         "定时刷新面板时间（重启生效）",
-        "每天定时刷新所有用户面板的时间设置（时, 分），将在该时间点后一小时内随机时间执行，建议避开自动签到时段",
+        "每天定时为所有已登录用户批量刷新角色面板缓存的时间（时, 分）。"
+        "任务无条件注册到 GsCore 调度器，不需要时请在调度页暂停 ww_scheduled_refresh_panel",
         ["4", "0"],
     ),
     "WavesAutoRefreshOnView": GsBoolConfig(
