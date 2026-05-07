@@ -688,3 +688,7 @@ waves_build
 
 module.md
 spec.md
+# 本地反馈截图（不入库）
+image/
+# 源仓库代码副本（用于本地对比/同步参考，不入库）
+remote/
