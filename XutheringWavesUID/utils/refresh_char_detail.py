@@ -335,6 +335,9 @@ async def refresh_char(
     if not role_info.success:
         return role_info.throw_msg()
 
+    if not role_info.data:
+        return f"鸣潮特征码[{uid}]的角色数据为空，接口可能暂时异常或 cookie 已失效"
+
     if isinstance(role_info.data, dict) and "roleList" not in role_info.data:
         return f"鸣潮特征码[{uid}]的角色数据未公开展示，请【{PREFIX}登录】或在库街区展示角色"
 

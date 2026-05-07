@@ -264,10 +264,5 @@ if not _fix_flag.exists():
 #         Path(MAIN_PATH / "show_config_back.json").unlink()
 
 
-# 显式加载非侵入式扩展模块。
-#
-# wutheringwaves_extras/__init__.py 是"中转式" (只 from . import 三个子模块,
-# 自身不直接定义 SV), GsCore 的子模块自动扫描不把它认作合法插件子模块,
-# 子模块里的 SV 注册和 scheduler.add_job 都不会执行 (典型症状: 调度页看
-# 不到 ww_scheduled_refresh_panel)。这里显式 import 一次, 绕开扫描识别。
-from . import wutheringwaves_extras  # noqa: F401, E402
+# wutheringwaves_extras 由 GsCore 通过 __full__.py 递归扫描自动加载，
+# 不再需要显式 import（之前的做法会导致双重执行、scheduler.add_job 冲突）。
