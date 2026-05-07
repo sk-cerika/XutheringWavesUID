@@ -8,7 +8,7 @@ from gsuid_core.models import Event
 from gsuid_core.logger import logger
 from PIL import Image, ImageDraw, ImageEnhance
 from gsuid_core.utils.image.convert import convert_img
-from gsuid_core.utils.image.image_tools import get_qq_avatar, crop_center_img
+from gsuid_core.utils.image.image_tools import crop_center_img
 
 from ..utils import hint
 from ..utils.util import hide_uid, get_hide_uid_pref
@@ -1425,7 +1425,7 @@ async def draw_pic_with_ring(ev: Event, is_force_avatar=False, force_resource_id
     elif not is_force_avatar:
         pic = await get_event_avatar(ev)
     else:
-        pic = await get_qq_avatar(ev.user_id)
+        pic = await get_event_avatar(ev, is_valid_at_param=False)
 
     mask_pic = Image.open(TEXT_PATH / "avatar_mask.png")
     img = Image.new("RGBA", (180, 180))

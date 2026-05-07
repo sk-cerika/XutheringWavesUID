@@ -288,6 +288,7 @@ class MatrixDetailRequest(BaseModel):
     score: int  # 总分数
     teamCount: int = 0  # 使用队伍数
     teams: List[MatrixTeamDetail]  # 队伍列表
+    sender_avatar: Optional[str] = ""
 
 
 # ------------------------------------------------------------
@@ -325,6 +326,7 @@ class MatrixRank(BaseModel):
     waves_id: str
     kuro_name: str
     alias_name: str
+    sender_avatar: Optional[str] = ""
 
 
 class MatrixRankData(BaseModel):

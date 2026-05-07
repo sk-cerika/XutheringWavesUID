@@ -89,7 +89,7 @@ async def get_endless_rank_token_condition(ev) -> Tuple[bool, Dict[Tuple[str, st
 
 TEXT_PATH = Path(__file__).parent / "texture2d"
 avatar_mask = Image.open(TEXT_PATH / "avatar_mask.png")
-default_avatar_char_id = "1505"
+default_avatar_char_id = "1503"
 pic_cache = TimedCache(600, 200)
 
 BOT_COLOR = [
