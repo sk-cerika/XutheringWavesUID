@@ -289,13 +289,13 @@ async def draw_matrix_img(ev: Event, uid: str, user_id: str) -> Union[bytes, str
 
     if is_self_ck:
         target_mode_id = _resolve_mode_id(ev)
-        return await _draw_matrix_detail_html(ev, uid, ck, matrix_detail, is_self_ck, target_mode_id, char_ids_map)
+        return await _draw_matrix_detail_html(ev, uid, ck, matrix_detail, is_self_ck, target_mode_id, char_ids_map, user_pref)
     else:
         # 未登录: 展示所有模式，不区分稳态/奇点
-        return await _draw_matrix_index_html(ev, uid, ck, matrix_detail)
+        return await _draw_matrix_index_html(ev, uid, ck, matrix_detail, user_pref)
 
 
-async def _get_common_context(ev: Event, uid: str, ck: str) -> Union[dict, str]:
+async def _get_common_context(ev: Event, uid: str, ck: str, user_pref: str = "") -> Union[dict, str]:
     """获取用户卡片等通用上下文"""
     account_info_res = await waves_api.get_base_info(uid, ck)
     if not account_info_res.success:
@@ -328,15 +328,15 @@ async def _get_common_context(ev: Event, uid: str, ck: str) -> Union[dict, str]:
 
 
 async def _draw_matrix_index_html(
-    ev: Event, uid: str, ck: str, matrix_detail: MatrixDetail
+    ev: Event, uid: str, ck: str, matrix_detail: MatrixDetail, user_pref: str = ""
 ) -> Union[bytes, str]:
     """未登录用户的 HTML 渲染 — 所有模式显示在一起，不区分稳态/奇点"""
     use_html_render = WutheringWavesConfig.get_config("UseHtmlRender").data
     if not PLAYWRIGHT_AVAILABLE or not use_html_render:
-        return _draw_matrix_text_fallback(uid, matrix_detail)
+        return _draw_matrix_text_fallback(uid, matrix_detail, user_pref)
 
     try:
-        ctx = await _get_common_context(ev, uid, ck)
+        ctx = await _get_common_context(ev, uid, ck, user_pref)
         if isinstance(ctx, str):
             return ctx
 
@@ -380,24 +380,25 @@ async def _draw_matrix_index_html(
             return img_bytes
         else:
             logger.warning("[鸣潮] Playwright 渲染返回空, 回退到文本")
-            return _draw_matrix_text_fallback(uid, matrix_detail)
+            return _draw_matrix_text_fallback(uid, matrix_detail, user_pref)
 
     except Exception as e:
         logger.exception(f"[鸣潮] 矩阵HTML渲染失败: {e}")
-        return _draw_matrix_text_fallback(uid, matrix_detail)
+        return _draw_matrix_text_fallback(uid, matrix_detail, user_pref)
 
 
 async def _draw_matrix_detail_html(
     ev: Event, uid: str, ck: str, matrix_detail: MatrixDetail,
-    is_self_ck: bool, target_mode_id: int = 1, char_ids_map: dict = None
+    is_self_ck: bool, target_mode_id: int = 1, char_ids_map: dict = None,
+    user_pref: str = "",
 ) -> Union[bytes, str]:
     """已登录用户的 HTML 渲染 (详细队伍数据)"""
     use_html_render = WutheringWavesConfig.get_config("UseHtmlRender").data
     if not PLAYWRIGHT_AVAILABLE or not use_html_render:
-        return _draw_matrix_text_fallback(uid, matrix_detail)
+        return _draw_matrix_text_fallback(uid, matrix_detail, user_pref)
 
     try:
-        ctx = await _get_common_context(ev, uid, ck)
+        ctx = await _get_common_context(ev, uid, ck, user_pref)
         if isinstance(ctx, str):
             return ctx
 
