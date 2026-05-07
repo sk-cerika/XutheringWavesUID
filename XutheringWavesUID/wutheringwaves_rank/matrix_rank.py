@@ -16,10 +16,8 @@ from gsuid_core.bot import Bot
 from gsuid_core.logger import logger
 from gsuid_core.models import Event
 from gsuid_core.utils.image.convert import convert_img
-from gsuid_core.utils.image.image_tools import crop_center_img
 
 from ..utils.util import get_version, hide_uid
-from ..utils.cache import TimedCache
 from ..utils.image import (
     RED,
     GREY,
@@ -33,12 +31,12 @@ from ..utils.image import (
     get_ICON,
     add_footer,
     get_waves_bg,
-    get_qq_avatar,
     get_square_avatar,
     pic_download_from_url,
     parse_bot_color_config,
 )
 from .rank_badge import draw_rank_badge
+from .slash_rank import get_avatar
 from ..utils.resource.RESOURCE_PATH import MATRIX_PATH
 from ..utils.api.model import MatrixDetail
 from ..utils.api.wwapi import (
@@ -79,16 +77,13 @@ BOT_COLOR = [
     WAVES_MOONLIT,
 ]
 
-avatar_mask = Image.open(TEXT_PATH / "avatar_mask.png")
-default_avatar_char_id = "1505"
-pic_cache = TimedCache(600, 200)
 
 
 def get_score_color(score: int):
     """总排行分数颜色"""
-    if score >= 300000:
+    if score >= 500000:
         return CRYSTAL_SENTINEL
-    elif score >= 200000:
+    elif score >= 300000:
         return (255, 0, 0)
     elif score >= 45000:
         return (234, 183, 4)
@@ -162,10 +157,10 @@ def draw_crystal_text(img: Image.Image, text: str, x: int, y: int, font, anchor=
 
 
 def get_local_score_color(score: int):
-    """群排行分数颜色 — 红/彩分界线比总排行低"""
-    if score >= 150000:
+    """群排行分数颜色 — 与个人卡片配色一致"""
+    if score >= 200000:
         return CRYSTAL_SENTINEL
-    elif score >= 100000:
+    elif score >= 150000:
         return (255, 0, 0)
     elif score >= 45000:
         return (234, 183, 4)
@@ -287,7 +282,7 @@ async def draw_all_matrix_rank_card(bot: Bot, ev: Event):
     card_img.paste(char_mask_temp, (0, 0), char_mask_temp)
 
     rank_list = rankInfoList.data.rank_list
-    tasks = [get_avatar(rank.user_id) for rank in rank_list]
+    tasks = [get_avatar(rank.user_id, getattr(rank, "sender_avatar", "")) for rank in rank_list]
     results = await asyncio.gather(*tasks)
 
     bot_color_map = parse_bot_color_config(
@@ -575,42 +570,6 @@ async def get_matrix_rank_token_condition(ev) -> Tuple[bool, Dict[Tuple[str, str
     return tokenLimitFlag, wavesTokenUsersMap
 
 
-async def get_avatar(
-    qid: Optional[str],
-) -> Image.Image:
-    if qid and qid.isdigit():
-        if WutheringWavesConfig.get_config("QQPicCache").data:
-            pic = pic_cache.get(qid)
-            if not pic:
-                pic = await get_qq_avatar(qid, size=100)
-                pic_cache.set(qid, pic)
-        else:
-            pic = await get_qq_avatar(qid, size=100)
-            pic_cache.set(qid, pic)
-        pic_temp = crop_center_img(pic, 120, 120)
-
-        img = Image.new("RGBA", (180, 180))
-        avatar_mask_temp = avatar_mask.copy()
-        mask_pic_temp = avatar_mask_temp.resize((120, 120))
-        img.paste(pic_temp, (0, -5), mask_pic_temp)
-    else:
-        pic = await get_square_avatar(default_avatar_char_id)
-
-        pic_temp = Image.new("RGBA", pic.size)
-        pic_temp.paste(pic.resize((160, 160)), (10, 10))
-        pic_temp = pic_temp.resize((160, 160))
-
-        avatar_mask_temp = avatar_mask.copy()
-        mask_pic_temp = Image.new("RGBA", avatar_mask_temp.size)
-        mask_pic_temp.paste(avatar_mask_temp, (-20, -45), avatar_mask_temp)
-        mask_pic_temp = mask_pic_temp.resize((160, 160))
-
-        img = Image.new("RGBA", (180, 180))
-        img.paste(pic_temp, (0, 0), mask_pic_temp)
-
-    return img
-
-
 async def get_role_chain_count(uid: str, role_id: int) -> int:
     """从rawData.json获取角色共鸣链数量，特殊角色遍历所有形态"""
     from ..utils.resource.RESOURCE_PATH import PLAYER_PATH
@@ -746,7 +705,7 @@ async def draw_matrix_rank_list(bot: Bot, ev: Event):
     card_img.paste(char_mask_temp, (0, 0), char_mask_temp)
 
     # 获取头像
-    tasks = [get_avatar(rank.user_id) for rank in rankInfoList_display]
+    tasks = [get_avatar(rank.user_id, getattr(rank, "sender_avatar", "")) for rank in rankInfoList_display]
     results = await asyncio.gather(*tasks)
 
     # 绘制排行条目

@@ -44,7 +44,6 @@ MODE_NAME_MAP = {
 
 
 def _get_score_color_class(score: int) -> str:
-    """根据分数返回CSS颜色class — 与总排行配色一致"""
     if score >= 200000:
         return "score-rainbow"
     elif score >= 150000:
@@ -159,6 +158,7 @@ async def upload_matrix_record(
     waves_id: str,
     matrix_data: MatrixDetail,
     char_ids_map: dict,
+    sender_avatar: str = "",
 ):
     WavesToken = WutheringWavesConfig.get_config("WavesToken").data
     if not WavesToken:
@@ -212,6 +212,7 @@ async def upload_matrix_record(
         score=mode.score,
         teamCount=len(mode.teams),
         teams=teams,
+        sender_avatar=sender_avatar,
     )
     push_item(QUEUE_MATRIX_RECORD, matrix_item.model_dump())
 
@@ -283,9 +284,13 @@ async def draw_matrix_img(ev: Event, uid: str, user_id: str) -> Union[bytes, str
     if char_ids_map and is_self_ck:
         char_ids_map = await _resolve_special_chars(uid, char_ids_map)
 
+    sender_avatar = (ev.sender or {}).get("avatar") or ""
+    if not (isinstance(sender_avatar, str) and sender_avatar.startswith(("http://", "https://"))):
+        sender_avatar = ""
+
     # 保存和上传记录
     await save_matrix_record(uid, matrix_detail, char_ids_map)
-    await upload_matrix_record(is_self_ck, uid, matrix_detail, char_ids_map)
+    await upload_matrix_record(is_self_ck, uid, matrix_detail, char_ids_map, sender_avatar)
 
     if is_self_ck:
         target_mode_id = _resolve_mode_id(ev)
