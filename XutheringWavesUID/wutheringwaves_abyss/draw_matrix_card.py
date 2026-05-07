@@ -304,6 +304,8 @@ async def _get_common_context(ev: Event, uid: str, ck: str) -> Union[dict, str]:
         return f"用户未展示数据, 请尝试【{PREFIX}登录】"
     account_info = AccountBaseInfo.model_validate(account_info_res.data)
 
+    user_pref = await get_hide_uid_pref(uid, ev.user_id, ev.bot_id)
+
     avatar = await get_event_avatar(ev)
     avatar_url = pil_to_b64(avatar, quality=75)
 
@@ -393,8 +395,9 @@ async def _draw_matrix_detail_html(
 ) -> Union[bytes, str]:
     """已登录用户的 HTML 渲染 (详细队伍数据)"""
     use_html_render = WutheringWavesConfig.get_config("UseHtmlRender").data
+    user_pref = await get_hide_uid_pref(uid, ev.user_id, ev.bot_id)
     if not PLAYWRIGHT_AVAILABLE or not use_html_render:
-        return _draw_matrix_text_fallback(uid, matrix_detail)
+        return _draw_matrix_text_fallback(uid, matrix_detail, user_pref)
 
     try:
         ctx = await _get_common_context(ev, uid, ck)
