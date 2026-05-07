@@ -26,6 +26,7 @@ from gsuid_core.logger import logger
 
 from ..utils.refresh_char_detail import refresh_char, semaphore_manager
 from ..utils.database.models import WavesUser
+from ..utils.constants import WAVES_GAME_ID
 from ..wutheringwaves_config import WutheringWavesConfig
 
 
@@ -66,7 +67,7 @@ async def refresh_all_users() -> Tuple[int, int, int]:
 
     返回 (total, ok, fail)。
     """
-    users = await WavesUser.get_waves_all_user()
+    users = [u for u in await WavesUser.get_waves_all_user() if u.game_id in (0, WAVES_GAME_ID)]
     sem = await semaphore_manager.get_semaphore()
 
     async def _bounded(u):
@@ -120,6 +121,7 @@ if _sched_time and len(_sched_time) == 2:
             auto_refresh_panel,
             "cron",
             id="ww_scheduled_refresh_panel",
+            replace_existing=True,
             hour=_hour,
             minute=_minute,
         )
