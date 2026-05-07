@@ -171,19 +171,10 @@ _CARD_TYPES = "面板|面包|🍞|card|体力|每日|mr|背景|bg"
 _CARD_VERBS = "查看|提取|获取"
 
 
-@waves_char_card_single.on_regex(
-    (
-        rf"^(?:{_CARD_VERBS})(?P<char>{PATTERN})?(?P<type>{_CARD_TYPES})图(?P<hash_id>[a-zA-Z0-9]+)?$",
-        rf"^(?P<char>{PATTERN})?(?P<type>{_CARD_TYPES})图(?:{_CARD_VERBS})(?P<hash_id>[a-zA-Z0-9]+)?$",
-    ),
-    block=True,
-)
-async def get_char_card_single(bot: Bot, ev: Event):
-    char = ev.regex_dict.get("char")
-    hash_id = ev.regex_dict.get("hash_id")
+async def _send_char_card_single(bot: Bot, ev: Event, char, hash_id, card_type):
     if not hash_id:
         at_sender = True if ev.group_id else False
-        target_type = TYPE_MAP.get(ev.regex_dict.get("type"), "card")
+        target_type = TYPE_MAP.get(card_type, "card")
         if char:
             char_id, _, msg = get_char_id_and_name(char)
             if msg:
@@ -200,15 +191,37 @@ async def get_char_card_single(bot: Bot, ev: Event):
             bot,
             ev,
             hash_id,
-            target_type=TYPE_MAP.get(ev.regex_dict.get("type"), "card"),
+            target_type=TYPE_MAP.get(card_type, "card"),
         )
     return await send_custom_card_single(
         bot,
         ev,
         char,
         hash_id,
-        target_type=TYPE_MAP.get(ev.regex_dict.get("type"), "card"),
+        target_type=TYPE_MAP.get(card_type, "card"),
     )
+
+
+@waves_char_card_single.on_regex(
+    (
+        rf"^(?:{_CARD_VERBS})(?P<char>{PATTERN})?(?P<type>{_CARD_TYPES})图(?P<hash_id>[a-zA-Z0-9]+)?$",
+        rf"^(?P<char>{PATTERN})?(?P<type>{_CARD_TYPES})图(?:{_CARD_VERBS})(?P<hash_id>[a-zA-Z0-9]+)?$",
+    ),
+    block=True,
+)
+async def get_char_card_single(bot: Bot, ev: Event):
+    return await _send_char_card_single(
+        bot,
+        ev,
+        ev.regex_dict.get("char"),
+        ev.regex_dict.get("hash_id"),
+        ev.regex_dict.get("type"),
+    )
+
+
+@waves_char_card_single.on_fullmatch(("原图", "提取", "提取图片"), block=True)
+async def get_char_card_shortcut(bot: Bot, ev: Event):
+    return await _send_char_card_single(bot, ev, None, None, "面板")
 
 
 # 触发时机: 用户输入命中下面 4 个 protected SV 的正则, 但 priority<4 处的 SV 因
