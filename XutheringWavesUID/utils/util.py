@@ -265,6 +265,7 @@ def get_version(dynamic: bool = False, **kwargs):
 
 filter_msg = [
     "角色查询失败，请重新选择角色",
+    "暂无数据，请漂泊者绑定角色后查看",
 ]
 
 
