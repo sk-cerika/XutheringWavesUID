@@ -12,9 +12,9 @@ from gsuid_core.models import Event
 from gsuid_core.utils.image.convert import convert_img
 from gsuid_core.utils.image.image_tools import crop_center_img
 
+from .rank_avatar import get_avatar
 from .rank_badge import draw_rank_badge
 from ..utils.util import hide_uid
-from ..utils.cache import TimedCache
 from ..utils.image import (
     RED,
     GREY,
@@ -23,7 +23,6 @@ from ..utils.image import (
     WEAPON_RESONLEVEL_COLOR,
     add_footer,
     get_attribute,
-    get_qq_avatar,
     get_square_avatar,
     get_square_weapon,
     get_custom_waves_bg,
@@ -53,20 +52,18 @@ from ..utils.fonts.waves_fonts import (
     waves_font_40,
     waves_font_44,
 )
-from ..utils.resource.constant import SPECIAL_CHAR, SPECIAL_CHAR_NAME, randomize_special_char_id
+from ..utils.resource.constant import SPECIAL_CHAR, SPECIAL_CHAR_NAME
 
 rank_length = 20  # 排行长度
 TEXT_PATH = Path(__file__).parent / "texture2d"
 TITLE_I = Image.open(TEXT_PATH / "title.png")
 TITLE_II = Image.open(TEXT_PATH / "title2.png")
-avatar_mask = Image.open(TEXT_PATH / "avatar_mask.png")
 weapon_icon_bg_3 = Image.open(TEXT_PATH / "weapon_icon_bg_3.png")
 weapon_icon_bg_4 = Image.open(TEXT_PATH / "weapon_icon_bg_4.png")
 weapon_icon_bg_5 = Image.open(TEXT_PATH / "weapon_icon_bg_5.png")
 promote_icon = Image.open(TEXT_PATH / "promote_icon.png")
 char_mask = Image.open(TEXT_PATH / "char_mask.png")
 logo_img = Image.open(TEXT_PATH / "logo_small_2.png")
-pic_cache = TimedCache(86400, 200)
 
 
 class RankInfo(BaseModel):
@@ -414,7 +411,10 @@ async def draw_rank_img(bot: Bot, ev: Event, char: str, rank_type: str) -> Union
     total_score = 0
     total_damage = 0
 
-    tasks = [get_avatar(ev, rank.qid, rank.roleDetail.role.roleId) for rank in rankInfoList]
+    tasks = [
+        get_avatar(rank.qid, getattr(rank, "sender_avatar", ""), char_id=rank.roleDetail.role.roleId)
+        for rank in rankInfoList
+    ]
     results = await asyncio.gather(*tasks)
 
     for index, temp in enumerate(zip(rankInfoList, results)):
@@ -423,7 +423,6 @@ async def draw_rank_img(bot: Bot, ev: Event, char: str, rank_type: str) -> Union
         rank_role_detail: RoleDetailData = rank.roleDetail
         bar_bg = bar.copy()
         bar_star_draw = ImageDraw.Draw(bar_bg)
-        # role_avatar = await get_avatar(ev, rank.qid, role_detail.role.roleId)
         bar_bg.paste(role_avatar, (100, 0), role_avatar)
 
         role_attribute = await get_attribute(rank_role_detail.role.attributeName or "导电", is_simple=True)
@@ -579,48 +578,6 @@ async def draw_rank_img(bot: Bot, ev: Event, char: str, rank_type: str) -> Union
 
     logger.info(f"[get_rank_info_for_user] end: {time.time() - start_time}")
     return card_img
-
-
-async def get_avatar(
-    ev: Event,
-    qid: Optional[Union[int, str]],
-    char_id: Union[int, str],
-) -> Image.Image:
-    char_id = randomize_special_char_id(int(char_id))
-    if ev.bot_id == "onebot":
-        if WutheringWavesConfig.get_config("QQPicCache").data:
-            pic = pic_cache.get(qid)
-            if not pic:
-                pic = await get_qq_avatar(qid, size=100)
-                pic_cache.set(qid, pic)
-        else:
-            pic = await get_qq_avatar(qid, size=100)
-            if pic:
-                pic_cache.set(qid, pic)
-            else:
-                pic = await get_square_avatar(char_id)
-        pic_temp = crop_center_img(pic, 120, 120)
-
-        img = Image.new("RGBA", (180, 180))
-        avatar_mask_temp = avatar_mask.copy()
-        mask_pic_temp = avatar_mask_temp.resize((120, 120))
-        img.paste(pic_temp, (0, -5), mask_pic_temp)
-    else:
-        pic = await get_square_avatar(char_id)
-
-        pic_temp = Image.new("RGBA", pic.size)
-        pic_temp.paste(pic.resize((160, 160)), (10, 10))
-        pic_temp = pic_temp.resize((160, 160))
-
-        avatar_mask_temp = avatar_mask.copy()
-        mask_pic_temp = Image.new("RGBA", avatar_mask_temp.size)
-        mask_pic_temp.paste(avatar_mask_temp, (-20, -45), avatar_mask_temp)
-        mask_pic_temp = mask_pic_temp.resize((160, 160))
-
-        img = Image.new("RGBA", (180, 180))
-        img.paste(pic_temp, (0, 0), mask_pic_temp)
-
-    return img
 
 
 def get_weapon_icon_bg(star: int = 3) -> Image.Image:

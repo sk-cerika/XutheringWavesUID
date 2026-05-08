@@ -315,7 +315,7 @@ def parse_main(content: str) -> list[tuple[str, list[str], str]]:
 def parse_phantom_position(
     content: str,
 ) -> list[PhantomInfo]:
-    logger.debug(f"[声骸解析] 输入content: {content}")
+    logger.debug(f"[鸣潮·声骸解析] 输入content: {content}")
 
     # 先去掉"声骸"前缀（如果有）
     content = content.replace("声骸", "").strip()
@@ -330,7 +330,7 @@ def parse_phantom_position(
     for transfer in transfer_matches:
         position = transfer.group(1)
         to_position = transfer.group(2)
-        logger.debug(f"[声骸解析] 位置转换: {position}到{to_position}")
+        logger.debug(f"[鸣潮·声骸解析] 位置转换: {position}到{to_position}")
         if (
             position
             and to_position
@@ -345,7 +345,7 @@ def parse_phantom_position(
     # 从内容中移除所有位置转换信息，剩下的就是UID和角色名
     clean_content = re.sub(r"\s*\d到\d\s*", "", content).strip()
 
-    logger.debug(f"[声骸解析] 清理后的内容: {clean_content}")
+    logger.debug(f"[鸣潮·声骸解析] 清理后的内容: {clean_content}")
 
     # 提取可选的9位UID和角色名
     uid = None
@@ -357,7 +357,7 @@ def parse_phantom_position(
         uid = uid_match.group(1)
         charName = uid_match.group(2).strip()
 
-    logger.debug(f"[声骸解析] 最终结果: uid={uid}, charName={charName}, positions={positions}, toPositions={toPositions}")
+    logger.debug(f"[鸣潮·声骸解析] 最终结果: uid={uid}, charName={charName}, positions={positions}, toPositions={toPositions}")
 
     # 构造结果
     phantom_info = PhantomInfo()

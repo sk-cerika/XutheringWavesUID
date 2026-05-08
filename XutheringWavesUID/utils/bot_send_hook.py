@@ -86,7 +86,12 @@ async def _call_all_target_send_hooks(
                 logger.warning(f"[{plugin_name} BotHook] target_send hook {hook.__name__} 执行失败: {e}")
 
 
-async def _call_all_user_activity_hooks(user_id: Optional[str], bot_id: str, bot_self_id: str):
+async def _call_all_user_activity_hooks(
+    user_id: Optional[str],
+    bot_id: str,
+    bot_self_id: str,
+    sender_avatar: str = "",
+):
     """调用所有插件的用户活跃度 hooks"""
     if not user_id:
         return
@@ -105,9 +110,12 @@ async def _call_all_user_activity_hooks(user_id: Optional[str], bot_id: str, bot
             try:
                 logger.debug(f"[{plugin_name} BotHook] 执行 hook: {hook.__name__}, user_id={user_id}")
                 try:
-                    await hook(user_id, bot_id, bot_self_id)
+                    await hook(user_id, bot_id, bot_self_id, sender_avatar)
                 except TypeError:
-                    await hook(user_id, bot_id)
+                    try:
+                        await hook(user_id, bot_id, bot_self_id)
+                    except TypeError:
+                        await hook(user_id, bot_id)
             except Exception as e:
                 logger.warning(f"[{plugin_name} BotHook] user_activity hook {hook.__name__} 执行失败: {e}")
 
@@ -131,8 +139,15 @@ def install_bot_hooks():
         bot_id = getattr(self, "bot_id", "") if hasattr(self, "bot_id") else ""
         bot_self_id = getattr(self, "bot_self_id", "") if hasattr(self, "bot_self_id") else ""
 
+        sender_avatar = ""
+        sender = getattr(self.ev, "sender", None) if hasattr(self, "ev") else None
+        if isinstance(sender, dict):
+            avatar = sender.get("avatar")
+            if isinstance(avatar, str) and avatar.startswith(("http://", "https://")):
+                sender_avatar = avatar
+
         # 调用所有插件的用户活跃度 hooks
-        await _call_all_user_activity_hooks(user_id, bot_id, bot_self_id)
+        await _call_all_user_activity_hooks(user_id, bot_id, bot_self_id, sender_avatar)
 
         # 调用所有插件的 target_send hooks (群组消息时更新群组绑定)
         if hasattr(self, "ev"):

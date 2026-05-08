@@ -36,7 +36,7 @@ from ..utils.image import (
     parse_bot_color_config,
 )
 from .rank_badge import draw_rank_badge
-from .slash_rank import get_avatar
+from .rank_avatar import get_avatar
 from ..utils.resource.RESOURCE_PATH import MATRIX_PATH
 from ..utils.api.model import MatrixDetail
 from ..utils.api.wwapi import (

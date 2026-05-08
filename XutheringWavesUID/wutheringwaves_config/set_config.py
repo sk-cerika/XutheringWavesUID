@@ -24,7 +24,7 @@ async def set_waves_user_value(ev: Event, func: str, uid: str, value: str):
         status = WAVES_USER_MAP[func]
     else:
         return "该配置项不存在!"
-    logger.info("[设置{}] uid:{} value: {}".format(func, uid, value))
+    logger.info("[鸣潮·设置{}] uid:{} value: {}".format(func, uid, value))
     if (
         await WavesUser.update_data_by_data(
             select_data={

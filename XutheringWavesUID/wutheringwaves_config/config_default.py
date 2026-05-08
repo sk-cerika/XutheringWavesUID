@@ -270,8 +270,8 @@ CONFIG_DEFAULT: Dict[str, GSC] = {
     ),
     "EnableLocalization": GsBoolConfig(
         "启用多语言本地化",
-        "启用后将加载多语言翻译字典到内存，用户可通过【设置语言】切换界面语言。关闭后不加载字典，节省内存",
-        False,
+        "启用后将加载多语言翻译字典到内存，用户可通过【设置语言】切换界面语言。",
+        True,
     ),
     "FontCssUrl": GsStrConfig(
         "外置渲染字体CSS地址",

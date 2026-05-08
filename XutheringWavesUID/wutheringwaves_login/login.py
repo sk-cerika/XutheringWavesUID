@@ -156,7 +156,7 @@ async def page_login_local(bot: Bot, ev: Event, url):
     except asyncio.TimeoutError:
         return await bot.send("登录超时!", at_sender=at_sender)
     except Exception as e:
-        logger.exception(f"[登录] 异常: {e}")
+        logger.exception(f"[鸣潮·登录] 异常: {e}")
         return await bot.send("登录失败，请稍后再试", at_sender=at_sender)
 
     if text is None:

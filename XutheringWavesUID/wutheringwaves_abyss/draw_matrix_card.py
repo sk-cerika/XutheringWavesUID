@@ -150,7 +150,7 @@ async def save_matrix_record(
         async with aiofiles.open(path, "w", encoding="utf-8") as file:
             await file.write(json.dumps(record_payload, ensure_ascii=False))
     except Exception as e:
-        logger.warning(f"[保存矩阵数据失败] uid={uid}, error={e}")
+        logger.warning(f"[鸣潮·保存矩阵数据失败] uid={uid}, error={e}")
 
 
 async def upload_matrix_record(

@@ -12,9 +12,9 @@ from gsuid_core.logger import logger
 from gsuid_core.models import Event
 from gsuid_core.utils.image.convert import convert_img
 
+from .rank_avatar import get_avatar
 from .rank_badge import draw_rank_badge
 from ..utils.util import get_version, hide_uid
-from ..utils.cache import TimedCache
 from ..utils.image import (
     RED,
     GREY,
@@ -30,7 +30,6 @@ from ..utils.image import (
     WEAPON_RESONLEVEL_COLOR,
     add_footer,
     get_attribute,
-    get_qq_avatar,
     crop_center_img,
     get_square_avatar,
     get_square_weapon,
@@ -69,7 +68,6 @@ from ..utils.imagetool import get_weapon_icon_bg
 TEXT_PATH = Path(__file__).parent / "texture2d"
 TITLE_I = Image.open(TEXT_PATH / "title.png")
 TITLE_II = Image.open(TEXT_PATH / "title2.png")
-avatar_mask = Image.open(TEXT_PATH / "avatar_mask.png")
 weapon_icon_bg_3 = Image.open(TEXT_PATH / "weapon_icon_bg_3.png")
 weapon_icon_bg_4 = Image.open(TEXT_PATH / "weapon_icon_bg_4.png")
 weapon_icon_bg_5 = Image.open(TEXT_PATH / "weapon_icon_bg_5.png")
@@ -78,7 +76,6 @@ char_mask = Image.open(TEXT_PATH / "char_mask.png")
 char_mask2 = Image.open(TEXT_PATH / "char_mask.png")
 char_mask2 = char_mask2.resize((1300, char_mask2.size[1]))
 logo_img = Image.open(TEXT_PATH / "logo_small_2.png")
-pic_cache = TimedCache(600, 200)
 
 
 BOT_COLOR = [
@@ -203,7 +200,10 @@ async def draw_all_rank_card(bot: Bot, ev: Event, char: str, rank_type: str, pag
     pic_temp.paste(pic.resize((160, 160)), (10, 10))
     pic_temp = pic_temp.resize((160, 160))
 
-    tasks = [get_avatar(rank.user_id, rank.char_id) for rank in rankInfoList.data.details]
+    tasks = [
+        get_avatar(rank.user_id, getattr(rank, "sender_avatar", ""), char_id=rank.char_id)
+        for rank in rankInfoList.data.details
+    ]
     results = await asyncio.gather(*tasks)
 
     bot_color = copy.deepcopy(BOT_COLOR)
@@ -425,40 +425,3 @@ def get_breach(breach: Union[int, None], level: int):
     return breach
 
 
-async def get_avatar(
-    qid: Optional[str],
-    char_id: Union[int, str],
-) -> Image.Image:
-    char_id = randomize_special_char_id(int(char_id))
-    # 检查qid 为纯数字
-    if qid and qid.isdigit():
-        if WutheringWavesConfig.get_config("QQPicCache").data:
-            pic = pic_cache.get(qid)
-            if not pic:
-                pic = await get_qq_avatar(qid, size=100)
-                pic_cache.set(qid, pic)
-        else:
-            pic = await get_qq_avatar(qid, size=100)
-            pic_cache.set(qid, pic)
-        pic_temp = crop_center_img(pic, 120, 120)
-
-        img = Image.new("RGBA", (180, 180))
-        avatar_mask_temp = avatar_mask.copy()
-        mask_pic_temp = avatar_mask_temp.resize((120, 120))
-        img.paste(pic_temp, (0, -5), mask_pic_temp)
-    else:
-        pic = await get_square_avatar(char_id)
-
-        pic_temp = Image.new("RGBA", pic.size)
-        pic_temp.paste(pic.resize((160, 160)), (10, 10))
-        pic_temp = pic_temp.resize((160, 160))
-
-        avatar_mask_temp = avatar_mask.copy()
-        mask_pic_temp = Image.new("RGBA", avatar_mask_temp.size)
-        mask_pic_temp.paste(avatar_mask_temp, (-20, -45), avatar_mask_temp)
-        mask_pic_temp = mask_pic_temp.resize((160, 160))
-
-        img = Image.new("RGBA", (180, 180))
-        img.paste(pic_temp, (0, 0), mask_pic_temp)
-
-    return img

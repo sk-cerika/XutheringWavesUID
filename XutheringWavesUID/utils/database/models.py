@@ -37,6 +37,7 @@ exec_list.extend(
         'ALTER TABLE WavesBind ADD COLUMN pgr_uid TEXT DEFAULT ""',
         'ALTER TABLE WavesUser ADD COLUMN created_time INTEGER',
         'ALTER TABLE WavesUser ADD COLUMN last_used_time INTEGER',
+        'ALTER TABLE WavesUser ADD COLUMN avatar_url TEXT DEFAULT ""',
         'ALTER TABLE WavesUserSdk ADD COLUMN bat_expires_at INTEGER',
         "UPDATE WavesUser SET uid = COALESCE(NULLIF(uid, ''), pgr_uid) WHERE IFNULL(uid, '') = '' AND IFNULL(pgr_uid, '') != ''",
         "UPDATE WavesUser SET game_id = 2 WHERE IFNULL(pgr_uid, '') != ''",
@@ -182,6 +183,7 @@ class WavesUser(User, table=True):
     is_login: bool = Field(default=False, title="是否waves登录")
     created_time: Optional[int] = Field(default=None, title="创建时间")
     last_used_time: Optional[int] = Field(default=None, title="最后使用时间")
+    avatar_url: str = Field(default="", title="头像URL")
 
     @classmethod
     @with_session
@@ -449,6 +451,56 @@ class WavesUser(User, table=True):
 
             return True
         return False
+
+    @classmethod
+    @with_session
+    async def get_avatar_url(
+        cls: Type[T_WavesUser],
+        session: AsyncSession,
+        user_id: str,
+    ) -> str:
+        """读取该 user_id 名下任一非空头像 URL；都为空则返回空串
+
+        头像在同一后端内绑定到 user_id（如 QQ 号），跨 bot_id 任取一条非空即可。
+        """
+        sql = (
+            select(cls.avatar_url)
+            .where(
+                and_(
+                    col(cls.user_id) == user_id,
+                    col(cls.avatar_url) != null(),
+                    col(cls.avatar_url) != "",
+                )
+            )
+            .limit(1)
+        )
+        result = await session.execute(sql)
+        return result.scalar() or ""
+
+    @classmethod
+    @with_session
+    async def update_avatar_url(
+        cls: Type[T_WavesUser],
+        session: AsyncSession,
+        user_id: str,
+        bot_id: str,
+        avatar_url: str,
+    ) -> int:
+        """非空时更新该 (user_id, bot_id) 下所有行的头像 URL"""
+        if not avatar_url:
+            return 0
+        sql = (
+            update(cls)
+            .where(
+                and_(
+                    col(cls.user_id) == user_id,
+                    col(cls.bot_id) == bot_id,
+                )
+            )
+            .values(avatar_url=avatar_url)
+        )
+        result = await session.execute(sql)
+        return result.rowcount
 
     @classmethod
     @with_session

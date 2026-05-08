@@ -12,10 +12,9 @@ from gsuid_core.logger import logger
 from gsuid_core.models import Event
 from gsuid_core.utils.image.convert import convert_img
 
-from .slash_rank import get_avatar
+from .rank_avatar import get_avatar
 from .rank_badge import draw_rank_badge
 from ..utils.util import get_version, hide_uid
-from ..utils.cache import TimedCache
 from ..utils.image import (
     RED,
     GREY,
@@ -53,9 +52,7 @@ from ..utils.fonts.waves_fonts import (
 )
 
 TEXT_PATH = Path(__file__).parent / "texture2d"
-avatar_mask = Image.open(TEXT_PATH / "avatar_mask.png")
 char_mask = Image.open(TEXT_PATH / "char_mask.png")
-pic_cache = TimedCache(600, 200)
 
 
 BOT_COLOR = [

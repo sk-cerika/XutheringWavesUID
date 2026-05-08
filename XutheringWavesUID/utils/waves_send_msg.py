@@ -11,7 +11,7 @@ board_type = {}
 
 
 async def send_board_cast_msg(msgs: BoardCastMsgDict, board_cast_type: str):
-    logger.info(f"[推送] {board_cast_type} 任务启动...")
+    logger.info(f"[鸣潮·推送] {board_cast_type} 任务启动...")
     private_msg_list = msgs["private_msg_dict"]
     group_msg_list = msgs["group_msg_dict"]
 
@@ -48,9 +48,9 @@ async def send_board_cast_msg(msgs: BoardCastMsgDict, board_cast_type: str):
                         "",
                     )
         except Exception as e:
-            logger.exception(f"[推送] {qid} 私聊推送失败!错误信息", e)
+            logger.exception(f"[鸣潮·推送] {qid} 私聊推送失败!错误信息", e)
         await asyncio.sleep(0.5 + random.randint(1, 3))
-    logger.info(f"[推送] {board_cast_type} 私聊推送完成!")
+    logger.info(f"[鸣潮·推送] {board_cast_type} 私聊推送完成!")
 
     # 执行群聊推送
     for gid in group_msg_list:
@@ -79,7 +79,7 @@ async def send_board_cast_msg(msgs: BoardCastMsgDict, board_cast_type: str):
                         "",
                     )
         except Exception as e:
-            logger.exception(f"[推送] 群 {gid} 推送失败!错误信息", e)
+            logger.exception(f"[鸣潮·推送] 群 {gid} 推送失败!错误信息", e)
         await asyncio.sleep(0.5 + random.randint(1, 3))
-    logger.info(f"[推送] {board_cast_type} 群聊推送完成!")
-    logger.info(f"[推送] {board_cast_type} 任务结束!")
+    logger.info(f"[鸣潮·推送] {board_cast_type} 群聊推送完成!")
+    logger.info(f"[鸣潮·推送] {board_cast_type} 任务结束!")

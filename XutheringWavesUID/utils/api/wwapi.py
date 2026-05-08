@@ -212,6 +212,7 @@ class SlashDetailRequest(BaseModel):
     halfList: List[SlashDetail]
     rank: str
     score: int
+    sender_avatar: Optional[str] = ""
 
 
 # ------------------------------------------------------------
@@ -249,6 +250,7 @@ class SlashRank(BaseModel):
     waves_id: str  # 鸣潮id
     kuro_name: str  # 库洛用户名
     alias_name: str  # 主人别名
+    sender_avatar: Optional[str] = ""
 
 
 class SlashRankData(BaseModel):

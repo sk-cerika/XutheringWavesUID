@@ -57,7 +57,7 @@ def _load_i18n_json() -> None:
             data = json.loads(f.read_text(encoding="utf-8"))
             LOCALIZATION.update(data)
         except Exception:
-            logger.exception(f"[本地化] 加载 {f.name} 失败")
+            logger.exception(f"[鸣潮·本地化] 加载 {f.name} 失败")
 
 
 def init_localization() -> None:
@@ -68,18 +68,18 @@ def init_localization() -> None:
     _enabled = WutheringWavesConfig.get_config("EnableLocalization").data
 
     if _enabled:
-        logger.info("[本地化] 已启用，开始加载翻译字典...")
+        logger.info("[鸣潮·本地化] 已启用，开始加载翻译字典...")
         _load_i18n_json()
         # 导入各功能模块的翻译，触发注册
         from . import stamina  # noqa: F401
         from . import charinfo  # noqa: F401
         from . import stats  # noqa: F401
         _rebuild_sorted_keys()
-        logger.info(f"[本地化] 加载完成，共 {len(LOCALIZATION)} 条翻译")
+        logger.info(f"[鸣潮·本地化] 加载完成，共 {len(LOCALIZATION)} 条翻译")
     else:
         LOCALIZATION.clear()
         _rebuild_sorted_keys()
-        logger.info("[本地化] 未启用，跳过加载")
+        logger.info("[鸣潮·本地化] 未启用，跳过加载")
 
 
 def t(text: str, locale: Optional[str], partial: bool = False) -> str:

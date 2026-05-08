@@ -373,7 +373,7 @@ async def clean_cache_directories(days: int) -> str:
 async def clean_cache_(bot: Bot, ev: Event):
     """手动清理缓存指令"""
     days = WutheringWavesConfig.get_config("CacheDaysToKeep").data
-    logger.info(f"[缓存清理] 手动触发清理，保留{days}天内的文件")
+    logger.info(f"[鸣潮·缓存清理] 手动触发清理，保留{days}天内的文件")
 
     result = await clean_cache_directories(days)
     await bot.send(result)
@@ -383,10 +383,10 @@ async def clean_cache_(bot: Bot, ev: Event):
 async def waves_auto_clean_cache_daily():
     """每天凌晨3点自动清理缓存"""
     days = WutheringWavesConfig.get_config("CacheDaysToKeep").data
-    logger.info(f"[缓存清理] 定时任务: 开始清理缓存，保留{days}天内的文件")
+    logger.info(f"[鸣潮·缓存清理] 定时任务: 开始清理缓存，保留{days}天内的文件")
 
     result = await clean_cache_directories(days)
-    logger.info(f"[缓存清理] {result}")
+    logger.info(f"[鸣潮·缓存清理] {result}")
 
 
 @scheduler.scheduled_job("date")
@@ -395,10 +395,10 @@ async def waves_clean_cache_on_startup():
     await asyncio.sleep(5)
 
     days = WutheringWavesConfig.get_config("CacheDaysToKeep").data
-    logger.info(f"[缓存清理] 启动时清理，保留{days}天内的文件")
+    logger.info(f"[鸣潮·缓存清理] 启动时清理，保留{days}天内的文件")
 
     result = await clean_cache_directories(days)
-    logger.info(f"[缓存清理] {result}")
+    logger.info(f"[鸣潮·缓存清理] {result}")
 
 
 def migrate_ann_config_to_json():

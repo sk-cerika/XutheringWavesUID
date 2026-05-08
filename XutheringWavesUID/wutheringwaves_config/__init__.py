@@ -55,6 +55,8 @@ async def send_config_ev(bot: Bot, ev: Event):
 
     # 语言设置不需要绑定uid
     if "语言" in ev.text or "語言" in ev.text:
+        if not WutheringWavesConfig.get_config("EnableLocalization").data:
+            return await _say(bot, at_sender, "[鸣潮] 多语言本地化未启用，请先在配置中开启【启用多语言本地化】")
         VALID_LANGS = {"chs", "cht", "en", "jp", "kr"}
         lang = ev.text.replace("语言", "").replace("語言", "").strip().lower()
         if lang not in VALID_LANGS:

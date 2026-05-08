@@ -114,7 +114,7 @@ async def email_login_entry(bot: Bot, ev: Event):
     except asyncio.TimeoutError:
         return await bot.send("登录超时!", at_sender=at_sender)
     except Exception as e:
-        logger.exception(f"[邮箱登录] 异常: {e}")
+        logger.exception(f"[鸣潮·邮箱登录] 异常: {e}")
 
 
 async def _persist_login(
@@ -187,7 +187,7 @@ async def _maybe_set_initial_lang(user_id: str, region: str) -> None:
     if await WavesLangSettings.get_lang(user_id):
         return
     await WavesLangSettings.set_lang(user_id, target)
-    logger.info(f"[邮箱登录] user_id={user_id} 区服={region} → 初始语言 {target}")
+    logger.info(f"[鸣潮·邮箱登录] user_id={user_id} 区服={region} → 初始语言 {target}")
 
 
 class EmailLoginRequest(BaseModel):
@@ -251,7 +251,7 @@ async def waves_launcher_login(data: EmailLoginRequest):
     device_no = state.get("device_no") or str(uuid.uuid4()).upper()
     captcha = _captcha_form(data.captcha)
     logger.debug(
-        f"[邮箱登录] step=email_login email={data.email} device_no={device_no} "
+        f"[鸣潮·邮箱登录] step=email_login email={data.email} device_no={device_no} "
         f"captcha={'yes' if captcha else 'no'}"
     )
 
@@ -259,38 +259,38 @@ async def waves_launcher_login(data: EmailLoginRequest):
         data.email, data.password, device_no=device_no, captcha=captcha
     )
     if not login_resp.success or not login_resp.data:
-        logger.debug(f"[邮箱登录] email_login 失败 code={login_resp.code} msg={login_resp.msg!r}")
+        logger.debug(f"[鸣潮·邮箱登录] email_login 失败 code={login_resp.code} msg={login_resp.msg!r}")
         return {"success": False, "msg": login_resp.msg or "邮箱登录失败"}
     logger.debug(
-        f"[邮箱登录] step=exchange_token user_id={login_resp.data.user_id} "
+        f"[鸣潮·邮箱登录] step=exchange_token user_id={login_resp.data.user_id} "
         f"username={login_resp.data.username!r} login_code_len={len(login_resp.data.code or '')} "
         f"auto_token_len={len(login_resp.data.auto_token or '')}"
     )
 
     tok_resp = await sdk_api.exchange_access_token(login_resp.data.code, device_no=device_no)
     if not tok_resp.success or not tok_resp.data:
-        logger.debug(f"[邮箱登录] exchange_token 失败 code={tok_resp.code} msg={tok_resp.msg!r}")
+        logger.debug(f"[鸣潮·邮箱登录] exchange_token 失败 code={tok_resp.code} msg={tok_resp.msg!r}")
         return {"success": False, "msg": tok_resp.msg or "Token 换取失败"}
     logger.debug(
-        f"[邮箱登录] step=oauth_code access_token_len={len(tok_resp.data.access_token or '')} "
+        f"[鸣潮·邮箱登录] step=oauth_code access_token_len={len(tok_resp.data.access_token or '')} "
         f"expires_in={tok_resp.data.expires_in}"
     )
 
     oc_resp = await sdk_api.make_oauth_code(tok_resp.data.access_token, device_no=device_no)
     if not oc_resp.success or not oc_resp.data:
-        logger.debug(f"[邮箱登录] oauth_code 失败 code={oc_resp.code} msg={oc_resp.msg!r}")
+        logger.debug(f"[鸣潮·邮箱登录] oauth_code 失败 code={oc_resp.code} msg={oc_resp.msg!r}")
         return {"success": False, "msg": oc_resp.msg or "OAuth Code 生成失败"}
     logger.debug(
-        f"[邮箱登录] step=query_brief oauth_code={oc_resp.data!r}"
+        f"[鸣潮·邮箱登录] step=query_brief oauth_code={oc_resp.data!r}"
     )
 
     brief_resp = await sdk_api.query_player_brief(oc_resp.data)
     if not brief_resp.success or brief_resp.data is None:
         logger.debug(
-            f"[邮箱登录] query_brief 失败 code={brief_resp.code} msg={brief_resp.msg!r}"
+            f"[鸣潮·邮箱登录] query_brief 失败 code={brief_resp.code} msg={brief_resp.msg!r}"
         )
         return {"success": False, "msg": brief_resp.msg or "玩家信息查询失败"}
-    logger.debug(f"[邮箱登录] query_brief 成功 roles_count={len(brief_resp.data)}")
+    logger.debug(f"[鸣潮·邮箱登录] query_brief 成功 roles_count={len(brief_resp.data)}")
 
     roles = brief_resp.data
     if not roles:
@@ -313,7 +313,7 @@ async def waves_launcher_login(data: EmailLoginRequest):
         try:
             await _persist_login(state, only.role_id, only.region, only.role_name)
         except Exception as e:
-            logger.exception("[邮箱登录] 自动绑定失败")
+            logger.exception("[鸣潮·邮箱登录] 自动绑定失败")
             _mark_failed(data.auth, state, f"绑定失败：{e}")
             return {"success": False, "msg": str(e)}
 
@@ -352,7 +352,7 @@ async def waves_launcher_bind(data: EmailBindRequest):
             state, str(data.role_id), data.region, chosen.get("role_name", "")
         )
     except Exception as e:
-        logger.exception("[邮箱登录] 绑定失败")
+        logger.exception("[鸣潮·邮箱登录] 绑定失败")
         _mark_failed(data.auth, state, f"绑定失败：{e}")
         return {"success": False, "msg": str(e)}
 

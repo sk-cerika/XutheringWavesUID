@@ -172,7 +172,7 @@ def prune_gacha_backups(uid: str, type: str, limit: int = GACHA_BACKUP_LIMIT):
         try:
             old.unlink()
         except Exception as e:
-            logger.warning(f"[抽卡备份] 清理旧备份失败 {old}: {e}")
+            logger.warning(f"[鸣潮·抽卡备份] 清理旧备份失败 {old}: {e}")
 
 
 async def backup_gachalogs(uid: str, gachalogs_history: Dict, type: str):
@@ -439,7 +439,7 @@ async def export_gachalogs(uid: str) -> dict:
         async with aiofiles.open(path / f"export_{uid}.json", "w", encoding="UTF-8") as file:
             await file.write(json.dumps(result, ensure_ascii=False, indent=4))
 
-        logger.success("[导出抽卡记录] 导出成功!")
+        logger.success("[鸣潮·导出抽卡记录] 导出成功!")
         im = {
             "retcode": "ok",
             "data": "导出成功!",
@@ -447,7 +447,7 @@ async def export_gachalogs(uid: str) -> dict:
             "url": str((path / f"export_{uid}.json").absolute()),
         }
     else:
-        logger.error("[导出抽卡记录] 没有找到抽卡记录!")
+        logger.error("[鸣潮·导出抽卡记录] 没有找到抽卡记录!")
         im = {
             "retcode": "error",
             "data": "你还没有抽卡记录可以导出!",

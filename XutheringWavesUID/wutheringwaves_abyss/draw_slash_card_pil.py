@@ -331,8 +331,12 @@ async def draw_slash_img(ev: Event, uid: str, user_id: str) -> Union[bytes, str]
             )
             index += 1
 
+    sender_avatar = (ev.sender or {}).get("avatar") or ""
+    if not (isinstance(sender_avatar, str) and sender_avatar.startswith(("http://", "https://"))):
+        sender_avatar = ""
+
     await save_slash_record(uid, slash_detail)
-    await upload_slash_record(is_self_ck, uid, slash_detail)
+    await upload_slash_record(is_self_ck, uid, slash_detail, sender_avatar)
 
     card_img = add_footer(card_img, 600, 20)
     card_img = await convert_img(card_img)
@@ -357,13 +361,14 @@ async def save_slash_record(
         async with aiofiles.open(path, "w", encoding="utf-8") as file:
             await file.write(json.dumps(record_payload, ensure_ascii=False))
     except Exception as e:
-        logger.warning(f"[保存无尽数据失败] uid={uid}, error={e}")
+        logger.warning(f"[鸣潮·保存无尽数据失败] uid={uid}, error={e}")
 
 
 async def upload_slash_record(
     is_self_ck: bool,
     waves_id: str,
     slash_data: SlashDetail,
+    sender_avatar: str = "",
 ):
     from ..wutheringwaves_config import WutheringWavesConfig, PREFIX
 
@@ -415,6 +420,7 @@ async def upload_slash_record(
             "halfList": half_list,
             "rank": challenge.get_rank(),
             "score": challenge.score,
+            "sender_avatar": sender_avatar,
         }
     )
     # logger.info(f"上传冥海记录: {slash_item.model_dump()}")

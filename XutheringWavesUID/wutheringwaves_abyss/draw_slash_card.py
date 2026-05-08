@@ -250,9 +250,13 @@ async def draw_slash_img(ev: Event, uid: str, user_id: str) -> Union[bytes, str]
             "chain_colors": chain_colors,
         }
 
+        sender_avatar = (ev.sender or {}).get("avatar") or ""
+        if not (isinstance(sender_avatar, str) and sender_avatar.startswith(("http://", "https://"))):
+            sender_avatar = ""
+
         # 保存和上传记录
         await save_slash_record(uid, slash_detail)
-        await upload_slash_record(is_self_ck, uid, slash_detail)
+        await upload_slash_record(is_self_ck, uid, slash_detail, sender_avatar)
 
         logger.debug("[鸣潮] 准备通过HTML渲染冥海卡片")
         img_bytes = await render_html(waves_templates, "abyss/slash_card.html", context)

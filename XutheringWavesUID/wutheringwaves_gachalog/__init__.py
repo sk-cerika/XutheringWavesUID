@@ -56,7 +56,7 @@ def _migrate_legacy_gacha_backups():
         try:
             shutil.move(str(src), str(dst))
         except Exception as e:
-            logger.warning(f"[抽卡备份迁移] 移动失败 {src} -> {dst}: {e}")
+            logger.warning(f"[鸣潮·抽卡备份迁移] 移动失败 {src} -> {dst}: {e}")
 
     # 旧路径1: data/backup/gacha_backup/{uid}/(gacha_logs*.json)  → delete 备份
     legacy_delete_root = get_res_path() / "backup" / "gacha_backup"
@@ -145,7 +145,7 @@ async def get_gacha_log_by_link(bot: Bot, ev: Event):
                 return await bot.send(im)
 
             except Exception as e:
-                logger.exception(f"[抽卡导入] 工坊合并失败 uid={uid}: {e}")
+                logger.exception(f"[鸣潮·抽卡导入] 工坊合并失败 uid={uid}: {e}")
                 return await bot.send("处理过程中发生错误，请稍后重试")
 
         text = re.sub(r'["\n\t ]+', "", raw)
@@ -218,11 +218,11 @@ async def get_gacha_log_by_file(bot: Bot, ev: Event):
     # 没有uid 就别导了吧
     uid = await WavesBind.get_uid_by_game(ev.user_id, ev.bot_id)
     if not uid:
-        await bot.logger.info(f"[JSON导入抽卡] 用户 {ev.user_id} 未绑定UID，忽略此次导入")
+        await bot.logger.info(f"[鸣潮·JSON导入抽卡] 用户 {ev.user_id} 未绑定UID，忽略此次导入")
         return
     _, ck = await waves_api.get_ck_result(uid, ev.user_id, ev.bot_id)
     if not ck:
-        await bot.logger.info(f"[JSON导入抽卡] 用户 {ev.user_id} (UID:{uid}) 未登录或Cookie失效，忽略此次导入。这是为了避免被别人绑定uid后上传json覆盖真实玩家的抽卡数据")
+        await bot.logger.info(f"[鸣潮·JSON导入抽卡] 用户 {ev.user_id} (UID:{uid}) 未登录或Cookie失效，忽略此次导入。这是为了避免被别人绑定uid后上传json覆盖真实玩家的抽卡数据")
         return
 
     if not gacha_import_lock.acquire(f"{ev.user_id}_{uid}"):
@@ -284,7 +284,7 @@ async def delete_gacha_history(bot: Bot, ev: Event):
         try:
             shutil.move(str(gacha_log_file), dst_file)
         except Exception as e:
-            logger.exception(f"[抽卡删除] 移动失败 uid={uid}: {e}")
+            logger.exception(f"[鸣潮·抽卡删除] 移动失败 uid={uid}: {e}")
             return await bot.send("移动抽卡记录失败，请稍后重试")
         prune_gacha_backups(uid, "delete")
 

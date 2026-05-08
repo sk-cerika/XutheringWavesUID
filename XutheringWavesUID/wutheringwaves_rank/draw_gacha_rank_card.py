@@ -9,7 +9,7 @@ from gsuid_core.logger import logger
 from gsuid_core.models import Event
 from gsuid_core.utils.image.convert import convert_img
 
-from .slash_rank import get_avatar
+from .rank_avatar import get_avatar
 from .rank_badge import draw_rank_badge
 from ..utils.image import (
     RED,
@@ -32,8 +32,6 @@ from ..utils.fonts.waves_fonts import (
 from ..wutheringwaves_gachalog.draw_gachalogs import get_gacha_stats
 
 TEXT_PATH = Path(__file__).parent / "texture2d"
-avatar_mask = Image.open(TEXT_PATH / "avatar_mask.png")
-pic_cache = None
 GACHA_GREEN = (90, 220, 120)
 
 
@@ -311,7 +309,10 @@ async def draw_gacha_rank_card(bot, ev: Event) -> Union[str, bytes]:
     card_img.paste(char_mask_temp, (0, 0), char_mask_temp)
 
     # 获取头像
-    tasks = [get_avatar(rank_info.user_id) for _, rank_info in rankInfoList_display]
+    tasks = [
+        get_avatar(rank_info.user_id, getattr(rank_info, "sender_avatar", ""))
+        for _, rank_info in rankInfoList_display
+    ]
     results = await asyncio.gather(*tasks)
 
     bar = Image.open(TEXT_PATH / "bar2.png")
