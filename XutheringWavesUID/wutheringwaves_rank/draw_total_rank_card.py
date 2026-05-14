@@ -1,7 +1,7 @@
 import copy
 import time
 import asyncio
-from typing import Union, Optional
+from typing import Dict, Union, Optional
 from pathlib import Path
 
 import httpx
@@ -10,6 +10,7 @@ from PIL import Image, ImageDraw
 from gsuid_core.bot import Bot
 from gsuid_core.logger import logger
 from gsuid_core.models import Event
+from gsuid_core.pool import to_thread
 from gsuid_core.utils.image.convert import convert_img
 
 from .rank_avatar import get_avatar
@@ -162,41 +163,55 @@ async def draw_total_rank(bot: Bot, ev: Event, pages: int) -> Union[str, bytes]:
     tasks = [get_avatar(detail.user_id, getattr(detail, "sender_avatar", "")) for detail in details]
     results = await asyncio.gather(*tasks)
 
-    # 获取角色信息
+    # 预取所有角色头像（按 detail 顺序 → top10 sorted）
+    char_avatar_map: Dict[int, Image.Image] = {}
+    char_ids_to_fetch = set()
+    for detail in details:
+        if detail.char_score_details:
+            sorted_chars = sorted(detail.char_score_details, key=lambda x: x.phantom_score, reverse=True)[:10]
+            for c in sorted_chars:
+                char_ids_to_fetch.add(randomize_special_char_id(c.char_id))
+    if char_ids_to_fetch:
+        fetched = await asyncio.gather(*[get_square_avatar(cid) for cid in char_ids_to_fetch])
+        char_avatar_map = dict(zip(char_ids_to_fetch, fetched))
+
     bot_color_map = parse_bot_color_config(
         WutheringWavesConfig.get_config("BotColorMap").data
     )
-    bot_color = copy.deepcopy(BOT_COLOR)
 
-    # 绘制排行条目
+    card_img = await _compose_total_rank(
+        card_img, bar, details, results, char_avatar_map,
+        self_uid, header_height, item_spacing, width, bot_color_map,
+    )
+    return await convert_img(card_img)
+
+
+@to_thread
+def _compose_total_rank(card_img, bar, details, results, char_avatar_map,
+                        self_uid, header_height, item_spacing, width, bot_color_map):
+    bot_color = copy.deepcopy(BOT_COLOR)
     for rank_temp_index, temp in enumerate(zip(details, results)):
         detail, role_avatar = temp
         y_pos = header_height + 130 + rank_temp_index * item_spacing
 
-        # 创建条目背景
         bar_bg = bar.copy()
         bar_bg.paste(role_avatar, (100, 0), role_avatar)
         bar_draw = ImageDraw.Draw(bar_bg)
 
-        # 绘制排名
         rank_id = detail.rank
         draw_rank_badge(bar_bg, rank_id)
 
-        # 绘制玩家名字
         bar_draw.text((210, 75), f"{detail.kuro_name}", "white", waves_font_20, "lm")
 
-        # 绘制角色数量
         char_count = len(detail.char_score_details) if detail.char_score_details else 0
         bar_draw.text((210, 45), "角色数:", (255, 255, 255), waves_font_18, "lm")
         bar_draw.text((280, 45), f"{char_count}", RED, waves_font_20, "lm")
 
-        # uid
         uid_color = "white"
         if detail.waves_id == self_uid:
             uid_color = RED
         bar_draw.text((350, 40), f"特征码: {hide_uid(detail.waves_id)}", uid_color, waves_font_20, "lm")
 
-        # bot主人名字
         botName = getattr(detail, "alias_name", None)
         if botName:
             color = (54, 54, 54)
@@ -212,7 +227,6 @@ async def draw_total_rank(bot: Bot, ev: Event, pages: int) -> Union[str, bytes]:
             info_block_draw.text((100, 15), f"bot: {botName}", "white", waves_font_18, "mm")
             bar_bg.alpha_composite(info_block, (350, 66))
 
-        # 总分数
         bar_draw.text(
             (1180, 45),
             f"{detail.total_score:.1f}",
@@ -222,35 +236,30 @@ async def draw_total_rank(bot: Bot, ev: Event, pages: int) -> Union[str, bytes]:
         )
         bar_draw.text((1180, 75), "总分", "white", waves_font_16, "mm")
 
-        # 绘制角色信息
         if detail.char_score_details:
-            # 按分数排序，取前6名
             sorted_chars = sorted(detail.char_score_details, key=lambda x: x.phantom_score, reverse=True)[:10]
 
-            # 在条目底部绘制前10名角色的头像
             char_size = 40
             char_spacing = 45
             char_start_x = 570
             char_start_y = 35
 
+            char_mask_img = Image.open(TEXT_PATH / "char_mask.png")
+            char_mask_resized = char_mask_img.resize((char_size, char_size))
             for i, char in enumerate(sorted_chars):
                 char_x = char_start_x + i * char_spacing
 
-                # 获取角色头像
                 display_char_id = randomize_special_char_id(char.char_id)
-                char_avatar = await get_square_avatar(display_char_id)
+                char_avatar = char_avatar_map.get(display_char_id)
+                if char_avatar is None:
+                    continue
                 char_avatar = char_avatar.resize((char_size, char_size))
 
-                # 应用圆形遮罩
-                char_mask_img = Image.open(TEXT_PATH / "char_mask.png")
-                char_mask_resized = char_mask_img.resize((char_size, char_size))
                 char_avatar_masked = Image.new("RGBA", (char_size, char_size))
                 char_avatar_masked.paste(char_avatar, (0, 0), char_mask_resized)
 
-                # 粘贴头像
                 bar_bg.paste(char_avatar_masked, (char_x, char_start_y), char_avatar_masked)
 
-                # 绘制分数
                 score_text = f"{int(char.phantom_score)}"
                 bar_draw.text(
                     (char_x + char_size // 2, char_start_y + char_size + 2),
@@ -260,34 +269,27 @@ async def draw_total_rank(bot: Bot, ev: Event, pages: int) -> Union[str, bytes]:
                     "mm",
                 )
 
-            # 显示最高分
             if sorted_chars:
                 best_score = f"{int(sorted_chars[0].phantom_score)} "
                 bar_draw.text((1080, 45), best_score, "lightgreen", waves_font_30, "mm")
                 bar_draw.text((1080, 75), "最高分", "white", waves_font_16, "mm")
 
-        # 贴到背景
         card_img.paste(bar_bg, (0, y_pos), bar_bg)
 
-    # title
     title_bg = Image.open(TEXT_PATH / "totalrank.jpg")
     title_bg = title_bg.crop((0, 0, width, 500))
 
-    # icon
     icon = get_ICON()
     icon = icon.resize((128, 128))
     title_bg.paste(icon, (60, 240), icon)
 
-    # title
     title_text = "#练度总排行"
     title_bg_draw = ImageDraw.Draw(title_bg)
     title_bg_draw.text((220, 290), title_text, "white", waves_font_58, "lm")
     time_str = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
     title_bg_draw.text((225, 360), time_str, GREY, waves_font_20, "lm")
 
-    # 遮罩
     char_mask = Image.open(TEXT_PATH / "char_mask.png").convert("RGBA")
-    # 根据width扩图
     char_mask = char_mask.resize((width, char_mask.height * width // char_mask.width))
     char_mask = char_mask.crop((0, char_mask.height - 500, width, char_mask.height))
     char_mask_temp = Image.new("RGBA", char_mask.size, (0, 0, 0, 0))
@@ -296,4 +298,4 @@ async def draw_total_rank(bot: Bot, ev: Event, pages: int) -> Union[str, bytes]:
     card_img.paste(char_mask_temp, (0, 0), char_mask_temp)
 
     card_img = add_footer(card_img)
-    return await convert_img(card_img)
+    return card_img

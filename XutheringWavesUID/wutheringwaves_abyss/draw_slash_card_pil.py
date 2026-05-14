@@ -101,6 +101,7 @@ async def get_slash_data(uid: str, ck: str, is_self_ck: bool) -> Union[SlashDeta
         return SlashDetail.model_validate(slash_data)
 
 
+# TODO: PIL 卸到线程池 (难度/挑战/队伍多层循环里 await pic_download_from_url / draw_pic 等)
 async def draw_slash_img(ev: Event, uid: str, user_id: str) -> Union[bytes, str]:
     is_self_ck, ck = await waves_api.get_ck_result(uid, user_id, ev.bot_id)
     if not ck:

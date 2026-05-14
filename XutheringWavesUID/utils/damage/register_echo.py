@@ -12,7 +12,7 @@ from .utils import (
     liberation_damage,
 )
 from .damage import DamageAttribute
-from ...utils.damage.abstract import EchoAbstract, WavesEchoRegister
+from .abstract import EchoAbstract, WavesEchoRegister
 
 
 class Echo_390070051(EchoAbstract):

@@ -13,7 +13,7 @@ from pydantic import (
 
 from gsuid_core.logger import logger
 
-from ...utils.util import (
+from ..util import (
     get_public_ip,
     send_master_info,
     generate_random_string,
@@ -171,7 +171,7 @@ class KuroApiResp(BaseModel, Generic[T]):
     async def mark_cookie_invalid(self, uid: str, cookie: str):
         if not self.is_token_invalid:
             return
-        from ...utils.database.models import WavesUser
+        from ..database.models import WavesUser
 
         await WavesUser.mark_cookie_invalid(uid, cookie, "无效")
 

@@ -8,6 +8,7 @@ from PIL import Image, ImageDraw
 from PIL.ImageFile import ImageFile
 
 from gsuid_core.models import Event
+from gsuid_core.pool import to_thread
 from gsuid_core.utils.image.convert import convert_img
 from gsuid_core.utils.image.image_tools import crop_center_img
 
@@ -162,14 +163,67 @@ async def draw_calendar_img(ev: Event, uid: str):
         total_high += bar1_high
 
     bg = f"bg{random.choice([1, 2])}"
-    img = await get_calendar_bg(1200, total_high, bg)
+    # banner 图片预加载
+    banner_bg_img = await _load_banner_bg(wiki_home)
+
+    # 预加载活动图标
+    activity_icons = []
+    for cont in content.content if content else []:
+        if "http" in cont.contentUrl:
+            activity_icons.append(await pic_download_from_url(CALENDAR_PATH, cont.contentUrl))
+        else:
+            activity_icons.append(None)
+
+    img = await _compose_calendar_img(
+        total_high,
+        bg,
+        banner_bg_img,
+        gacha_char_list,
+        gacha_weapon_list,
+        content,
+        activity_icons,
+        now,
+        title_high,
+        banner_high,
+        bar1_high,
+        char_bar_high,
+        weapon_bar_high,
+        bar2_high,
+        event_high,
+        temp_high,
+    )
+
+    img = await convert_img(img)
+    return img
+
+
+@to_thread
+def _compose_calendar_img(
+    total_high,
+    bg,
+    banner_bg_img,
+    gacha_char_list,
+    gacha_weapon_list,
+    content,
+    activity_icons,
+    now,
+    title_high,
+    banner_high,
+    bar1_high,
+    char_bar_high,
+    weapon_bar_high,
+    bar2_high,
+    event_high,
+    temp_high,
+) -> Image.Image:
+    img = _build_calendar_bg(1200, total_high, bg)
     # title
     title_img = Image.open(TEXT_PATH / "title.png")
 
     img.paste(title_img, (0, 50), title_img)
 
     # banner
-    await draw_banner(wiki_home, img)
+    _draw_banner_sync(banner_bg_img, img)
 
     _high = title_high + banner_high
     _max_gacha_height = _high
@@ -209,7 +263,7 @@ async def draw_calendar_img(ev: Event, uid: str):
         _high += weapon_bar_high
         _high = draw_gacha(gacha_weapon_list, img, _high, x_shift=517)
         _max_gacha_height = max(_max_gacha_height, _high)
-        
+
     _high = _max_gacha_height
 
     # 活动bar
@@ -290,14 +344,11 @@ async def draw_calendar_img(ev: Event, uid: str):
                 )
 
         if "http" in cont.contentUrl:
-            # linkUrl = Image.open(
-            #     BytesIO((await sget(cont.contentUrl)).content)
-            # ).convert("RGBA")
-            #
-            linkUrl = await pic_download_from_url(CALENDAR_PATH, cont.contentUrl)
-
+            linkUrl = activity_icons[i]
         else:
             linkUrl = Image.open(TEXT_PATH / cont.contentUrl)
+        if linkUrl is None:
+            continue
         linkUrl = linkUrl.resize((100, 100))  # type: ignore
         event_bg.paste(linkUrl, (40, 40), linkUrl)
         event_bg_draw.text((160, 60), f"{cont.title}", SPECIAL_GOLD, ww_font_30, "lm")
@@ -324,7 +375,6 @@ async def draw_calendar_img(ev: Event, uid: str):
         except Exception:
             pass
 
-    img = await convert_img(img)
     return img
 
 
@@ -383,8 +433,10 @@ async def draw_calendar_gacha(side_module, gacha_type):
     return res_list
 
 
-async def draw_banner(wiki_home, img):
+async def _load_banner_bg(wiki_home):
     banners = wiki_home.get("data", {}).get("contentJson", {}).get("banner", [])
+    if not banners:
+        return None
     banner_bg = banners[0]["url"]
     for banner in banners:
         if "版本PV" in banner["describe"]:
@@ -394,9 +446,12 @@ async def draw_banner(wiki_home, img):
             banner_bg = banner["url"]
             break
 
-    # banner_bg = Image.open(BytesIO((await sget(banner_bg)).content)).convert("RGBA")
-    banner_bg = await pic_download_from_url(CALENDAR_PATH, banner_bg)
+    return await pic_download_from_url(CALENDAR_PATH, banner_bg)
 
+
+def _draw_banner_sync(banner_bg, img):
+    if banner_bg is None:
+        return
     banner_bg = banner_bg.resize((1200, 675))  # type: ignore
     banner_mask = Image.open(TEXT_PATH / "banner_mask.png")
     banner_bg = crop_center_img(banner_bg, banner_mask.size[0], banner_mask.size[1])
@@ -409,9 +464,19 @@ async def draw_banner(wiki_home, img):
     img.paste(banner_frame_img, (0, 150), banner_frame_img)
 
 
-async def get_calendar_bg(w: int, h: int, bg: str = "bg1") -> Image.Image:
+# 兼容旧调用入口（如有其他模块直接使用）
+async def draw_banner(wiki_home, img):
+    banner_bg = await _load_banner_bg(wiki_home)
+    _draw_banner_sync(banner_bg, img)
+
+
+def _build_calendar_bg(w: int, h: int, bg: str = "bg1") -> Image.Image:
     img = Image.open(TEXT_PATH / f"{bg}.jpg").convert("RGBA")
     return crop_center_img(img, w, h)
+
+
+async def get_calendar_bg(w: int, h: int, bg: str = "bg1") -> Image.Image:
+    return _build_calendar_bg(w, h, bg)
 
 
 def draw_gacha(gacha_list, img, _high, x_shift = 0):

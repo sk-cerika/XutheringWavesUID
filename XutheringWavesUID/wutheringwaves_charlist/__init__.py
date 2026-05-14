@@ -16,6 +16,15 @@ sv_waves_char_list = SV("ww角色练度统计", priority=3)
 @sv_waves_char_list.on_regex(
     r"^(\d+)?(练度|ld|练度统计|角色列表|刷新练度|刷新练度统计|刷新角色列表|updld)$",
     block=True,
+    to_ai="""查询账号下全部角色的练度统计图（按等级/共鸣链/武器精炼/声骸主词条评分排序）。
+
+当用户问「练度统计 / 我有哪些角色 / 角色列表」时调用。需绑定 cookie。
+text 也可以是「刷新练度统计」从米游社拉新后再统计（写操作）。
+可选 9 位 UID 前缀窥视别人。
+
+Args:
+    text: 例: "练度统计" / "练度" / "ld" (查自己) / "刷新练度统计" (强制刷新后统计) / "123456789练度统计" (窥视别人)。
+""",
 )
 async def send_char_list_msg_new(bot: Bot, ev: Event):
     match = re.search(

@@ -5,6 +5,7 @@ from pathlib import Path
 from PIL import Image, ImageDraw
 
 from gsuid_core.models import Event
+from gsuid_core.pool import to_thread
 from gsuid_core.utils.image.convert import convert_img
 
 from ..utils.at_help import is_intl_uid, intl_unavailable_msg
@@ -274,6 +275,13 @@ async def calc_develop_cost(
         role_detail_card = await calc_role_need_card(cost, online_role_map, online_weapon_map, content_map)
         all_card.extend(role_detail_card)
 
+    card_img = await _compose_develop_canvas(all_card)
+    card_img = await convert_img(card_img)
+    return card_img
+
+
+@to_thread
+def _compose_develop_canvas(all_card: List[Image.Image]) -> Image.Image:
     height_block = 40
     material_height = 0
     for img in all_card:
@@ -287,11 +295,20 @@ async def calc_develop_cost(
         card_img.alpha_composite(img, (20, temp_height))
         temp_height += img.size[1] + height_block
     card_img = add_footer(card_img)
-    card_img = await convert_img(card_img)
     return card_img
 
 
 async def draw_material_card(cultivate_cost_list: List[CultivateCost], title: str):
+    material_imgs = []
+    for cultivate_cost in cultivate_cost_list:
+        material_imgs.append(await get_material_img(cultivate_cost.id))
+    return await _compose_material_card(cultivate_cost_list, title, material_imgs)
+
+
+@to_thread
+def _compose_material_card(
+    cultivate_cost_list: List[CultivateCost], title: str, material_imgs: List
+) -> Image.Image:
     line_item_num = 6
     material_header_height = 120
     material_header_block_height = 20
@@ -329,13 +346,11 @@ async def draw_material_card(cultivate_cost_list: List[CultivateCost], title: st
     cultivate_cost_img.alpha_composite(material_header_img, (20, temp_high))
 
     temp_high += material_header_block_height + material_header_height
-    index = 0
-    for cultivate_cost in cultivate_cost_list:
+    for index, cultivate_cost in enumerate(cultivate_cost_list):
         temp_img = Image.new("RGBA", (material_item_width, material_item_height), (0, 0, 0, 255))
 
         material_star_img = copy.deepcopy(material_star_img_map[cultivate_cost.quality])
-        material_item_img = await get_material_img(cultivate_cost.id)
-        material_item_img = material_item_img.resize((material_item_width, material_item_width))
+        material_item_img = material_imgs[index].resize((material_item_width, material_item_width))
 
         temp_img_draw = ImageDraw.Draw(temp_img)
         temp_img_draw.text(
@@ -356,32 +371,22 @@ async def draw_material_card(cultivate_cost_list: List[CultivateCost], title: st
                 index // 6 * (material_item_height + material_item_block_height) + temp_high,
             ),
         )
-        index += 1
 
     return cultivate_cost_img
 
 
-async def calc_role_need_card(
-    role_cost_detail: RoleCostDetail,
-    online_role_map: Dict[str, OnlineRole],
-    online_weapon_map: Dict[str, OnlineWeapon],
-    content_map: Dict[str, Dict],
-):
-    img_cards = []
-    if not role_cost_detail.roleId:
-        return img_cards
-
-    if f"{role_cost_detail.roleId}" not in online_role_map or f"{role_cost_detail.roleId}" not in content_map:
-        return img_cards
-
-    online_role = online_role_map[f"{role_cost_detail.roleId}"]
-
-    content = content_map[f"{role_cost_detail.roleId}"]
+@to_thread
+def _compose_role_top_card(
+    online_role: OnlineRole,
+    online_weapon,
+    content: Dict,
+    square_avatar,
+    square_weapon,
+) -> Image.Image:
     top_bg_img = Image.open(TEXT_PATH / "top-bg.png")
     top_bg_img_draw = ImageDraw.Draw(top_bg_img)
 
     # 角色头像
-    square_avatar = await get_square_avatar(role_cost_detail.roleId)
     square_avatar = square_avatar.resize((180, 180))
     star_img = copy.deepcopy(star_img_map[online_role.starLevel])
     top_bg_img.alpha_composite(square_avatar, (70, 40))
@@ -400,10 +405,7 @@ async def calc_role_need_card(
     )
 
     # 武器
-    if content.get("weaponId", None) and role_cost_detail.weaponId:
-        online_weapon = online_weapon_map[f"{role_cost_detail.weaponId}"]
-        weapon_id = content["weaponId"]
-        square_weapon = await get_square_weapon(weapon_id)
+    if online_weapon is not None and square_weapon is not None:
         square_weapon = square_weapon.resize((180, 180))
         star_img = copy.deepcopy(star_img_map[online_weapon.weaponStarLevel])
         top_bg_img.alpha_composite(square_weapon, (530, 40))
@@ -467,6 +469,36 @@ async def calc_role_need_card(
     )
     temp_img.alpha_composite(top_bg_img, (10, 20))
     temp_img.alpha_composite(skill_img, (10, 20 + top_bg_img.size[1]))
+    return temp_img
+
+
+async def calc_role_need_card(
+    role_cost_detail: RoleCostDetail,
+    online_role_map: Dict[str, OnlineRole],
+    online_weapon_map: Dict[str, OnlineWeapon],
+    content_map: Dict[str, Dict],
+):
+    img_cards = []
+    if not role_cost_detail.roleId:
+        return img_cards
+
+    if f"{role_cost_detail.roleId}" not in online_role_map or f"{role_cost_detail.roleId}" not in content_map:
+        return img_cards
+
+    online_role = online_role_map[f"{role_cost_detail.roleId}"]
+
+    content = content_map[f"{role_cost_detail.roleId}"]
+    square_avatar = await get_square_avatar(role_cost_detail.roleId)
+
+    online_weapon = None
+    square_weapon = None
+    if content.get("weaponId", None) and role_cost_detail.weaponId:
+        online_weapon = online_weapon_map[f"{role_cost_detail.weaponId}"]
+        square_weapon = await get_square_weapon(content["weaponId"])
+
+    temp_img = await _compose_role_top_card(
+        online_role, online_weapon, content, square_avatar, square_weapon
+    )
     img_cards.append(temp_img)
 
     if role_cost_detail.allCost:

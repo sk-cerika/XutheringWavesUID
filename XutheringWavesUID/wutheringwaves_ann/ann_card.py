@@ -23,7 +23,7 @@ from .ann_card_pil import format_date
 async def ann_list_card(user_id: str = None) -> bytes:
     use_html_render = WutheringWavesConfig.get_config("UseHtmlRender").data
     if not PLAYWRIGHT_AVAILABLE or not use_html_render:
-        return await ann_list_card_pil()
+        return await ann_list_card_pil(user_id)
 
     try:
         logger.debug("[鸣潮] 正在获取公告列表...")
@@ -169,11 +169,11 @@ async def ann_list_card(user_id: str = None) -> bytes:
             return img_bytes
         else:
             logger.warning("[鸣潮] Playwright 渲染返回空, 正在回退到 PIL 渲染")
-            return await ann_list_card_pil()
+            return await ann_list_card_pil(user_id)
 
     except Exception as e:
         logger.exception(f"[鸣潮] HTML渲染失败: {e}")
-        return await ann_list_card_pil()
+        return await ann_list_card_pil(user_id)
 
 
 async def ann_detail_card(ann_id: Union[int, str], is_check_time=False) -> Union[bytes, str, List[bytes]]:

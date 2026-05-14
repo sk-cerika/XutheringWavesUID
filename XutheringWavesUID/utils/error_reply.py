@@ -14,7 +14,7 @@ WAVES_CODE_999 = -999
 ERROR_CODE = {
     WAVES_CODE_100: "库街区未查询到您的游戏角色，请检查是否对外访问",
     WAVES_CODE_101: "请检查token有效性",
-    WAVES_CODE_102: f"您还未绑定鸣潮token或者您的鸣潮token已失效！\n请使用【{PREFIX}登录】完成绑定！",
+    WAVES_CODE_102: f"您暂无有效token，无法查询该数据\n请使用【{PREFIX}登录】完成绑定！",
     WAVES_CODE_103: f"您还未绑定鸣潮特征码, 请使用【{PREFIX}绑定uid】完成绑定！",
     WAVES_CODE_104: "触发验证码！请联系主人查看",
     WAVES_CODE_106: "您未打开库街区我得资料的对外展示",

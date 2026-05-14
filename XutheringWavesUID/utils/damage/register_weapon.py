@@ -20,7 +20,7 @@ from .utils import (
     liberation_damage,
 )
 from .damage import DamageAttribute, calc_percent_expression, check_char_id
-from ..damage.abstract import WeaponAbstract, WavesWeaponRegister
+from .abstract import WeaponAbstract, WavesWeaponRegister
 
 
 class Weapon_21010011(WeaponAbstract):

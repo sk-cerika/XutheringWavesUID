@@ -193,7 +193,17 @@ async def get_gacha_log_by_link(bot: Bot, ev: Event):
         gacha_import_lock.release(f"{ev.user_id}_{uid}")
 
 
-@sv_gacha_log.on_fullmatch(("抽卡记录", "查看抽卡记录", "gacha", "ckjl"))
+@sv_gacha_log.on_fullmatch(
+    ("抽卡记录", "查看抽卡记录", "gacha", "ckjl"),
+    to_ai="""查询用户已导入的鸣潮抽卡记录统计图（各卡池总抽数、距离保底、出货历史、欧非指数等）。
+
+当用户问「我的抽卡 / 抽卡记录 / 出货怎样 / 多少保底了」时调用。需绑定 cookie + 已导入抽卡记录。
+若没有抽卡数据，AI 应告知用户先 `抽卡帮助` 看如何导入。
+
+Args:
+    text: 无需参数。
+""",
+)
 async def send_gacha_log_card_info(bot: Bot, ev: Event):
     await bot.logger.info("[鸣潮]开始执行 抽卡记录")
     uid = await WavesBind.get_uid_by_game(ev.user_id, ev.bot_id)
@@ -313,6 +323,16 @@ async def delete_import_gacha_files(bot: Bot, ev: Event):
 @sv_gacha_rank.on_command(
     ("抽卡排行", "抽卡排名", "群抽卡排行", "群抽卡排名", "ckph", "ckpm"),
     block=True,
+    to_ai="""查询本群抽卡排行（要求在群聊中使用）。
+
+当用户在群聊问「群里谁最欧 / 抽卡排行欧 / 谁抽得最多」时调用。
+text 可附筛选: "欧" (按5星出货数) / "非" (按歪4星比例) / "抽数" (按总抽数)。
+
+私聊调用会被拒绝。
+
+Args:
+    text: 可选 "欧" / "非" / "抽数"，留空默认按抽数。
+""",
 )
 async def send_gacha_rank_info(bot: Bot, ev: Event):
     if not ev.group_id:

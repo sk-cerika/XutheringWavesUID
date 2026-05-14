@@ -26,12 +26,19 @@ def timed_async_cache(expiration, condition=lambda x: True):
         is_cls_method = params and params[0] in ["self", "cls"]
 
         @wraps(func)
-        async def wrapper(*args):
+        async def wrapper(*args, **kwargs):
             current_time = time.time()
             if is_cls_method and args and hasattr(args[0], "__class__"):
-                cache_key = f"{args[0].__class__.__name__}.{func.__name__}"
+                base_key = f"{args[0].__class__.__name__}.{func.__name__}"
+                key_args = args[1:]
             else:
-                cache_key = func.__name__
+                base_key = func.__name__
+                key_args = args
+            try:
+                cache_key = (base_key, key_args, tuple(sorted(kwargs.items())))
+                hash(cache_key)
+            except TypeError:
+                cache_key = (base_key, repr(key_args), repr(sorted(kwargs.items())))
 
             # 为每个缓存键创建一个锁
             if cache_key not in locks:
@@ -52,7 +59,7 @@ def timed_async_cache(expiration, condition=lambda x: True):
                         return value
 
                 # 执行原始函数
-                value = await func(*args)
+                value = await func(*args, **kwargs)
                 if condition(value):
                     cache[cache_key] = (value, current_time)
                 return value
@@ -255,7 +262,7 @@ def get_version(dynamic: bool = False, **kwargs):
     from ..version import XutheringWavesUID_version
 
     if dynamic:
-        from ..utils.safety import generate_dynamic_version
+        from .safety import generate_dynamic_version
 
         dynamic_version = generate_dynamic_version(**kwargs)
         return XutheringWavesUID_version + dynamic_version

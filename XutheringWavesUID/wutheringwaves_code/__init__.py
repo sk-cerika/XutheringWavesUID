@@ -17,7 +17,16 @@ invalid_code_list = ("MINGCHAO",)
 url = "https://newsimg.5054399.com/comm/mlcxqcommon/static/wap/js/data_102.js?{}&callback=?&_={}"
 
 
-@sv_waves_code.on_fullmatch(("code", "兑换码", "兌換碼"))
+@sv_waves_code.on_fullmatch(
+    ("code", "兑换码", "兌換碼"),
+    to_ai="""查询鸣潮当前所有可用的兑换码 + 奖励内容 + 过期时间。
+
+当用户问「有什么兑换码 / 前瞻兑换码」时调用。不需要绑定。
+
+Args:
+    text: 无需参数，留空即可。
+""",
+)
 async def get_sign_func(bot: Bot, ev: Event):
     code_list = await get_code_list()
     if not code_list:

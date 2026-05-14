@@ -4,6 +4,7 @@ from pathlib import Path
 
 from PIL import Image
 
+from gsuid_core.pool import to_thread
 from gsuid_core.help.model import PluginHelp
 from gsuid_core.help.draw_new_plugin_help import get_new_help
 
@@ -48,21 +49,36 @@ async def get_change_help(pm: int):
     else:
         plugin_icon_path = ICON
 
+    plugin_icon, banner_bg, help_bg, cag_bg, item_bg = await _load_change_help_images(
+        plugin_icon_path, banner_bg_path, help_bg_path
+    )
+
     return await get_new_help(
         plugin_name="XutheringWavesUID",
         plugin_info={f"v{XutheringWavesUID_version}": ""},
-        plugin_icon=Image.open(plugin_icon_path).convert("RGBA"),
+        plugin_icon=plugin_icon,
         plugin_help=plugin_help,
         plugin_prefix=PREFIX,
         help_mode="dark",
-        banner_bg=Image.open(banner_bg_path).convert("RGBA"),
+        banner_bg=banner_bg,
         banner_sub_text="面板替换帮助",
-        help_bg=Image.open(help_bg_path).convert("RGBA"),
-        cag_bg=Image.open(TEXT_PATH / "cag_bg.png").convert("RGBA"),
-        item_bg=Image.open(TEXT_PATH / "item.png").convert("RGBA"),
+        help_bg=help_bg,
+        cag_bg=cag_bg,
+        item_bg=item_bg,
         icon_path=ICON_PATH,
         footer=get_footer(),
         enable_cache=False,
         column=column_config,
         pm=pm,
+    )
+
+
+@to_thread
+def _load_change_help_images(plugin_icon_path: Path, banner_bg_path: Path, help_bg_path: Path):
+    return (
+        Image.open(plugin_icon_path).convert("RGBA"),
+        Image.open(banner_bg_path).convert("RGBA"),
+        Image.open(help_bg_path).convert("RGBA"),
+        Image.open(TEXT_PATH / "cag_bg.png").convert("RGBA"),
+        Image.open(TEXT_PATH / "item.png").convert("RGBA"),
     )

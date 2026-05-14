@@ -1,22 +1,23 @@
+import asyncio
 import json
-import math
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 
-from gsuid_core.logger import logger
 from gsuid_core.models import Event
 
 from ..utils.api.model import AccountBaseInfo, SignInInitData, SignInSurfaceData
 from ..utils.api.request_util import KuroApiResp
 from ..utils.at_help import ruser_id
 from ..utils.util import get_hide_uid_pref, hide_uid
-from ..utils.error_reply import ERROR_CODE, WAVES_CODE_102, WAVES_CODE_103
-from ..utils.render_utils import render_html, get_image_b64_with_cache
+from ..utils.error_reply import ERROR_CODE, WAVES_CODE_102
+from ..utils.render_utils import render_html, get_image_b64_with_cache, get_footer_b64, PLAYWRIGHT_AVAILABLE
 from ..utils.resource.RESOURCE_PATH import (
     SIGN_SURFACE_PATH,
     waves_templates,
 )
 from ..utils.waves_api import waves_api
+from ..wutheringwaves_config.wutheringwaves_config import WutheringWavesConfig
+from .draw_sign_calendar_pil import _format_loop_range, render_sign_calendar_pil
 
 
 async def draw_sign_calendar(uid: str, ev: Event) -> Optional[bytes | str]:
@@ -25,9 +26,6 @@ async def draw_sign_calendar(uid: str, ev: Event) -> Optional[bytes | str]:
     if not ck:
         return ERROR_CODE[WAVES_CODE_102]
     user_pref = await get_hide_uid_pref(uid, user_id, ev.bot_id)
-
-    # 并行请求三个 API
-    import asyncio
 
     sign_init_res, surface_res, base_info_res = await asyncio.gather(
         waves_api.get_sign_in_init(uid, ck),
@@ -70,6 +68,23 @@ async def draw_sign_calendar(uid: str, ev: Event) -> Optional[bytes | str]:
     main_bgColor = font_style.get("main_bgColor", "#D9C7BA")
     month_textColor = font_style.get("month_textColor", "#1d1d1d")
     cycle_titleColor = font_style.get("cycle_titleColor", "#E58A4E")
+    cycle_timeTextColor = font_style.get("cycle_timeTextColor", "#666666")
+
+    # 计算当前月份 (0点更新, CN tz)
+    cn_tz = timezone(timedelta(hours=8))
+    month = datetime.now(cn_tz).month
+
+    # UseHtmlRender 关 / Playwright 不可用 → 走 PIL 分支
+    use_html_render = WutheringWavesConfig.get_config("UseHtmlRender").data
+    if not PLAYWRIGHT_AVAILABLE or not use_html_render:
+        return await render_sign_calendar_pil(
+            sign_data=sign_data,
+            img_info=img_info,
+            font_style=font_style,
+            role_name=role_name,
+            uid_display=hide_uid(uid, user_pref=user_pref),
+            month=month,
+        )
 
     # 下载素材图片 (download with cache, 大背景 bake)
     cover_bg = await get_image_b64_with_cache(
@@ -97,11 +112,37 @@ async def draw_sign_calendar(uid: str, ev: Event) -> Optional[bytes | str]:
         img_info.get("month_hadSignInBg", ""), SIGN_SURFACE_PATH
     )
 
-    # 计算当前月份和今天是第几天 (0点更新)
-    cn_tz = timezone(timedelta(hours=8))
-    now = datetime.now(cn_tz)
-    month = now.month
-    today_day = now.day  # 1-based
+    # 限时签到（loop）资源 — 仅在活动存在时拉取
+    cycle_bg = None
+    loop_card_bg = None
+    cycle_process_grey = None
+    cycle_process_light = None
+    loop_items = []
+    if sign_data.signLoopGoodsList and sign_data.loopSignNum > 0:
+        cycle_bg = await get_image_b64_with_cache(
+            img_info.get("cycle_bg", ""), SIGN_SURFACE_PATH
+        )
+        loop_card_bg = await get_image_b64_with_cache(
+            img_info.get("common_priceBg", ""), SIGN_SURFACE_PATH
+        )
+        cycle_process_grey = await get_image_b64_with_cache(
+            img_info.get("cycle_process_grey", ""), SIGN_SURFACE_PATH
+        )
+        cycle_process_light = await get_image_b64_with_cache(
+            img_info.get("cycle_process_light", ""), SIGN_SURFACE_PATH
+        )
+
+        for goods in sorted(sign_data.signLoopGoodsList, key=lambda g: g.serialNum):
+            icon = await get_image_b64_with_cache(goods.goodsUrl, SIGN_SURFACE_PATH)
+            loop_items.append(
+                {
+                    "day": goods.serialNum + 1,
+                    "icon": icon,
+                    "num": goods.goodsNum,
+                    "name": goods.goodsName,
+                    "is_gained": goods.isGain,
+                }
+            )
 
     # 构建日历行, 每行 4 个
     goods_list = sign_data.signInGoodsConfigs
@@ -143,6 +184,7 @@ async def draw_sign_calendar(uid: str, ev: Event) -> Optional[bytes | str]:
         "main_bgColor": main_bgColor,
         "month_textColor": month_textColor,
         "cycle_titleColor": cycle_titleColor,
+        "cycle_timeTextColor": cycle_timeTextColor,
         "role_name": role_name,
         "uid": hide_uid(uid, user_pref=user_pref),
         "month": month,
@@ -157,6 +199,16 @@ async def draw_sign_calendar(uid: str, ev: Event) -> Optional[bytes | str]:
         "today_no_sign": today_no_sign,
         "had_sign_in_bg": had_sign_in_bg,
         "rows": rows,
+        "loop_sign_name": sign_data.loopSignName,
+        "loop_time_text": _format_loop_range(
+            sign_data.loopStartTimes, sign_data.loopEndTimes
+        ),
+        "loop_items": loop_items,
+        "cycle_bg": cycle_bg,
+        "loop_card_bg": loop_card_bg,
+        "cycle_process_grey": cycle_process_grey,
+        "cycle_process_light": cycle_process_light,
+        "footer_b64": get_footer_b64(footer_type="white") or "",
     }
 
     img = await render_html(waves_templates, "sign/sign_calendar.html", context)

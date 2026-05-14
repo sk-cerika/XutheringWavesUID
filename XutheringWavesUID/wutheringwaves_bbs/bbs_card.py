@@ -12,6 +12,37 @@ from ..utils.render_utils import (
     get_image_b64_with_cache,
     render_html,
 )
+from .bbs_card_pil import kuro_coin_card_pil
+
+
+def _format_coin_text(user_name: str, user_id: str, gold_num: int) -> str:
+    text = f"用户名: {user_name}\n"
+    if user_id:
+        text += f"库街区ID: {user_id}\n"
+    text += f"库洛币余额: {gold_num}"
+    return text
+
+
+async def _kuro_coin_pil_fallback(
+    user_name: str,
+    user_id: str,
+    head_url: str,
+    head_frame_url: str,
+    gold_num: int,
+    signature: str,
+) -> Union[bytes, str]:
+    try:
+        return await kuro_coin_card_pil(
+            user_name,
+            user_id,
+            head_url,
+            head_frame_url,
+            gold_num,
+            signature,
+        )
+    except Exception as e:
+        logger.exception(f"[鸣潮] 库洛币PIL渲染失败: {e}")
+        return _format_coin_text(user_name, user_id, gold_num)
 
 
 async def kuro_coin_card(cookie: str) -> Union[bytes, str]:
@@ -41,12 +72,14 @@ async def kuro_coin_card(cookie: str) -> Union[bytes, str]:
 
         use_html_render = WutheringWavesConfig.get_config("UseHtmlRender").data
         if not PLAYWRIGHT_AVAILABLE or not use_html_render:
-            # 返回纯文本格式
-            text = f"用户名: {user_name}\n"
-            if user_id:
-                text += f"库街区ID: {user_id}\n"
-            text += f"库洛币余额: {gold_num}"
-            return text
+            return await _kuro_coin_pil_fallback(
+                user_name,
+                user_id,
+                head_url,
+                head_frame_url,
+                gold_num,
+                signature,
+            )
 
         # 获取 coin.png 的 base64
         coin_path = Path(__file__).parent / "texture2d" / "coin.png"
@@ -73,16 +106,22 @@ async def kuro_coin_card(cookie: str) -> Union[bytes, str]:
         }
 
         logger.debug(f"[鸣潮] 正在渲染库洛币卡片: {user_name}, 库洛币: {gold_num}")
-        img = await render_html(waves_templates, "bbs_coin.html", context)
+        try:
+            img = await render_html(waves_templates, "bbs_coin.html", context)
+        except Exception as e:
+            logger.exception(f"[鸣潮] 库洛币HTML渲染失败: {e}")
+            img = None
 
         if img is None:
-            # 渲染失败，回退到纯文本
-            logger.warning("[鸣潮] 库洛币卡片渲染失败，回退到纯文本")
-            text = f"用户名: {user_name}\n"
-            if user_id:
-                text += f"库街区ID: {user_id}\n"
-            text += f"库洛币余额: {gold_num}"
-            return text
+            logger.warning("[鸣潮] 库洛币HTML渲染失败，回退到PIL")
+            return await _kuro_coin_pil_fallback(
+                user_name,
+                user_id,
+                head_url,
+                head_frame_url,
+                gold_num,
+                signature,
+            )
 
         logger.info(f"[鸣潮] 库洛币卡片生成成功: {user_name}")
         return img

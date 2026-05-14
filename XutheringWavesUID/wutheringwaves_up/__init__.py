@@ -2,7 +2,7 @@ from gsuid_core.sv import SV
 from gsuid_core.bot import Bot
 from gsuid_core.models import Event
 
-from ..wutheringwaves_up.pool import get_pool_data_by_type
+from .pool import get_pool_data_by_type
 
 sv_pool_countdown = SV("鸣潮卡池倒计时")
 
@@ -21,7 +21,15 @@ sv_pool_countdown = SV("鸣潮卡池倒计时")
         "未復刻角色統計",
         "未復刻武器",
         "未復刻武器統計",
-    )
+    ),
+    to_ai="""查询鸣潮未复刻角色或武器倒计时一览图。
+
+当用户问「哪些角色还没复刻 / 武器复刻倒计时 / 未复刻5星 / 卡池倒计时」时调用。
+命令字本身决定查角色还是武器（"未复刻角色" vs "未复刻武器"）。text 可附星级。
+
+Args:
+    text: 可选 "4" 或 "5"，默认 5 星。
+""",
 )
 async def get_pool_countdown(bot: Bot, ev: Event):
     star = 5

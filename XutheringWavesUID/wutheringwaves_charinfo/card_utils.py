@@ -8,6 +8,7 @@ from typing import Dict, Iterable, List, Optional, Tuple
 
 from PIL import Image
 from gsuid_core.logger import logger
+from gsuid_core.pool import to_thread
 
 from . import card_hash_index
 from .card_hash_index import compute_hash as get_hash_id  # 对外别名, 旧 import 不破
@@ -156,6 +157,85 @@ def _compute_orb_features_from_image(image: Image.Image):
     return pts, descriptors
 
 
+@to_thread
+def _match_one_image_orb(
+    image_bytes: bytes,
+    search_types: List[str],
+    target_type: str,
+    char_id: Optional[str],
+) -> Tuple[float, Optional[Path], Optional[str]]:
+    """单张候选图片的 ORB 处理 + 库内匹配, 全部同步, 用线程池执行避免阻塞 loop"""
+    try:
+        image = Image.open(BytesIO(image_bytes)).convert("RGB")
+    except Exception:
+        return 0.0, None, None
+
+    if image.width > image.height:
+        crop_boxes = [CROP_LANDSCAPE]
+    else:
+        crop_boxes = [CROP_PORTRAIT]
+        if image.height > 4000:
+            left0, top0, right0, bottom0 = CROP_PORTRAIT
+            crop_boxes.append((left0, top0 + 875, right0, bottom0 + 875))
+
+    best_sim = 0.0
+    best_path: Optional[Path] = None
+    best_char_id: Optional[str] = None
+
+    for crop_box in crop_boxes:
+        left, top, right, bottom = crop_box
+
+        if left >= image.width or top >= image.height:
+            crop = image
+        else:
+            left = max(0, left)
+            top = max(0, top)
+            right = min(right, image.width)
+            bottom = min(bottom, image.height)
+            if right <= left or bottom <= top:
+                crop = image
+            else:
+                crop = image.crop((left, top, right, bottom))
+        crop = crop.resize((crop.width * 2, crop.height * 2), Image.Resampling.LANCZOS)
+        feat_new = _compute_orb_features_from_image(crop)
+        if feat_new is None:
+            continue
+
+        for current_type in search_types:
+            if char_id:
+                char_dirs = [CUSTOM_PATH_MAP.get(current_type, CUSTOM_CARD_PATH) / f"{char_id}"]
+            else:
+                char_dirs = []
+                base = CUSTOM_PATH_MAP.get(current_type, CUSTOM_CARD_PATH)
+                if base.exists():
+                    for d in base.iterdir():
+                        if d.is_dir():
+                            char_dirs.append(d)
+
+            for dir_path in char_dirs:
+                if not dir_path.exists():
+                    continue
+                for img_path in _iter_images(dir_path):
+                    feat_old = get_orb_features(img_path)
+                    if feat_old is None:
+                        continue
+                    sim = _orb_similarity(feat_new, feat_old)
+                    if sim is None:
+                        continue
+                    if sim > best_sim:
+                        best_sim = sim
+                        best_path = img_path
+                        best_char_id = dir_path.name
+
+            if best_sim >= ORB_THRESHOLD:
+                break
+
+        if best_sim >= ORB_THRESHOLD:
+            break
+
+    return best_sim, best_path, best_char_id
+
+
 async def match_hash_id_from_event(
     ev: Event,
     target_type: str,
@@ -173,7 +253,6 @@ async def match_hash_id_from_event(
     best_path: Optional[Path] = None
     best_char_id: Optional[str] = None
 
-    # 定义搜索顺序：先搜索目标类型，如果找不到则搜索其他类型
     search_types = [target_type]
     other_types = [t for t in ["card", "bg", "stamina"] if t != target_type]
     search_types.extend(other_types)
@@ -182,72 +261,11 @@ async def match_hash_id_from_event(
         image_bytes = await _fetch_image_bytes(url)
         if not image_bytes:
             continue
-        try:
-            image = Image.open(BytesIO(image_bytes)).convert("RGB")
-        except Exception:
-            continue
-
-        if image.width > image.height:
-            crop_boxes = [CROP_LANDSCAPE]
-        else:
-            crop_boxes = [CROP_PORTRAIT]
-            if image.height > 4000:
-                left0, top0, right0, bottom0 = CROP_PORTRAIT
-                crop_boxes.append((left0, top0 + 875, right0, bottom0 + 875))
-
-        for crop_box in crop_boxes:
-            left, top, right, bottom = crop_box
-
-            if left >= image.width or top >= image.height:
-                crop = image
-            else:
-                left = max(0, left)
-                top = max(0, top)
-                right = min(right, image.width)
-                bottom = min(bottom, image.height)
-                if right <= left or bottom <= top:
-                    crop = image
-                else:
-                    crop = image.crop((left, top, right, bottom))
-            crop = crop.resize((crop.width * 2, crop.height * 2), Image.Resampling.LANCZOS)
-            feat_new = _compute_orb_features_from_image(crop)
-            if feat_new is None:
-                continue
-
-            # 按照类型顺序搜索
-            for current_type in search_types:
-                if char_id:
-                    char_dirs = [CUSTOM_PATH_MAP.get(current_type, CUSTOM_CARD_PATH) / f"{char_id}"]
-                else:
-                    char_dirs = []
-                    base = CUSTOM_PATH_MAP.get(current_type, CUSTOM_CARD_PATH)
-                    if base.exists():
-                        for d in base.iterdir():
-                            if d.is_dir():
-                                char_dirs.append(d)
-
-                for dir_path in char_dirs:
-                    if not dir_path.exists():
-                        continue
-                    for img_path in _iter_images(dir_path):
-                        feat_old = get_orb_features(img_path)
-                        if feat_old is None:
-                            continue
-                        sim = _orb_similarity(feat_new, feat_old)
-                        if sim is None:
-                            continue
-                        if sim > best_sim:
-                            best_sim = sim
-                            best_path = img_path
-                            best_char_id = dir_path.name
-
-                # 如果在当前类型找到了足够相似的结果，停止搜索其他类型
-                if best_sim >= ORB_THRESHOLD:
-                    break
-
-            # 如果已找到匹配，不再尝试其他裁剪区域
-            if best_sim >= ORB_THRESHOLD:
-                break
+        sim, path, c_id = await _match_one_image_orb(image_bytes, search_types, target_type, char_id)
+        if sim > best_sim:
+            best_sim = sim
+            best_path = path
+            best_char_id = c_id
 
     if best_path is None or best_char_id is None:
         return None

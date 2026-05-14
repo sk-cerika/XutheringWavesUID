@@ -311,6 +311,7 @@ async def filter_active_group_users(
     return [user for user in users if user.user_id in active_user_ids]
 
 
+# TODO: PIL 卸到线程池 (loop body 多处 await get_attribute / get_square_weapon / get_attribute_effect, 重构成本大)
 async def draw_rank_img(bot: Bot, ev: Event, char: str, rank_type: str) -> Union[str, bytes]:
     char_id = char_name_to_char_id(char)
     if not char_id:

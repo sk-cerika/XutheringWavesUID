@@ -4,7 +4,7 @@ from typing import List, Union, Optional
 
 from gsuid_core.logger import logger
 
-from ...utils.damage.damage import DamageAttribute
+from .damage import DamageAttribute
 
 # 跨命名空间共享: 锚定到 sys.modules 防止 abstract.py 在新命名空间重 exec 时
 # 五个 Register 子类拿到全新空 dict。
@@ -68,7 +68,7 @@ class WeaponAbstract(object):
         weapon_breach: Union[int, None] = None,
         weapon_reson_level: int = 1,
     ):
-        from ...utils.ascension.weapon import (
+        from ..ascension.weapon import (
             WavesWeaponResult,
             get_weapon_detail,
         )

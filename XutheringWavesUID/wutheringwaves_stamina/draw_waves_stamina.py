@@ -10,6 +10,7 @@ from PIL import Image, ImageDraw
 from gsuid_core.bot import Bot
 from gsuid_core.logger import logger
 from gsuid_core.models import Event
+from gsuid_core.pool import to_thread
 from gsuid_core.utils.image.convert import convert_img
 from gsuid_core.utils.image.image_tools import crop_center_img
 
@@ -212,12 +213,14 @@ async def draw_stamina_img(bot: Bot, ev: Event):
         if len(valid_daily_list) == 0:
             return ERROR_CODE[WAVES_CODE_102]
 
-        # 开始绘图任务
-        task = []
-        img = Image.new("RGBA", (based_w, based_h * len(valid_daily_list)), (0, 0, 0, 0))
-        for uid_index, valid in enumerate(valid_daily_list):
-            task.append(_draw_all_stamina_img(ev, img, valid, uid_index, locale))
-        await asyncio.gather(*task)
+        # 各 UID 并发渲染各自的 stamina_img, 主流程串行 paste 到画布,
+        # 避免多个 to_thread 并发写同一 PIL Image (PIL paste 非线程安全)
+        stamina_imgs = await asyncio.gather(
+            *(_draw_stamina_img(ev, valid, locale) for valid in valid_daily_list)
+        )
+        img = await asyncio.to_thread(
+            _assemble_stamina_canvas, stamina_imgs, based_w, based_h
+        )
         res = await convert_img(img)
         logger.info("[鸣潮][每日信息]绘图已完成,等待发送!")
     except TypeError:
@@ -227,10 +230,12 @@ async def draw_stamina_img(bot: Bot, ev: Event):
     return res
 
 
-async def _draw_all_stamina_img(ev: Event, img: Image.Image, valid: Dict, index: int, locale: str = ""):
-    stamina_img = await _draw_stamina_img(ev, valid, locale)
-    stamina_img = stamina_img.convert("RGBA")
-    img.paste(stamina_img, (0, based_h * index), stamina_img)
+def _assemble_stamina_canvas(stamina_imgs: list, canvas_w: int, row_h: int) -> Image.Image:
+    img = Image.new("RGBA", (canvas_w, row_h * len(stamina_imgs)), (0, 0, 0, 0))
+    for index, stamina_img in enumerate(stamina_imgs):
+        rgba = stamina_img.convert("RGBA")
+        img.paste(rgba, (0, row_h * index), rgba)
+    return img
 
 
 async def _draw_stamina_img(ev: Event, valid: Dict, locale: str = "") -> Image.Image:
@@ -441,6 +446,41 @@ async def _draw_stamina_img(ev: Event, valid: Dict, locale: str = "") -> Image.I
     )
 
 
+@to_thread
+def _prepare_stamina_b64_assets(pile: Image.Image, avatar: Image.Image) -> Dict[str, str]:
+    def load_b64(filename, quality=0):
+        try:
+            p = TEXT_PATH / filename
+            if p.exists():
+                return pil_to_b64(Image.open(p), quality=quality)
+        except Exception:
+            return ""
+        return ""
+
+    def compress_and_b64(img: Image.Image) -> str:
+        try:
+            max_size = 1150
+            if img.width > max_size or img.height > max_size:
+                # thumbnail 原地修改, 用 copy 避免污染调用方的 pile (HTML 失败回退 PIL 时仍要原图)
+                resized = img.copy()
+                resized.thumbnail((max_size, max_size), Image.LANCZOS)
+                return pil_to_b64(resized, quality=75)
+            return pil_to_b64(img, quality=75)
+        except Exception:
+            return pil_to_b64(img)
+
+    return {
+        "yes_icon_b64": load_b64("yes.png"),
+        "no_icon_b64": load_b64("no.png"),
+        "stamina_icon_b64": load_b64("结晶波片.png"),
+        "store_icon_b64": load_b64("结晶单质.png"),
+        "liveness_icon_b64": load_b64("活跃度.png"),
+        "bg_url_b64": load_b64("bg.jpg", quality=75),
+        "pile_b64": compress_and_b64(pile),
+        "avatar_b64": pil_to_b64(avatar, quality=75),
+    }
+
+
 async def _render_stamina_card(
     ev: Event,
     pile: Image.Image,
@@ -463,33 +503,15 @@ async def _render_stamina_card(
     color_red = URGENT_COLOR
     color_yellow = "#FFCB3B"
     
-    # 加载本地资源并转Base64
-    def load_b64(filename, quality=0):
-        try:
-            p = TEXT_PATH / filename
-            if p.exists():
-                return pil_to_b64(Image.open(p), quality=quality)
-        except Exception:
-            return ""
-        return ""
-
-    # 压缩图片并转Base64
-    def compress_and_b64(img: Image.Image) -> str:
-        try:
-            max_size = 1150
-            if img.width > max_size or img.height > max_size:
-                img.thumbnail((max_size, max_size), Image.LANCZOS)
-            return pil_to_b64(img, quality=75)
-        except Exception:
-            return pil_to_b64(img)
-
-    yes_icon_b64 = load_b64("yes.png")
-    no_icon_b64 = load_b64("no.png")
-    
-    stamina_icon_b64 = load_b64("结晶波片.png")
-    store_icon_b64 = load_b64("结晶单质.png")
-    liveness_icon_b64 = load_b64("活跃度.png")
-    bg_url_b64 = load_b64("bg.jpg", quality=75)
+    b64_assets = await _prepare_stamina_b64_assets(pile, avatar)
+    yes_icon_b64 = b64_assets["yes_icon_b64"]
+    no_icon_b64 = b64_assets["no_icon_b64"]
+    stamina_icon_b64 = b64_assets["stamina_icon_b64"]
+    store_icon_b64 = b64_assets["store_icon_b64"]
+    liveness_icon_b64 = b64_assets["liveness_icon_b64"]
+    bg_url_b64 = b64_assets["bg_url_b64"]
+    pile_b64 = b64_assets["pile_b64"]
+    avatar_b64 = b64_assets["avatar_b64"]
     
     # 体力
     stamina_cur = daily_info.energyData.cur
@@ -586,8 +608,8 @@ async def _render_stamina_card(
         "user_name": daily_info.roleName,
         "role_id": daily_info.roleId,
         "uid": hide_uid(daily_info.roleId, user_pref=user_pref),
-        "avatar_url": pil_to_b64(avatar, quality=75),
-        "pile_url": compress_and_b64(pile),
+        "avatar_url": avatar_b64,
+        "pile_url": pile_b64,
         "has_bg": has_bg,
         "show_sign_in": show_sign_in,
         "show_rogue": show_rogue,
@@ -678,7 +700,8 @@ async def _render_stamina_card(
     return None
 
 
-async def _render_stamina_card_pil(
+@to_thread
+def _render_stamina_card_pil(
     img: Image.Image,
     info: Image.Image,
     base_info_bg: Image.Image,
@@ -880,7 +903,11 @@ async def _render_stamina_card_pil(
 
 async def draw_pic_with_ring(ev: Event):
     pic = await get_event_avatar(ev)
+    return await _compose_pic_with_ring(pic)
 
+
+@to_thread
+def _compose_pic_with_ring(pic: Image.Image) -> Image.Image:
     mask_pic = Image.open(TEXT_PATH / "avatar_mask.png")
     img = Image.new("RGBA", (200, 200))
     mask = mask_pic.resize((160, 160))

@@ -21,6 +21,7 @@ from ..utils.image import (
     pil_to_b64,
     get_custom_waves_bg,
 )
+from .char_alias_pil import draw_char_alias_pil
 
 
 class CharAliasOps:
@@ -100,19 +101,20 @@ async def char_alias_list(char_name: str) -> Union[str, bytes]:
     
     alias_list = [std_char_name] + [alias for alias in alias_list if alias != std_char_name]
 
+    avatar_url = ""
+    char_id = char_name_to_char_id(std_char_name)
+    if char_id:
+        try:
+            avatar = await get_square_avatar(char_id)
+            avatar_url = pil_to_b64(avatar, quality=75)
+        except Exception as e:
+            logger.warning(f"[鸣潮] 角色【{std_char_name}】头像读取失败: {e}")
+
     # 尝试HTML渲染
     use_html_render = WutheringWavesConfig.get_config("UseHtmlRender").data
     if PLAYWRIGHT_AVAILABLE and use_html_render:
         try:
             logger.debug(f"[鸣潮] 正在渲染角色【{std_char_name}】的别名列表...")
-
-            # 准备图片
-            char_id = char_name_to_char_id(std_char_name)
-            if char_id:
-                avatar = await get_square_avatar(char_id)
-                avatar_url = pil_to_b64(avatar, quality=75)
-            else:
-                avatar_url = ""
 
             bg_img = get_custom_waves_bg(bg="bg12", crop=False)
             bg_url = pil_to_b64(bg_img, quality=75)
@@ -133,9 +135,19 @@ async def char_alias_list(char_name: str) -> Union[str, bytes]:
                 logger.info(f"[鸣潮] 角色【{std_char_name}】别名列表渲染成功")
                 return img_bytes
             else:
-                logger.warning("[鸣潮] HTML渲染返回空，回退到文本模式")
+                logger.warning("[鸣潮] HTML渲染返回空，回退到PIL")
         except Exception as e:
-            logger.warning(f"[鸣潮] HTML渲染失败: {e}，回退到文本模式")
+            logger.warning(f"[鸣潮] HTML渲染失败: {e}，回退到PIL")
+
+    try:
+        return await draw_char_alias_pil(
+            std_char_name,
+            alias_list,
+            avatar_url,
+            str(char_id or ""),
+        )
+    except Exception as e:
+        logger.exception(f"[鸣潮] 角色别名PIL渲染失败: {e}")
 
     # 回退到文本发送
     return f"角色{std_char_name}别名列表：" + " ".join(alias_list)

@@ -5,6 +5,7 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw
 
+from gsuid_core.pool import to_thread
 from gsuid_core.logger import logger
 from gsuid_core.utils.image.convert import convert_img
 
@@ -160,6 +161,12 @@ async def draw_update_log_img() -> Union[bytes, str]:
     if not _CACHED_LOGS:
         return "获取失败"
 
+    img = await _build_update_log_img()
+    return await convert_img(img)
+
+
+@to_thread
+def _build_update_log_img() -> Image.Image:
     log_title = Image.open(TEXT_PATH / "log_title.png")
     img = get_waves_bg(950, 20 + 475 + 80 * len(_CACHED_LOGS))
     img.paste(log_title, (0, 0), log_title)
@@ -207,4 +214,4 @@ async def draw_update_log_img() -> Union[bytes, str]:
         text_x = max(x, 160)
         draw_text_with_fallback(img_draw, (text_x, base_y + 40), text, "white", gs_font_30, "lm")
 
-    return await convert_img(img)
+    return img

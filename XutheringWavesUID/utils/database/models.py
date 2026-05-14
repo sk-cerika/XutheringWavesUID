@@ -459,10 +459,7 @@ class WavesUser(User, table=True):
         session: AsyncSession,
         user_id: str,
     ) -> str:
-        """读取该 user_id 名下任一非空头像 URL；都为空则返回空串
-
-        头像在同一后端内绑定到 user_id（如 QQ 号），跨 bot_id 任取一条非空即可。
-        """
+        """取该 user_id 名下最新一条非空头像 URL（按 last_used_time DESC）；都为空则返回空串"""
         sql = (
             select(cls.avatar_url)
             .where(
@@ -472,6 +469,7 @@ class WavesUser(User, table=True):
                     col(cls.avatar_url) != "",
                 )
             )
+            .order_by(col(cls.last_used_time).desc())
             .limit(1)
         )
         result = await session.execute(sql)

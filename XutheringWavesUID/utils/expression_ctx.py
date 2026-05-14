@@ -6,7 +6,7 @@ from .calculate import get_calc_map, calc_phantom_score, get_total_score_bg
 from .damage.utils import comma_separated_number
 from .char_info_utils import get_all_role_detail_info
 from .damage.abstract import DamageRankRegister
-from ..utils.api.model import RoleDetailData
+from .api.model import RoleDetailData
 
 
 class WavesCharRank(BaseModel):

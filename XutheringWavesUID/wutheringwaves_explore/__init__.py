@@ -17,7 +17,15 @@ waves_get_explore = SV("waves获取探索度")
         "探索",
         "tsd",
         "探索度",
-    )
+    ),
+    to_ai="""查询用户鸣潮账号的世界探索度。
+
+当用户问「我的探索度多少 / 各地区探索进度 / 还剩什么没探完」时调用。
+需要绑定 UID 和 cookie。返回图片，按地区列出各项探索进度（声笺、地图收集、宝箱等）。
+
+Args:
+    text: 无需参数，留空即可。
+""",
 )
 async def send_card_info(bot: Bot, ev: Event):
     user_id = ruser_id(ev)

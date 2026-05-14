@@ -6,7 +6,7 @@ from msgspec import json as msgjson
 from gsuid_core.logger import logger
 
 from .model import WeaponModel
-from ..ascension.constant import fixed_name
+from .constant import fixed_name
 from ..resource.RESOURCE_PATH import MAP_DETAIL_PATH
 
 MAP_PATH = MAP_DETAIL_PATH / "weapon"

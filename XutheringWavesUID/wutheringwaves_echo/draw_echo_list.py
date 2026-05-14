@@ -5,6 +5,7 @@ from PIL import Image, ImageDraw
 from pydantic import BaseModel
 
 from gsuid_core.models import Event
+from gsuid_core.pool import to_thread
 from gsuid_core.utils.image.convert import convert_img
 
 from ..utils import hint
@@ -140,12 +141,58 @@ async def get_draw_list(ev: Event, uid: str, user_id: str, page: int = 1) -> Uni
     end_index = min(start_index + page_size, total_count)
     waves_echo_rank_page = waves_echo_rank[start_index:end_index]
 
-    # img = get_waves_bg(1200, 2650, 'bg3')
+    # 头像部分
+    avatar, avatar_ring = await draw_pic_with_ring(ev)
+
+    # 预取每张卡所需图像
+    echo_assets = []
+    for _echo in waves_echo_rank_page:
+        phantom: EquipPhantom = _echo.phantom
+        role_avatar = await draw_pic(_echo.roleId)
+        phantom_icon = await get_phantom_img(phantom.phantomProp.phantomId, phantom.phantomProp.iconUrl)
+        fetter_icon = await get_attribute_effect(phantom.fetterDetail.name)
+        prop_imgs = []
+        for _prop in _echo.props:
+            prop_imgs.append(await get_attribute_prop(_prop.attributeName))
+        echo_assets.append(
+            {
+                "echo": _echo,
+                "role_avatar": role_avatar,
+                "phantom_icon": phantom_icon,
+                "fetter_icon": fetter_icon,
+                "prop_imgs": prop_imgs,
+            }
+        )
+
+    title_bar_logo = get_small_logo(2) if account_info.is_full else None
+
+    img = await _compose_echo_list(
+        account_info,
+        avatar,
+        avatar_ring,
+        echo_assets,
+        page,
+        max_page,
+        user_pref,
+        title_bar_logo,
+    )
+    return await convert_img(img)
+
+
+@to_thread
+def _compose_echo_list(
+    account_info,
+    avatar,
+    avatar_ring,
+    echo_assets,
+    page,
+    max_page,
+    user_pref,
+    title_bar_logo,
+) -> Image.Image:
     img = get_waves_bg(1600, 3230, "bg3")
     img_draw = ImageDraw.Draw(img)
 
-    # 头像部分
-    avatar, avatar_ring = await draw_pic_with_ring(ev)
     img.paste(avatar, (45, 20), avatar)
     img.paste(avatar_ring, (55, 30), avatar_ring)
 
@@ -173,15 +220,16 @@ async def get_draw_list(ev: Event, uid: str, user_id: str, page: int = 1) -> Uni
         title_bar_draw.text((660, 125), "世界等级", GREY, waves_font_26, "mm")
         title_bar_draw.text((660, 78), f"Lv.{account_info.worldLevel}", "white", waves_font_42, "mm")
 
-        logo_img = get_small_logo(2)
-        title_bar.alpha_composite(logo_img, dest=(780, 65))
+        if title_bar_logo is not None:
+            title_bar.alpha_composite(title_bar_logo, dest=(780, 65))
         img.paste(title_bar, (200, 15), title_bar)
 
     _sh_bg = Image.open(TEXT_PATH / "sh_bg.png")
 
     promote_icon = Image.open(TEXT_PATH / "promote_icon.png")
     promote_icon = promote_icon.resize((30, 30))
-    for index, _echo in enumerate(waves_echo_rank_page):
+    for index, asset in enumerate(echo_assets):
+        _echo: WavesEchoRank = asset["echo"]
         sh_bg = _sh_bg.copy()
         head_high = 50
         sh_temp = Image.new("RGBA", (350, 550 + head_high))
@@ -192,14 +240,13 @@ async def get_draw_list(ev: Event, uid: str, user_id: str, page: int = 1) -> Uni
         sh_temp.alpha_composite(sh_title, dest=(0, head_high))
 
         # 角色头像
-        role_avatar = await draw_pic(_echo.roleId)
+        role_avatar = asset["role_avatar"]
         sh_temp.paste(role_avatar, (230, -40 + head_high), role_avatar)
 
         # 声骸
         phantom: EquipPhantom = _echo.phantom
-        phantom_icon = await get_phantom_img(phantom.phantomProp.phantomId, phantom.phantomProp.iconUrl)
-        fetter_icon = await get_attribute_effect(phantom.fetterDetail.name)
-        fetter_icon = fetter_icon.resize((50, 50))
+        phantom_icon = asset["phantom_icon"]
+        fetter_icon = asset["fetter_icon"].resize((50, 50))
         phantom_icon.alpha_composite(fetter_icon, dest=(205, 0))
         phantom_icon = phantom_icon.resize((100, 100))
         sh_temp.alpha_composite(phantom_icon, dest=(20, 20 + head_high))
@@ -223,12 +270,10 @@ async def get_draw_list(ev: Event, uid: str, user_id: str, page: int = 1) -> Uni
         for j in range(0, phantom.cost):
             sh_temp.alpha_composite(promote_icon, dest=(128 + 30 * j, 90 + head_high))
 
-        _echo: WavesEchoRank
         for i, temp in enumerate(zip(_echo.props, _echo.name_colors, _echo.num_colors)):
             _prop, name_color, num_color = temp
             oset = 55
-            prop_img = await get_attribute_prop(_prop.attributeName)
-            prop_img = prop_img.resize((40, 40))
+            prop_img = asset["prop_imgs"][i].resize((40, 40))
             sh_temp.alpha_composite(prop_img, (15, 167 + i * oset + head_high))
             sh_temp_draw = ImageDraw.Draw(sh_temp)
 
@@ -253,7 +298,6 @@ async def get_draw_list(ev: Event, uid: str, user_id: str, page: int = 1) -> Uni
         img.alpha_composite(sh_temp, (_x, _y))
 
     img = add_footer(img)
-    img = await convert_img(img)
     return img
 
 

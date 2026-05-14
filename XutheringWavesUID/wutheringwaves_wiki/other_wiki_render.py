@@ -1,3 +1,4 @@
+import asyncio
 import base64
 from io import BytesIO
 from typing import Dict, Any, Optional
@@ -26,6 +27,11 @@ from ..utils.image import get_square_weapon, get_square_weapon_path, get_attribu
 
 TEXTURE2D_PATH = Path(__file__).parents[1] / "utils" / "texture2d"
 WIKI_TEXTURE_PATH = Path(__file__).parent / "texture2d"
+
+
+def _load_bg_b64(bg_path) -> str:
+    bg_img = Image.open(bg_path).transpose(Image.ROTATE_270)
+    return pil_to_b64(bg_img, quality=75)
 
 
 
@@ -76,7 +82,7 @@ async def _prepare_weapon_context(weapon_id: str, weapon_model: WeaponModel) -> 
 
     # 背景
     bg_path = TEXTURE2D_PATH / "bg6.jpg"
-    bg_img = Image.open(bg_path).transpose(Image.ROTATE_270)
+    bg_b64 = await asyncio.to_thread(_load_bg_b64, bg_path)
 
     return {
         "item_type": "weapon",
@@ -90,7 +96,7 @@ async def _prepare_weapon_context(weapon_id: str, weapon_model: WeaponModel) -> 
         "effect_name": weapon_model.effectName,
         "effect_desc": weapon_model.get_effect_detail(),
         "materials": materials,
-        "bg_url": pil_to_b64(bg_img, quality=75),
+        "bg_url": bg_b64,
         "footer_url": image_to_base64(TEXTURE2D_PATH / "footer_white.png"),
     }
 
@@ -138,7 +144,7 @@ async def _prepare_echo_context(echo_id: str, echo_model: EchoModel) -> Dict[str
 
     # 背景
     bg_path = TEXTURE2D_PATH / "bg6.jpg"
-    bg_img = Image.open(bg_path).transpose(Image.ROTATE_270)
+    bg_b64 = await asyncio.to_thread(_load_bg_b64, bg_path)
 
     return {
         "item_type": "echo",
@@ -147,7 +153,7 @@ async def _prepare_echo_context(echo_id: str, echo_model: EchoModel) -> Dict[str
         "group_icons": group_icons,
         "stats": stats,
         "skill_desc": echo_model.get_skill_detail(),
-        "bg_url": pil_to_b64(bg_img, quality=75),
+        "bg_url": bg_b64,
         "footer_url": image_to_base64(TEXTURE2D_PATH / "footer_white.png"),
     }
 
@@ -210,7 +216,7 @@ async def draw_weapon_list_render(weapon_type: str = "") -> Optional[bytes]:
 
     # 背景
     bg_path = TEXTURE2D_PATH / "bg6.jpg"
-    bg_img = Image.open(bg_path).transpose(Image.ROTATE_270)
+    bg_b64 = await asyncio.to_thread(_load_bg_b64, bg_path)
 
     single_type = len(groups_data) == 1
     if single_type:
@@ -223,7 +229,7 @@ async def draw_weapon_list_render(weapon_type: str = "") -> Optional[bytes]:
         "title": title,
         "single_type": single_type,
         "groups": groups_data,
-        "bg_url": pil_to_b64(bg_img, quality=75),
+        "bg_url": bg_b64,
         "footer_url": image_to_base64(TEXTURE2D_PATH / "footer_white.png"),
     }
 
@@ -288,14 +294,14 @@ async def draw_sonata_list_render(version: str = "") -> Optional[bytes]:
 
     # 背景
     bg_path = TEXTURE2D_PATH / "bg6.jpg"
-    bg_img = Image.open(bg_path).transpose(Image.ROTATE_270)
+    bg_b64 = await asyncio.to_thread(_load_bg_b64, bg_path)
 
     title = f"声骸套装一览 - {version}版本" if version else "声骸套装一览"
     context = {
         "list_type": "sonata",
         "title": title,
         "groups": groups_data,
-        "bg_url": pil_to_b64(bg_img, quality=75),
+        "bg_url": bg_b64,
         "footer_url": image_to_base64(TEXTURE2D_PATH / "footer_white.png"),
     }
 

@@ -2,8 +2,8 @@ from typing import Any, Dict, List, Tuple, Union, Optional
 
 from pydantic import Field, BaseModel
 
-from ...utils.util import format_with_defaults, _collapse_repeated_slash_values
-from ...utils.resource.constant import ATTRIBUTE_ID_MAP
+from ..util import format_with_defaults, _collapse_repeated_slash_values
+from ..resource.constant import ATTRIBUTE_ID_MAP
 
 
 class Stats(BaseModel):

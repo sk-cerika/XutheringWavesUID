@@ -4,6 +4,7 @@ from pathlib import Path
 from PIL import Image, ImageDraw
 
 from gsuid_core.models import Event
+from gsuid_core.pool import to_thread
 from gsuid_core.utils.image.convert import convert_img
 from gsuid_core.utils.image.image_tools import crop_center_img
 
@@ -123,10 +124,71 @@ async def draw_char_list_img(
     waves_char_rank = await get_waves_char_rank(uid, all_role_detail)
     waves_char_rank.sort(key=lambda i: (i.score, i.starLevel, i.level, i.chain, i.roleId), reverse=True)
 
+    # 头像 头像环
+    avatar = await draw_pic_with_ring(ev, is_peek)
+
+    # 预取每个角色的图像资源
+    char_assets = []
+    for _rank in waves_char_rank:
+        role_detail: RoleDetailData = all_role_detail[_rank.roleId]
+        role_avatar = await draw_pic(role_detail.role.roleId)
+        role_attribute = await get_attribute(
+            role_detail.role.attributeName,
+            is_simple=True,  # type: ignore
+        )
+        skill_imgs = []
+        for _skill in role_detail.get_skill_list():
+            if _skill.skill.type in ["延奏技能", "谐度破坏"]:
+                skill_imgs.append(None)
+                continue
+            skill_imgs.append(
+                await get_skill_img(role_detail.role.roleId, _skill.skill.name, _skill.skill.iconUrl)
+            )
+        weaponData: WeaponData = role_detail.weaponData
+        weapon_icon = await get_square_weapon(weaponData.weapon.weaponId)
+        char_assets.append(
+            {
+                "rank": _rank,
+                "role_detail": role_detail,
+                "role_avatar": role_avatar,
+                "role_attribute": role_attribute,
+                "skill_imgs": skill_imgs,
+                "weapon_icon": weapon_icon,
+            }
+        )
+
+    ensure_data_loaded()
+    all_up_num = 0
+    for char_id, char_data in char_id_data.items():
+        if (
+            char_data.get("starLevel") == 5
+            and int(char_id) not in NORMAL_LIST_IDS
+            and str(char_id) not in SPECIAL_CHAR_NAME
+        ):
+            all_up_num += 1
+
+    card_img = await _compose_char_list(
+        account_info,
+        avatar,
+        char_assets,
+        all_up_num,
+        user_pref,
+    )
+    return await convert_img(card_img)
+
+
+@to_thread
+def _compose_char_list(
+    account_info,
+    avatar,
+    char_assets,
+    all_up_num,
+    user_pref,
+) -> Image.Image:
     avatar_h = 230
     info_bg_h = 260
     bar_star_h = 110
-    h = avatar_h + info_bg_h + len(waves_char_rank) * bar_star_h + 80
+    h = avatar_h + info_bg_h + len(char_assets) * bar_star_h + 80
     card_img = get_custom_waves_bg(1000, h, "bg3")
 
     # 基础信息 名字 特征码
@@ -136,8 +198,6 @@ async def draw_char_list_img(
     base_info_draw.text((226, 173), f"特征码:  {hide_uid(account_info.id, user_pref=user_pref)}", GOLD, waves_font_25, "lm")
     card_img.paste(base_info_bg, (15, 20), base_info_bg)
 
-    # 头像 头像环
-    avatar = await draw_pic_with_ring(ev, is_peek)
     avatar_ring = Image.open(TEXT_PATH / "avatar_ring.png")
     card_img.paste(avatar, (25, 70), avatar)
     avatar_ring = avatar_ring.resize((180, 180))
@@ -154,46 +214,24 @@ async def draw_char_list_img(
         title_bar_draw.text((810, 78), f"Lv.{account_info.worldLevel}", "white", waves_font_42, "mm")
         card_img.paste(title_bar, (-20, 70), title_bar)
 
-    # 计算游戏中所有UP五星角色的总数
-    ensure_data_loaded()
-    all_up_num = 0
-    for char_id, char_data in char_id_data.items():
-        if (
-            char_data.get("starLevel") == 5
-            and int(char_id) not in NORMAL_LIST_IDS
-            and str(char_id) not in SPECIAL_CHAR_NAME
-        ):
-            all_up_num += 1
-
-    # up角色
     up_num = 0
-    # 高练角色
     level_num = 0
-    # 高链角色
     chain_num = 0
-    # 高链五星角色
     chain_num_5 = 0
-    # 五星武器比例
     weapon_num = 0
-    # 所有角色
     all_num = 0
-    # 五星角色数量
     all_num_5 = 0
 
-    for index, _rank in enumerate(waves_char_rank):
-        _rank: WavesCharRank
-        role_detail: RoleDetailData = all_role_detail[_rank.roleId]
+    for index, asset in enumerate(char_assets):
+        _rank: WavesCharRank = asset["rank"]
+        role_detail: RoleDetailData = asset["role_detail"]
         bar_star = Image.open(TEXT_PATH / f"bar_{_rank.starLevel}star.png")
         bar_star_draw = ImageDraw.Draw(bar_star)
-        role_avatar = await draw_pic(role_detail.role.roleId)
+        role_avatar = asset["role_avatar"]
 
         bar_star.paste(role_avatar, (60, 0), role_avatar)
 
-        role_attribute = await get_attribute(
-            role_detail.role.attributeName,
-            is_simple=True,  # type: ignore
-        )
-        role_attribute = role_attribute.resize((40, 40)).convert("RGBA")
+        role_attribute = asset["role_attribute"].resize((40, 40)).convert("RGBA")
         bar_star.alpha_composite(role_attribute, (170, 20))
         bar_star_draw.text((180, 83), f"Lv.{_rank.level}", GREY, waves_font_22, "mm")
 
@@ -227,15 +265,12 @@ async def draw_char_list_img(
             skill_bg = Image.open(TEXT_PATH / "skill_bg.png")
             temp.alpha_composite(skill_bg)
 
-            skill_img = await get_skill_img(role_detail.role.roleId, _skill.skill.name, _skill.skill.iconUrl)
-            skill_img = skill_img.resize((70, 70))
-            # skill_img = ImageEnhance.Brightness(skill_img).enhance(0.3)
-            temp.alpha_composite(skill_img, (25, 25))
+            skill_img = asset["skill_imgs"][i]
+            if skill_img is not None:
+                skill_img = skill_img.resize((70, 70))
+                temp.alpha_composite(skill_img, (25, 25))
 
             temp_draw = ImageDraw.Draw(temp)
-            # temp_draw.text(
-            #     (62, 45), f"{_skill.skill.type}", "white", waves_font_30, "mm"
-            # )
             color = "white"
             if _skill.level == 10:
                 color = CHAIN_COLOR_LIST[-1]
@@ -257,8 +292,7 @@ async def draw_char_list_img(
         weapon_bg_temp = Image.new("RGBA", (600, 300))
 
         weaponData: WeaponData = role_detail.weaponData
-        weapon_icon = await get_square_weapon(weaponData.weapon.weaponId)
-        weapon_icon = crop_center_img(weapon_icon, 110, 110)
+        weapon_icon = crop_center_img(asset["weapon_icon"], 110, 110)
         weapon_icon_bg = get_weapon_icon_bg(weaponData.weapon.weaponStarLevel, TEXT_PATH)
         weapon_icon_bg.paste(weapon_icon, (10, 20), weapon_icon)
 
@@ -327,7 +361,6 @@ async def draw_char_list_img(
     card_img.paste(info_bg, (0, avatar_h), info_bg)
 
     card_img = add_footer(card_img)
-    card_img = await convert_img(card_img)
     return card_img
 
 

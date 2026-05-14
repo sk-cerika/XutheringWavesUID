@@ -14,6 +14,14 @@ sv_waves_echo_list = SV("声骸展示", priority=3)
 @sv_waves_echo_list.on_regex(
     r"^(?P<command>声骸列表|我的声骸|声骸仓库|声骸|声骇|sh)(?P<pages>\d+)?$",
     block=True,
+    to_ai="""查询自己的声骸仓库列表（按 cost、套装、词条评分排序）。
+
+当用户问「我的声骸 / 声骸列表 / 声骸仓库」时调用。需绑定 cookie。
+text 可附页码（数字），分页查看。
+
+Args:
+    text: 命令字 + 可选页码。例: "声骸列表" / "声骸列表2" / "声骸"。
+""",
 )
 async def send_echo_list_msg(bot: Bot, ev: Event):
     user_id = ruser_id(ev)

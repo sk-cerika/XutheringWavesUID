@@ -35,6 +35,11 @@ class SignInInitData(BaseModel):
     sigInNum: int = 0
     signInGoodsConfigs: List[SignInGoodsConfig] = Field(default_factory=list)
     signLoopGoodsList: List[SignInGoodsConfig] = Field(default_factory=list)
+    loopSignName: str = ""
+    loopDescription: str = ""
+    loopSignNum: int = 0
+    loopStartTimes: str = ""
+    loopEndTimes: str = ""
 
 
 class SignInSurfaceData(BaseModel):

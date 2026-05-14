@@ -8,6 +8,7 @@ from gsuid_core.bot import Bot
 from PIL import Image, ImageDraw
 from gsuid_core.models import Event
 from gsuid_core.logger import logger
+from gsuid_core.pool import to_thread
 from gsuid_core.sv import get_plugin_available_prefix
 from gsuid_core.utils.image.convert import convert_img
 from gsuid_core.utils.image.image_tools import crop_center_img
@@ -236,15 +237,7 @@ async def draw_period_img(bot: Bot, ev: Event):
         # 计算总高度
         total_height = sum(img.height for img in images)
         
-        # 创建最终的画布
-        final_img = Image.new("RGBA", (based_w, total_height), (0, 0, 0, 0))
-        
-        # 拼接图片
-        current_y = 0
-        for img in images:
-            final_img.paste(img, (0, current_y))
-            current_y += img.height
-            
+        final_img = await asyncio.to_thread(_compose_period_final_img, images, total_height)
         res = await convert_img(final_img)
     except TypeError:
         logger.exception("[鸣潮][资源简报]绘图失败!")
@@ -253,12 +246,27 @@ async def draw_period_img(bot: Bot, ev: Event):
     return res
 
 
+def _compose_period_final_img(images: list, total_height: int) -> Image.Image:
+    final_img = Image.new("RGBA", (based_w, total_height), (0, 0, 0, 0))
+    current_y = 0
+    for img in images:
+        final_img.paste(img, (0, current_y))
+        current_y += img.height
+    return final_img
+
+
 async def _draw_all_period_img(ev: Event, valid: Dict[str, Any], uid_index: int) -> Image.Image:
     period_img = await _draw_period_img(ev, valid)
-    return period_img.convert("RGBA")
+    return await asyncio.to_thread(period_img.convert, "RGBA")
 
 
 async def _draw_period_img(ev: Event, valid: Dict):
+    avatar_img = await draw_pic_with_ring(ev)
+    return await _render_period_img_pil(valid, avatar_img)
+
+
+@to_thread
+def _render_period_img_pil(valid: Dict, avatar_img: Image.Image) -> Image.Image:
     period_detail: PeriodDetail = valid["period_detail"]
     account_info: AccountBaseInfo = valid["account_info"]
     period_node: Period = valid["period_node"]
@@ -339,7 +347,6 @@ async def _draw_period_img(ev: Event, valid: Dict):
         "lm",
     )
 
-    avatar_img = await draw_pic_with_ring(ev)
     title_img.paste(avatar_img, (27, 8), avatar_img)
 
     img.paste(title_img, (0, 30), title_img)
@@ -349,7 +356,7 @@ async def _draw_period_img(ev: Event, valid: Dict):
     img.paste(slagon_img, (500, 95), slagon_img)
 
     # 绘制底板 (Home BG)
-    home_bg = await crop_home_img(total_home_height)
+    home_bg = crop_home_img(total_home_height)
     
     # topup
     topup_bg = Image.open(TEXT_PATH / "txt-topup.png")
@@ -424,7 +431,7 @@ async def _draw_period_img(ev: Event, valid: Dict):
     return img
 
 
-async def crop_home_img(target_height: int = 500):
+def crop_home_img(target_height: int = 500):
     img = Image.new("RGBA", (718, target_height), (0, 0, 0, 0))
     
     # 1. Header: 718*56
@@ -489,7 +496,11 @@ def wrap_text(text: str, font, max_width: int, draw: ImageDraw.ImageDraw) -> lis
 
 async def draw_pic_with_ring(ev: Event):
     pic = await get_event_avatar(ev)
+    return await _compose_pic_with_ring(pic)
 
+
+@to_thread
+def _compose_pic_with_ring(pic: Image.Image) -> Image.Image:
     mask_pic = Image.open(TEXT_PATH / "avatar_mask.png")
     img = Image.new("RGBA", (200, 200))
     mask = mask_pic.resize((160, 160))

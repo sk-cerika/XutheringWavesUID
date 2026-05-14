@@ -4,6 +4,7 @@ from pathlib import Path
 from PIL import Image, ImageDraw
 
 from gsuid_core.models import Event
+from gsuid_core.pool import to_thread
 from gsuid_core.utils.image.convert import convert_img
 
 from ..wutheringwaves_config import PREFIX
@@ -40,6 +41,7 @@ from ..utils.fonts.waves_fonts import (
 from ..utils.resource.constant import NORMAL_LIST, SPECIAL_CHAR_INT
 
 TEXT_PATH = Path(__file__).parent / "texture2d"
+TOP_TRIM = 150
 
 
 async def draw_role_img(uid: str, ck: str, ev: Event):
@@ -114,6 +116,67 @@ async def draw_role_img(uid: str, ck: str, ev: Event):
         for b in account_info.treasureBoxList:
             base_info_value_list.append({"key": b.name, "value": f"{b.num}", "info_block": ""})
 
+    # 根据面板数据获取详细信息
+    role_detail_info_map = await get_all_roleid_detail_info_int(uid)
+
+    # 预取角色头像/属性/武器(异步IO), 留给 PIL 线程使用
+    role_assets = []
+    for role in role_info.roleList:
+        char_attribute = await get_attribute(role.attributeName)
+        raw_avatar = await get_square_avatar(role.roleId)
+        role_avatar = await cropped_square_avatar(raw_avatar, 130)
+
+        temp: Optional[RoleDetailData] = None
+        weapon_icon = None
+        if role_detail_info_map:
+            if role.roleId in SPECIAL_CHAR_INT:
+                query_list = SPECIAL_CHAR_INT.copy()
+            else:
+                query_list = [role.roleId]
+            for char_id in query_list:
+                if char_id in role_detail_info_map:
+                    temp = role_detail_info_map[char_id]
+                    break
+            if temp:
+                weapon_icon = await get_square_weapon(temp.weaponData.weapon.weaponId)
+
+        role_assets.append(
+            {
+                "role": role,
+                "char_attribute": char_attribute,
+                "role_avatar": role_avatar,
+                "detail": temp,
+                "weapon_icon": weapon_icon,
+            }
+        )
+
+    # 头像 头像环
+    avatar, avatar_ring = await draw_pic_with_ring(ev)
+
+    card_img = await _compose_role_img(
+        account_info,
+        role_info,
+        calabash_data,
+        base_info_value_list,
+        role_assets,
+        avatar,
+        avatar_ring,
+        user_pref,
+    )
+    return await convert_img(card_img)
+
+
+@to_thread
+def _compose_role_img(
+    account_info: AccountBaseInfo,
+    role_info: RoleList,
+    calabash_data: CalabashData,
+    base_info_value_list,
+    role_assets,
+    avatar,
+    avatar_ring,
+    user_pref,
+) -> Image.Image:
     # 初始化基础信息栏位
     bs = Image.open(TEXT_PATH / "bs.png")
 
@@ -123,6 +186,7 @@ async def draw_role_img(uid: str, ck: str, ev: Event):
     yset = 470
     if account_info.is_full:
         yset += bs.size[1]
+    yset -= TOP_TRIM
 
     w = 1000
     h = 100 + yset + 200 * int(roleTotalNum / 4 + (1 if roleTotalNum % 4 else 0))
@@ -155,39 +219,22 @@ async def draw_role_img(uid: str, ck: str, ev: Event):
                 base_info_value_list[_len]["info_block"],
             )
 
-    # 根据面板数据获取详细信息
-    role_detail_info_map = await get_all_roleid_detail_info_int(uid)
-
-    async def calc_role_info(_x: int, _y: int, roleInfo: Role):
-        if not role_detail_info_map:
-            return
+    def calc_role_info(_x: int, _y: int, asset):
+        roleInfo: Role = asset["role"]
         char_bg = Image.open(TEXT_PATH / "char_bg.png")
-        char_attribute = await get_attribute(roleInfo.attributeName)
-        char_attribute = char_attribute.resize((40, 40)).convert("RGBA")
-        role_avatar = await get_square_avatar(roleInfo.roleId)
-        role_avatar = await cropped_square_avatar(role_avatar, 130)
+        char_attribute = asset["char_attribute"].resize((40, 40)).convert("RGBA")
+        role_avatar = asset["role_avatar"]
         char_bg.paste(role_avatar, (10, 25), role_avatar)
         char_bg.paste(char_attribute, (155, 13), char_attribute)
 
         char_bg_draw = ImageDraw.Draw(char_bg)
         char_bg_draw.text((90, 173), f"LV.{roleInfo.level}", "white", waves_font_26, "lm")
 
-        if roleInfo.roleId in SPECIAL_CHAR_INT:
-            query_list = SPECIAL_CHAR_INT.copy()
-        else:
-            query_list = [roleInfo.roleId]
-
-        temp: Optional[RoleDetailData] = None  # type: ignore
-        for char_id in query_list:
-            if char_id in role_detail_info_map:
-                temp: RoleDetailData = role_detail_info_map[char_id]
-                break
-
-        if temp:
+        temp = asset["detail"]
+        weapon_icon_src = asset["weapon_icon"]
+        if temp and weapon_icon_src is not None:
             weapon_bg = Image.open(TEXT_PATH / "weapon_bg.png")
-            weaponId = temp.weaponData.weapon.weaponId
-            weapon_icon = await get_square_weapon(weaponId)
-            weapon_icon = weapon_icon.resize((75, 75)).convert("RGBA")
+            weapon_icon = weapon_icon_src.resize((75, 75)).convert("RGBA")
             weapon_bg.paste(weapon_icon, (123, 73), weapon_icon)
             char_bg.paste(weapon_bg, (0, 5), weapon_bg)
 
@@ -200,10 +247,10 @@ async def draw_role_img(uid: str, ck: str, ev: Event):
         card_img.paste(char_bg, (_x, _y), char_bg)
 
     # 角色信息
-    for index, role in enumerate(role_info.roleList):
+    for index, asset in enumerate(role_assets):
         _x = xset + 210 * int(index % 4)
         _y = yset + 200 * int(index / 4)
-        await calc_role_info(_x, _y, role)
+        calc_role_info(_x, _y, asset)
 
     # 基础信息 名字 特征码
     base_info_bg = Image.open(TEXT_PATH / "base_info_bg.png")
@@ -216,12 +263,11 @@ async def draw_role_img(uid: str, ck: str, ev: Event):
         waves_font_25,
         "lm",
     )
-    card_img.paste(base_info_bg, (35, 170), base_info_bg)
+    card_img.paste(base_info_bg, (35, 0), base_info_bg)
 
     # 头像 头像环
-    avatar, avatar_ring = await draw_pic_with_ring(ev)
-    card_img.paste(avatar, (45, 220), avatar)
-    card_img.paste(avatar_ring, (55, 230), avatar_ring)
+    card_img.paste(avatar, (45, 50), avatar)
+    card_img.paste(avatar_ring, (55, 60), avatar_ring)
 
     # 右侧装饰
     char = Image.open(TEXT_PATH / "char.png")
@@ -242,7 +288,7 @@ async def draw_role_img(uid: str, ck: str, ev: Event):
         title_bar_draw.text((810, 78), f"Lv.{account_info.worldLevel}", "white", waves_font_42, "mm")
         card_img.paste(line, (0, yset - bs.size[1] - 70), line)
         card_img.paste(bs, (-10, yset - bs.size[1] - 70), bs)
-        card_img.paste(title_bar, (0, 220), title_bar)
+        card_img.paste(title_bar, (0, 50), title_bar)
 
     line2 = Image.open(TEXT_PATH / "line.png")
     line2_draw = ImageDraw.Draw(line2)
@@ -250,5 +296,4 @@ async def draw_role_img(uid: str, ck: str, ev: Event):
     card_img.paste(line2, (0, yset - 70), line2)
 
     card_img = add_footer(card_img, 600, 20)
-    card_img = await convert_img(card_img)
     return card_img

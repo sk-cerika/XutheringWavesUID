@@ -16,7 +16,18 @@ sv_waves_help = SV("waves帮助")
 sv_waves_change_help = SV("waves替换帮助")
 
 
-@sv_waves_help.on_fullmatch(("帮助", "幫助", "help", "bz"), block=True)
+@sv_waves_help.on_fullmatch(
+    ("帮助", "幫助", "help", "bz"),
+    block=True,
+    to_ai="""返回鸣潮 XutheringWavesUID 插件的全部命令一览图（带分类、说明、示例的帮助图）。
+
+当用户问「鸣潮帮助 / XW 怎么用 / 鸣潮命令一览 / help」时调用。返回一张大图。
+注意：若用户问的是某具体命令的用法（如「怎么查体力」），优先用 search_knowledge 命中具体命令 KP 给出精准答案，而不是回大图。
+
+Args:
+    text: 无需参数，留空即可。
+""",
+)
 async def send_help_img(bot: Bot, ev: Event):
     buttons: List[Any] = [
         WavesButton("登录", "登录"),

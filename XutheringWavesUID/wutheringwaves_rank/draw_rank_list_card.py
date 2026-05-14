@@ -11,6 +11,7 @@ from pydantic import BaseModel
 from gsuid_core.bot import Bot
 from gsuid_core.logger import logger
 from gsuid_core.models import Event
+from gsuid_core.pool import to_thread
 from gsuid_core.utils.image.convert import convert_img
 
 from .rank_avatar import get_avatar
@@ -455,34 +456,51 @@ async def draw_rank_list(bot: Bot, ev: Event, threshold: int = 175) -> Union[str
     ]
     results = await asyncio.gather(*tasks)
 
-    # 绘制排行条目
+    # 预取每个排名内角色头像（去重）
+    all_role_ids = set()
+    for rankInfo in rankInfoList_display:
+        for role in rankInfo.role_details:
+            if role.phantomData and role.phantomData.equipPhantomList:
+                all_role_ids.add(role.role.roleId)
+    char_avatar_map: Dict[int, Image.Image] = {}
+    if all_role_ids:
+        fetched = await asyncio.gather(*[get_square_avatar(rid) for rid in all_role_ids])
+        char_avatar_map = dict(zip(all_role_ids, fetched))
+
+    card_img = await _compose_rank_list(
+        card_img, bar, rankInfoList_display, results, char_avatar_map,
+        self_uid, threshold_label, header_height, item_spacing, width,
+    )
+    card_img = await convert_img(card_img)
+
+    return card_img
+
+
+@to_thread
+def _compose_rank_list(card_img, bar, rankInfoList_display, results, char_avatar_map,
+                      self_uid, threshold_label, header_height, item_spacing, width):
+    from ..utils.calc import WuWaCalc
     for rank_temp_index, temp in enumerate(zip(rankInfoList_display, results)):
         rankInfo = temp[0]
         role_avatar = temp[1]
         y_pos = header_height + 130 + rank_temp_index * item_spacing
 
-        # 创建条目背景
         bar_bg = bar.copy()
         bar_bg.paste(role_avatar, (100, 0), role_avatar)
         bar_draw = ImageDraw.Draw(bar_bg)
 
-        # 绘制排名
         rank_id = rank_temp_index + 1
         draw_rank_badge(bar_bg, rank_id)
 
-        # 绘制UID（无标签）
         uid_color = "white"
         if rankInfo.uid == self_uid:
             uid_color = RED
         bar_draw.text((210, 40), f"{rankInfo.uid}", uid_color, waves_font_20, "lm")
 
-        # 绘制角色数量（根据等级显示）
         char_count = len(rankInfo.role_details)
         bar_draw.text((210, 75), f"{threshold_label}角色数: {char_count}", "white", waves_font_18, "lm")
 
-        # 绘制角色信息
         if rankInfo.role_details:
-            # 按声骸分数排序，取前5名
             role_scores = []
             for role in rankInfo.role_details:
                 if not role.phantomData or not role.phantomData.equipPhantomList:
@@ -505,29 +523,26 @@ async def draw_rank_list(bot: Bot, ev: Event, threshold: int = 175) -> Union[str
 
             sorted_roles = sorted(role_scores, key=lambda x: x[1], reverse=True)[:8]
 
-            # 在条目底部绘制前5名角色的头像（放在UID右边）
             char_size = 40
             char_spacing = 45
             char_start_x = 350
             char_start_y = 35
 
+            char_mask_img = Image.open(TEXT_PATH / "char_mask.png")
+            char_mask_resized = char_mask_img.resize((char_size, char_size))
             for i, (role, score) in enumerate(sorted_roles):
                 char_x = char_start_x + i * char_spacing
 
-                # 获取角色头像
-                char_avatar = await get_square_avatar(role.role.roleId)
+                char_avatar = char_avatar_map.get(role.role.roleId)
+                if char_avatar is None:
+                    continue
                 char_avatar = char_avatar.resize((char_size, char_size))
 
-                # 应用圆形遮罩
-                char_mask_img = Image.open(TEXT_PATH / "char_mask.png")
-                char_mask_resized = char_mask_img.resize((char_size, char_size))
                 char_avatar_masked = Image.new("RGBA", (char_size, char_size))
                 char_avatar_masked.paste(char_avatar, (0, 0), char_mask_resized)
 
-                # 粘贴头像
                 bar_bg.paste(char_avatar_masked, (char_x, char_start_y), char_avatar_masked)
 
-                # 绘制分数
                 score_text = f"{int(score)}"
                 bar_draw.text(
                     (char_x + char_size // 2, char_start_y + char_size + 2),
@@ -537,13 +552,11 @@ async def draw_rank_list(bot: Bot, ev: Event, threshold: int = 175) -> Union[str
                     "mm",
                 )
 
-            # 显示最高声骸分数（第五个角色头像右边）
             if sorted_roles:
                 best_score = f"{int(sorted_roles[0][1])}"
                 bar_draw.text((770, 45), best_score, "lightgreen", waves_font_30, "mm")
                 bar_draw.text((770, 75), "最高分", "white", waves_font_16, "mm")
 
-        # 总分（放在最右边）
         bar_draw.text(
             (880, 45),
             f"{rankInfo.total_score}",
@@ -553,26 +566,20 @@ async def draw_rank_list(bot: Bot, ev: Event, threshold: int = 175) -> Union[str
         )
         bar_draw.text((880, 75), "总分", "white", waves_font_16, "mm")
 
-        # 贴到背景
         card_img.paste(bar_bg, (0, y_pos), bar_bg)
 
-    # title
     title_bg = Image.open(TEXT_PATH / "totalrank.jpg")
     title_bg = title_bg.crop((0, 0, width, 475))
 
-    # icon
     icon = get_ICON()
     icon = icon.resize((128, 128))
     title_bg.paste(icon, (60, 240), icon)
 
-    # title
     title_text = "#练度群排行"
     title_bg_draw = ImageDraw.Draw(title_bg)
     title_bg_draw.text((220, 290), title_text, "white", waves_font_58, "lm")
 
-    # 遮罩
     char_mask_img = Image.open(TEXT_PATH / "char_mask.png").convert("RGBA")
-    # 根据width扩图
     char_mask_img = char_mask_img.resize((width, char_mask_img.height * width // char_mask_img.width))
     char_mask_img = char_mask_img.crop((0, char_mask_img.height - 475, width, char_mask_img.height))
     char_mask_temp = Image.new("RGBA", char_mask_img.size, (0, 0, 0, 0))
@@ -581,6 +588,4 @@ async def draw_rank_list(bot: Bot, ev: Event, threshold: int = 175) -> Union[str
     card_img.paste(char_mask_temp, (0, 0), char_mask_temp)
 
     card_img = add_footer(card_img)
-    card_img = await convert_img(card_img)
-
     return card_img

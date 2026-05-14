@@ -121,36 +121,10 @@ def parse_rank_date(date_str: str) -> Optional[datetime]:
         return None
 
 
-def get_score_color(score: int):
-    """总排行分数颜色"""
-    if score >= 30000:
-        return (255, 0, 0)
-    elif score >= 25000:
-        return (234, 183, 4)
-    elif score >= 20000:
-        return (185, 106, 217)
-    elif score >= 15000:
-        return (22, 145, 121)
-    elif score >= 10000:
-        return (53, 152, 219)
-    else:
-        return (255, 255, 255)
-
-
-def get_local_score_color(score: int):
-    """本地排行分数颜色"""
-    if score >= 30000:
-        return (255, 0, 0)
-    elif score >= 20000:
-        return (234, 183, 4)
-    elif score >= 10000:
-        return (185, 106, 217)
-    elif score >= 5500:
-        return (22, 145, 121)
-    elif score >= 4500:
-        return (53, 152, 219)
-    else:
-        return (200, 200, 200)
+from ._colors import (
+    get_slash_local_rank_color as get_local_score_color,
+    get_slash_total_rank_color as get_score_color,
+)
 
 
 async def get_rank(item: SlashRankItem) -> Optional[SlashRankRes]:
@@ -178,6 +152,7 @@ async def get_rank(item: SlashRankItem) -> Optional[SlashRankRes]:
             logger.exception(f"获取排行失败: {e}")
 
 
+# TODO: PIL 卸到线程池 (loop 内 await get_square_avatar / pic_download_from_url 较多, 需要批量预取重构)
 async def draw_all_slash_rank_card(bot: Bot, ev: Event):
     waves_id = await WavesBind.get_uid_by_game(ev.user_id, ev.bot_id)
     match = re.search(r"(\d+)", ev.raw_text)
@@ -519,6 +494,7 @@ async def get_five_star_chain_total(uid: str) -> int:
         return 0
 
 
+# TODO: PIL 卸到线程池 (loop 内 await get_role_chain_count / get_square_avatar / pic_download_from_url 频繁, 需要批量预取重构)
 async def draw_slash_rank_list(bot: Bot, ev: Event):
     """绘制无尽排行"""
     start_time = time.time()

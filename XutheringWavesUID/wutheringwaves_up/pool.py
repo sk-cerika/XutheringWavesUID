@@ -6,6 +6,7 @@ from collections import defaultdict
 import httpx
 from PIL import Image, ImageDraw
 
+from gsuid_core.pool import to_thread
 from gsuid_core.logger import logger
 from gsuid_core.utils.image.convert import convert_img
 
@@ -146,10 +147,47 @@ async def get_pool_data_by_type(query_type: str, star: int):
     totalNum = len(data_group)
     h = title_h + totalNum * bar_star_h + 100
 
+    share_bg = await get_random_share_bg()
+
+    # 预加载头像 / 武器图
+    data_list = []
+    if star == 5:
+        for resource_id, num in result["five2num"].items():
+            data_list.append((resource_id, num, result["five2endtime"][resource_id]))
+    else:
+        for resource_id, num in result["four2num"].items():
+            data_list.append((resource_id, num, result["four2endtime"][resource_id]))
+    data_list.sort(key=lambda x: x[2], reverse=True)
+
+    pic_cache: Dict[str, Image.Image] = {}
+    for resource_id, _, _ in data_list:
+        if resource_id in pic_cache:
+            continue
+        if query_type == "角色":
+            _id = char_name_to_char_id(resource_id) or resource_id
+            pic_cache[resource_id] = await get_square_avatar(_id)
+        else:
+            _id = weapon_name_to_weapon_id(resource_id) or resource_id
+            pic_cache[resource_id] = await get_square_weapon(_id)
+
+    card_img = await _render_pool_card(
+        share_bg, query_type, star, h, data_list, pic_cache
+    )
+    return await convert_img(card_img)
+
+
+@to_thread
+def _render_pool_card(
+    share_bg: Image.Image,
+    query_type: str,
+    star: int,
+    h: int,
+    data_list,
+    pic_cache: Dict[str, Image.Image],
+) -> Image.Image:
     card_img = get_waves_bg(1050, h, "bg9")
 
     # title
-    share_bg = await get_random_share_bg()
     share_bg = share_bg.resize((1080, 607))
     share_bg_crop = share_bg.crop((0, 50, 1050, 550))
 
@@ -178,30 +216,19 @@ async def get_pool_data_by_type(query_type: str, star: int):
 
     card_img.paste(char_mask_temp, (0, 0), char_mask_temp)
 
-    await draw_pool_char(result, star, query_type, card_img)
+    _draw_pool_char_sync(data_list, query_type, pic_cache, card_img)
 
     card_img = add_footer(card_img)
-    card_img = await convert_img(card_img)
     return card_img
 
 
-async def draw_pool_char(
-    result: Dict[str, Any],
-    star: int,
+def _draw_pool_char_sync(
+    data_list,
     query_type: str,
+    pic_cache: Dict[str, Image.Image],
     card_img: Image.Image,
 ):
-    data_group = []
-    if star == 5:
-        for resource_id, num in result["five2num"].items():
-            data_group.append((resource_id, num, result["five2endtime"][resource_id]))
-    else:
-        for resource_id, num in result["four2num"].items():
-            data_group.append((resource_id, num, result["four2endtime"][resource_id]))
-
-    data_group.sort(key=lambda x: x[2], reverse=True)
-
-    for i, data in enumerate(data_group):
+    for i, data in enumerate(data_list):
         resource_id = data[0]
         up_time = data[1]
         end_time = data[2]
@@ -209,12 +236,7 @@ async def draw_pool_char(
         bar_bg = bar.copy()
         bar_star_draw = ImageDraw.Draw(bar_bg)
 
-        if query_type == "角色":
-            _id = char_name_to_char_id(resource_id) or resource_id
-            pic = await get_square_avatar(_id)
-        else:
-            _id = weapon_name_to_weapon_id(resource_id) or resource_id
-            pic = await get_square_weapon(_id)
+        pic = pic_cache[resource_id]
 
         pic_temp = Image.new("RGBA", pic.size)
         pic_temp.paste(pic.resize((160, 160)), (10, 10))

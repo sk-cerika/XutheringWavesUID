@@ -15,7 +15,21 @@ sv_waves_rank_total_list = SV("ww练度总排行", priority=0)
 sv_waves_rank_local_list = SV("ww练度排行", priority=0)
 
 
-@sv_waves_rank_list.on_regex(rf"^(?P<char>{PATTERN})(?:排行|排行榜|排名|ph|pm)$", block=True)
+@sv_waves_rank_list.on_regex(
+    rf"^(?P<char>{PATTERN})(?:排行|排行榜|排名|ph|pm)$",
+    block=True,
+    to_ai="""查询本群某角色的排行（伤害或评分），仅群聊可用。
+
+当用户在群里问「<角色>排行 / <角色>评分排行 / 群里谁<角色>最强」时调用。
+text 必须是 "<角色名>排行" 或 "<角色名>评分排行"。
+名字中含「评分」/「pf」/「练度」会走评分模式，否则走伤害模式。
+
+私聊会被拒绝。
+
+Args:
+    text: "<角色名>排行" / "<角色名>评分排行"。例: "长离排行"、"椿评分排行"。
+""",
+)
 async def send_rank_card(bot: Bot, ev: Event):
     if not ev.group_id:
         return await bot.send("请在群聊中使用")
@@ -56,7 +70,18 @@ async def send_rank_card(bot: Bot, ev: Event):
         await bot.send(res.wrap(im, canonical_cmd) if res else im)
 
 
-@sv_waves_rank_all_list.on_regex(rf"^(?P<char>{PATTERN})(?:总排行|总排行榜|总排名|zph|zpm)(?P<pages>\d+)?$", block=True)
+@sv_waves_rank_all_list.on_regex(
+    rf"^(?P<char>{PATTERN})(?:总排行|总排行榜|总排名|zph|zpm)(?P<pages>\d+)?$",
+    block=True,
+    to_ai="""查询全体某角色的排行（伤害或评分，跨群）。
+
+当用户问「<角色>总排行 / 全体<角色>最强」时调用。
+text 是 "<角色名>总排行<页码?>"，页码 1-5（默认 1）。名字中含「评分」/「练度」走评分模式。
+
+Args:
+    text: 例: "长离总排行1" / "椿评分总排行" / "忌炎总排行3"。
+""",
+)
 async def send_all_rank_card(bot: Bot, ev: Event):
     char = ev.regex_dict.get("char")
     pages = ev.regex_dict.get("pages")
@@ -98,7 +123,18 @@ async def send_all_rank_card(bot: Bot, ev: Event):
         await bot.send(res.wrap(im, canonical_cmd) if res else im)
 
 
-@sv_waves_rank_total_list.on_regex(r"^(练度总排行|练度总排行榜|练度总排名|ldzph|ldzpm)(?P<pages>\d+)?$", block=True)
+@sv_waves_rank_total_list.on_regex(
+    r"^(练度总排行|练度总排行榜|练度总排名|ldzph|ldzpm)(?P<pages>\d+)?$",
+    block=True,
+    to_ai="""查询全体练度总排行（账号综合练度评分跨群）。
+
+当用户问「练度总排行 / 全体练度最强」时调用。
+text 是 "练度总排行<页码?>"，页码 1-5。
+
+Args:
+    text: 例: "练度总排行1" / "ldzph2"。
+""",
+)
 async def send_total_rank_card(bot: Bot, ev: Event):
     pages = ev.regex_dict.get("pages")
 
@@ -117,7 +153,18 @@ async def send_total_rank_card(bot: Bot, ev: Event):
 
 
 @sv_waves_rank_local_list.on_command(
-    ("练度排行", "群练度排行", "练度群排行", "练度群排行榜", "练度排名", "群练度排名", "练度群排名", "ldph", "ldpm"), block=True
+    ("练度排行", "群练度排行", "练度群排行", "练度群排行榜", "练度排名", "群练度排名", "练度群排名", "ldph", "ldpm"),
+    block=True,
+    to_ai="""查询本群练度排行（按账号综合练度评分），仅群聊可用。
+
+当用户在群里问「群里谁练度最高 / 练度排行」时调用。
+text 可附评级筛选 a / s / ss，留空看全部。
+
+私聊会被拒绝。
+
+Args:
+    text: 可选 "a" / "s" / "ss" 评级筛选。
+""",
 )
 async def send_rank_list_card(bot: Bot, ev: Event):
     if not ev.group_id:

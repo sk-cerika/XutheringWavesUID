@@ -4,6 +4,7 @@ from gsuid_core.sv import SV
 from gsuid_core.bot import Bot
 from gsuid_core.models import Event
 from gsuid_core.logger import logger
+from gsuid_core.pool import to_thread
 from gsuid_core.segment import MessageSegment
 from gsuid_core.utils.image.convert import convert_img
 
@@ -33,6 +34,25 @@ from .card_utils import (
     send_custom_card_single_by_id,
     send_repeated_custom_cards,
 )
+
+
+@to_thread
+def _concat_refresh_and_detail(msg_bytes, im):
+    from io import BytesIO
+    refresh_img = Image.open(BytesIO(msg_bytes))
+    total_width = max(refresh_img.width, im.width)
+    new_im = Image.new("RGBA", (total_width, refresh_img.height + im.height))
+    new_im.paste(refresh_img, ((total_width - refresh_img.width) // 2, 0))
+    new_im.paste(im, ((total_width - im.width) // 2, refresh_img.height))
+    return new_im
+
+
+@to_thread
+def _concat_pk_images(im1, im2):
+    new_im = Image.new("RGBA", (im1.size[0] + im2.size[0], max(im1.size[1], im2.size[1])))
+    new_im.paste(im1, (0, 0))
+    new_im.paste(im2, (im1.size[0], 0))
+    return new_im
 
 
 def _space_hint() -> str:
@@ -398,6 +418,16 @@ async def _forward_upload_to_master(bot: Bot, ev: Event):
         "mb",
     ),
     block=True,
+    to_ai="""从米游社/库街区**强制刷新**全部角色面板数据。
+
+⚠️ 这是有 API 调用副作用的写操作（会更新本地数据库）。当用户问「刷新面板 / 更新面板 / 强制刷新」时调用。
+需绑定 cookie。完成后会自动展示更新最大的角色面板。
+
+如果用户只想看面板**不需要刷新**，应该用 search_knowledge 或 `角色面板` 命令。
+
+Args:
+    text: 无需参数，留空即可。
+""",
 )
 async def send_card_info(bot: Bot, ev: Event):
     user_id = ruser_id(ev)
@@ -492,12 +522,7 @@ async def send_one_char_detail_msg(bot: Bot, ev: Event):
         if isinstance(im, str):
             return await bot.send(_with_tip([refresh_seg, im], tip))
         if isinstance(im, Image.Image):
-            from io import BytesIO
-            refresh_img = Image.open(BytesIO(msg))
-            total_width = max(refresh_img.width, im.width)
-            new_im = Image.new("RGBA", (total_width, refresh_img.height + im.height))
-            new_im.paste(refresh_img, ((total_width - refresh_img.width) // 2, 0))
-            new_im.paste(im, ((total_width - im.width) // 2, refresh_img.height))
+            new_im = await _concat_refresh_and_detail(msg, im)
             return await bot.send(_with_tip(MessageSegment.image(await convert_img(new_im)), tip))
         return await bot.send_option(_with_tip(refresh_seg, tip), buttons)
 
@@ -506,7 +531,17 @@ async def send_one_char_detail_msg(bot: Bot, ev: Event):
     await bot.send(_with_tip([refresh_seg, MessageSegment.image(im)], tip))
 
 
-@waves_char_detail.on_prefix(("角色面板", "查询"))
+@waves_char_detail.on_prefix(
+    ("角色面板", "查询"),
+    to_ai="""查询自己某角色的完整面板图（属性 / 武器 / 声骸 / 共鸣链 / 实战伤害评分）。
+
+当用户问「<角色>面板 / 角色面板 / 查询<角色>」时调用，是 XW 最核心的查询。
+text 是角色名（已自动去掉前缀「角色面板」或「查询」）。需绑定 cookie。
+
+Args:
+    text: 角色名。例: "长离" / "椿" / "凌阳"。命令字 `角色面板` 或 `查询` 后跟角色名时 text 是角色名本身。
+""",
+)
 async def send_char_detail_msg(bot: Bot, ev: Event):
     char = ev.text.strip(" ")
     logger.debug(f"[鸣潮] [角色面板] CHAR: {char}")
@@ -673,12 +708,7 @@ async def send_char_detail_msg2(bot: Bot, ev: Event):
         if not isinstance(im2, Image.Image):
             return
 
-        # 创建一个新的图片对象
-        new_im = Image.new("RGBA", (im1.size[0] + im2.size[0], max(im1.size[1], im2.size[1])))
-
-        # 将两张图片粘贴到新图片对象上
-        new_im.paste(im1, (0, 0))
-        new_im.paste(im2, (im1.size[0], 0))
+        new_im = await _concat_pk_images(im1, im2)
         new_im = await convert_img(new_im)
         return await bot.send(res.wrap(new_im, canonical_cmd))
     else:

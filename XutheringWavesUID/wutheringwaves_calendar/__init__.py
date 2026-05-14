@@ -10,7 +10,18 @@ from .draw_calendar_card import draw_calendar_img
 sv_waves_calendar = SV("waves日历")
 
 
-@sv_waves_calendar.on_fullmatch(("个人日历", "日历", "個人日曆", "日曆", "rl"), block=True)
+@sv_waves_calendar.on_fullmatch(
+    ("个人日历", "日历", "個人日曆", "日曆", "rl"),
+    block=True,
+    to_ai="""查询鸣潮活动日历 + 卡池倒计时一览图。
+
+当用户问「最近有什么活动 / 当前活动 / 卡池什么时候结束 / 下期卡池开多久」时调用。
+不需要绑定。返回一张图。
+
+Args:
+    text: 无需参数，留空即可。
+""",
+)
 async def send_waves_calendar_pic(bot: Bot, ev: Event):
     uid = ""
     im = await draw_calendar_img(ev, uid)

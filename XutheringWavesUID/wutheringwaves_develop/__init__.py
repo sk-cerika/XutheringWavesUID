@@ -5,7 +5,7 @@ from gsuid_core.models import Event
 
 from ..utils.char_info_utils import PATTERN, parse_skill_levels
 from ..utils.name_resolve import resolve_char
-from ..wutheringwaves_develop.develop import calc_develop_cost
+from .develop import calc_develop_cost
 
 role_develop = SV("waves角色培养")
 
@@ -13,6 +13,15 @@ role_develop = SV("waves角色培养")
 @role_develop.on_regex(
     rf"^(?P<develop_list>({PATTERN})(?:\s+{PATTERN})*?)\s*(?:养成|培养|培养成本|yc)(?:\s*(?P<skill_levels>[\d,\s]+))?$",
     block=True,
+    to_ai="""查询鸣潮角色养成（突破+天赋升级）所需材料一览图。
+
+当用户问「菲比养成 / 长离需要什么材料 / 椿培养成本」时调用。
+text 必须是 "<角色名>养成"，可一次查多个：用空格分隔角色名 + 养成关键词。
+例：text="菲比养成"、text="长离 椿 养成"。
+
+Args:
+    text: 1-N 个角色名 + "养成/培养/yc" 后缀。例: "菲比养成" 或 "长离 椿 养成"。
+""",
 )
 async def calc_develop(bot: Bot, ev: Event):
     develop_list_str = ev.regex_dict.get("develop_list", "")

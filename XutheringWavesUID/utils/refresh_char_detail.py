@@ -8,19 +8,19 @@ import aiofiles
 from gsuid_core.logger import logger
 from gsuid_core.models import Event
 
-from ..utils.hint import error_reply
-from ..utils.util import get_version
-from ..utils.api.model import RoleList, AccountBaseInfo, OwnedRoleInfoResponse
-from ..utils.waves_api import waves_api
+from .hint import error_reply
+from .util import get_version
+from .api.model import RoleList, AccountBaseInfo, OwnedRoleInfoResponse
+from .waves_api import waves_api
 from .resource.constant import SPECIAL_CHAR_INT_ALL
-from ..utils.error_reply import WAVES_CODE_101, WAVES_CODE_102
-from ..utils.queues.const import QUEUE_SCORE_RANK
-from ..utils.queues.queues import push_item
-from ..utils.expression_ctx import WavesCharRank, get_waves_char_rank
+from .error_reply import WAVES_CODE_101, WAVES_CODE_102
+from .queues.const import QUEUE_SCORE_RANK
+from .queues.queues import push_item
+from .expression_ctx import WavesCharRank, get_waves_char_rank
 from ..wutheringwaves_config import PREFIX, WutheringWavesConfig
-from ..utils.resource.RESOURCE_PATH import PLAYER_PATH, CACHE_PATH
-from ..utils.char_info_utils import get_all_roleid_detail_info_int
-from ..utils.api.model import AccountBaseInfo as _AccountBaseInfo
+from .resource.RESOURCE_PATH import PLAYER_PATH, CACHE_PATH
+from .char_info_utils import get_all_roleid_detail_info_int
+from .api.model import AccountBaseInfo as _AccountBaseInfo
 
 
 async def save_base_info_cache(uid: str, account_info: _AccountBaseInfo):
@@ -291,7 +291,7 @@ async def save_char_list_cache(uid: str, waves_char_rank: Optional[List[WavesCha
             load_char_list_data,
             save_char_list_data,
         )
-        from ..utils.resource.constant import SPECIAL_CHAR_RANK_MAP
+        from .resource.constant import SPECIAL_CHAR_RANK_MAP
 
         # 加载现有的角色评分数据
         existing_char_list_data = await load_char_list_data(uid)

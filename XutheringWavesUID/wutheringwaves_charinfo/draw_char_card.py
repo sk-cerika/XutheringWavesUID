@@ -6,6 +6,7 @@ from typing import Dict, Optional
 import httpx
 from gsuid_core.models import Event
 from gsuid_core.logger import logger
+from gsuid_core.pool import to_thread
 from PIL import Image, ImageDraw, ImageEnhance
 from gsuid_core.utils.image.convert import convert_img
 from gsuid_core.utils.image.image_tools import crop_center_img
@@ -213,6 +214,7 @@ def parse_text_and_number(text):
         return text, None
 
 
+# TODO: PIL 卸到线程池 (await/PIL 深度交错)
 async def ph_card_draw(
     ph_sum_value,
     role_detail: RoleDetailData,
@@ -484,6 +486,7 @@ async def get_role_need(
     return avatar, role_detail
 
 
+# TODO: PIL 卸到线程池 (await/PIL 深度交错)
 async def draw_fixed_img(img, avatar, account_info, role_detail, locale="", uid=None, char_name=None, user_pref=""):
     # 头像部分
     avatar_ring = Image.open(TEXT_PATH / "avatar_ring.png")
@@ -576,6 +579,7 @@ async def draw_fixed_img(img, avatar, account_info, role_detail, locale="", uid=
         draw_text_with_shadow(draw, hash_id, 525, 270, waves_font_12, offset=(1, 1), shadow_color="gray", anchor="rm")
 
 
+# TODO: PIL 卸到线程池 (await/PIL 深度交错)
 async def draw_char_detail_img(
     ev: Event,
     uid: str,
@@ -1058,6 +1062,7 @@ async def draw_char_detail_img(
     return img
 
 
+# TODO: PIL 卸到线程池 (await/PIL 深度交错)
 async def draw_char_score_img(ev: Event, uid: str, char: str, user_id: str, waves_id: Optional[str] = None, is_limit_query=False):
     from ..utils.calc import WuWaCalc
     locale = await WavesLangSettings.get_lang(ev.user_id)
@@ -1362,7 +1367,8 @@ async def draw_char_score_img(ev: Event, uid: str, char: str, user_id: str, wave
     return img
 
 
-async def draw_weight(image, role_name, weight_list_temp, calc_temp):
+@to_thread
+def draw_weight(image, role_name, weight_list_temp, calc_temp):
     draw = ImageDraw.Draw(image)
     draw.rectangle([10, 10, 1490, 870], fill=(0, 0, 0, int(0.7 * 255)))
 
@@ -1427,18 +1433,16 @@ async def draw_pic_with_ring(ev: Event, is_force_avatar=False, force_resource_id
     else:
         pic = await get_event_avatar(ev, is_valid_at_param=False)
 
-    mask_pic = Image.open(TEXT_PATH / "avatar_mask.png")
-    img = Image.new("RGBA", (180, 180))
-    mask = mask_pic.resize((160, 160))
-    resize_pic = crop_center_img(pic, 160, 160)
-    img.paste(resize_pic, (20, 20), mask)
-
-    return img
+    return await _compose_avatar_ring(pic)
 
 
 async def draw_char_with_ring(char_id):
     pic = await get_square_avatar(char_id)
+    return await _compose_avatar_ring(pic)
 
+
+@to_thread
+def _compose_avatar_ring(pic):
     mask_pic = Image.open(TEXT_PATH / "avatar_mask.png")
     img = Image.new("RGBA", (180, 180))
     mask = mask_pic.resize((160, 160))

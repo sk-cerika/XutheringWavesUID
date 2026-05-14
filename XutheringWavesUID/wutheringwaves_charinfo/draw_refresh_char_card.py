@@ -6,6 +6,7 @@ from PIL import Image, ImageDraw, ImageFilter, ImageEnhance
 
 from gsuid_core.bot import Bot
 from gsuid_core.models import Event
+from gsuid_core.pool import to_thread
 from gsuid_core.utils.image.convert import convert_img
 from gsuid_core.utils.image.image_tools import crop_center_img
 
@@ -140,6 +141,11 @@ def get_refresh_interval_notify(time_stamp: int, is_single_refresh: bool = False
 
 async def get_refresh_role_img(width: int, height: int):
     path = await get_random_share_bg_path()
+    return await _render_refresh_role_img(path, width, height)
+
+
+@to_thread
+def _render_refresh_role_img(path: Path, width: int, height: int):
     img = Image.open(path).convert("RGBA")
     if path.name in refresh_role_map:
         img = img.crop(refresh_role_map[path.name])
@@ -194,6 +200,7 @@ async def get_refresh_role_img(width: int, height: int):
     return result
 
 
+# TODO: PIL 卸到线程池 (await/PIL 深度交错, draw_pic 已单独卸载)
 @async_func_lock(keys=["user_id", "uid"])
 async def draw_refresh_char_detail_img(
     bot: Bot,
@@ -391,11 +398,16 @@ async def draw_refresh_char_detail_img(
 
 async def draw_pic(char_rank: WavesCharRank, isUpdate=False):
     pic = await get_square_avatar(char_rank.roleId)
+    star_bg = await get_star_bg(char_rank.starLevel)
+    return await _compose_refresh_char_pic(char_rank, pic, star_bg, isUpdate)
+
+
+@to_thread
+def _compose_refresh_char_pic(char_rank: WavesCharRank, pic, star_bg, isUpdate=False):
     resize_pic = pic.resize((200, 200))
     img = refresh_char_bg.copy()
     img_draw = ImageDraw.Draw(img)
     img.alpha_composite(resize_pic, (50, 50))
-    star_bg = await get_star_bg(char_rank.starLevel)
     star_bg = star_bg.resize((220, 220))
     img.alpha_composite(star_bg, (40, 30))
 

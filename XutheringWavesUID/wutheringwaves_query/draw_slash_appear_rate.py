@@ -1,15 +1,17 @@
+import time
 from typing import Dict, List, Union
 from pathlib import Path
 
 import httpx
 from PIL import Image, ImageDraw
 
+from gsuid_core.pool import to_thread
 from gsuid_core.logger import logger
 from gsuid_core.models import Event
 from gsuid_core.utils.image.convert import convert_img
 
 from ..utils.util import timed_async_cache
-from ..utils.image import get_ICON, add_footer, get_waves_bg, get_square_avatar
+from ..utils.image import GREY, get_ICON, add_footer, get_waves_bg, get_square_avatar
 from ..utils.api.wwapi import GET_SLASH_APPEAR_RATE
 from ..utils.ascension.char import get_char_model
 from ..utils.ascension.model import CharacterModel
@@ -20,6 +22,7 @@ from ..utils.fonts.waves_fonts import (
     waves_font_58,
 )
 from ..utils.resource.constant import NAME_ALIAS
+from ..wutheringwaves_abyss.period import get_slash_period_number
 
 TEXT_PATH = Path(__file__).parent / "texture2d"
 
@@ -92,6 +95,32 @@ async def draw_slash_use_rate(ev: Event):
 
         h = title_h + totalNum * bar_star_h + slash_name_bg_h + footer_h
 
+    # 预加载头像
+    avatar_cache: Dict[str, Image.Image] = {}
+    for i in show_data:
+        for rate_temp in i["rates"]:
+            char_id = rate_temp["char_id"]
+            if char_id in avatar_cache:
+                continue
+            if not get_char_model(char_id):
+                continue
+            avatar_cache[char_id] = await get_square_avatar(char_id)
+
+    card_img = await _render_slash_use_rate(
+        show_data, filter_type, h, defaule_filter, slash_name_bg_h, avatar_cache
+    )
+    return await convert_img(card_img)
+
+
+@to_thread
+def _render_slash_use_rate(
+    show_data,
+    filter_type,
+    h,
+    defaule_filter,
+    slash_name_bg_h,
+    avatar_cache: Dict[str, Image.Image],
+) -> Image.Image:
     card_img = get_waves_bg(1050, h, "bg9")
 
     # title
@@ -107,6 +136,18 @@ async def draw_slash_use_rate(ev: Event):
     title_text = "#冥歌海墟出场率"
     title_bg_draw = ImageDraw.Draw(title_bg)
     title_bg_draw.text((220, 290), title_text, "white", waves_font_58, "lm")
+
+    # 期次 + 获取时间
+    period_label = f"第{get_slash_period_number()}期"
+    date_text = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+    title_bg_draw.text((225, 360), period_label, GREY, waves_font_20, "lm")
+    try:
+        period_w = title_bg_draw.textlength(period_label, font=waves_font_20)
+    except Exception:
+        period_w = waves_font_20.getsize(period_label)[0]
+    title_bg_draw.text(
+        (225 + period_w + 16, 360), date_text, GREY, waves_font_20, "lm"
+    )
 
     # 遮罩
     char_mask = Image.open(TEXT_PATH / "char_mask.png").convert("RGBA")
@@ -152,7 +193,10 @@ async def draw_slash_use_rate(ev: Event):
             if not char_model:
                 continue
 
-            temp_pic = await get_temp_pic(char_id, char_model, rate)
+            avatar = avatar_cache.get(char_id)
+            if avatar is None:
+                continue
+            temp_pic = _build_temp_pic(avatar, char_model, rate)
             temp_pic = temp_pic.resize((200, 157))
             card_img.alpha_composite(
                 temp_pic,
@@ -169,12 +213,10 @@ async def draw_slash_use_rate(ev: Event):
             start_y += 180 * defaule_filter
 
     card_img = add_footer(card_img)
-    card_img = await convert_img(card_img)
     return card_img
 
 
-async def get_temp_pic(char_id: str, char_model: CharacterModel, rate: float):
-    avatar = await get_square_avatar(char_id)
+def _build_temp_pic(avatar: Image.Image, char_model: CharacterModel, rate: float) -> Image.Image:
     avatar = avatar.resize((180, 180))
     if char_model.starLevel == 5:
         star_fg = Image.open(TEXT_PATH / "star5_fg.png")

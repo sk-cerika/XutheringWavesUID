@@ -1,3 +1,4 @@
+import asyncio
 import copy
 import textwrap
 from pathlib import Path
@@ -6,6 +7,7 @@ from collections import defaultdict
 from PIL import Image, ImageDraw
 
 from gsuid_core.logger import logger
+from gsuid_core.pool import to_thread
 from gsuid_core.utils.image.convert import convert_img
 
 from ..utils.image import (
@@ -35,6 +37,69 @@ star_img_map = {
     4: star_4,
     5: star_5,
 }
+
+SONATA_DESC_WIDTH = 18
+SONATA_DESC_LINE_HEIGHT = 25
+UTILS_TEXTURE_PATH = Path(__file__).parent.parent / "utils" / "texture2d"
+
+
+def _get_cover_waves_bg(width: int, height: int, bg: str = "bg6") -> Image.Image:
+    source = Image.open(UTILS_TEXTURE_PATH / f"{bg}.jpg").convert("RGBA")
+    scale = max(width / source.width, height / source.height)
+    resized_size = (
+        max(width, int(source.width * scale) + 1),
+        max(height, int(source.height * scale) + 1),
+    )
+    source = source.resize(resized_size, Image.Resampling.LANCZOS)
+    left = (source.width - width) // 2
+    top = (source.height - height) // 2
+    return source.crop((left, top, left + width, top + height))
+
+
+def _wrap_sonata_desc(desc: str) -> list[str]:
+    return textwrap.wrap(desc or "", width=SONATA_DESC_WIDTH) or [""]
+
+
+def _calc_sonata_card_height(sonata: dict) -> int:
+    height = 30
+    for _, effect in sorted(sonata["set"].items(), key=lambda x: int(x[0])):
+        height += len(_wrap_sonata_desc(effect.get("desc", ""))) * SONATA_DESC_LINE_HEIGHT + 5
+    return max(height, 60)
+
+
+def _calc_sonata_canvas_height(sorted_groups: list[tuple[str, list[dict]]]) -> int:
+    y_offset = 100
+    for _, sonatas in sorted_groups:
+        for i in range(0, len(sonatas), 2):
+            row_height = _calc_sonata_card_height(sonatas[i])
+            if i + 1 < len(sonatas):
+                row_height = max(row_height, _calc_sonata_card_height(sonatas[i + 1]))
+            y_offset += row_height + 20
+        y_offset += 20
+    return max(y_offset + 90, 320)
+
+
+def _draw_sonata_card_sync(img: Image.Image, draw: ImageDraw.ImageDraw, sonata: dict, fetter_icon: Image.Image, x: int, y: int) -> int:
+    fetter_icon = fetter_icon.resize((50, 50))
+    img.paste(fetter_icon, (x, y), fetter_icon)
+
+    text_x = x + 60
+    draw.text((text_x, y), sonata["name"], font=waves_font_24, fill=SPECIAL_GOLD)
+
+    current_y = y + 30
+    for set_num, effect in sorted(sonata["set"].items(), key=lambda x: int(x[0])):
+        draw.text((text_x, current_y), f"{set_num}件:", font=waves_font_16, fill="white")
+        wrapped_desc = _wrap_sonata_desc(effect.get("desc", ""))
+        for j, line in enumerate(wrapped_desc):
+            draw.text(
+                (text_x + 40, current_y + j * SONATA_DESC_LINE_HEIGHT),
+                line,
+                font=waves_font_16,
+                fill="#AAAAAA",
+            )
+        current_y += len(wrapped_desc) * SONATA_DESC_LINE_HEIGHT + 5
+
+    return current_y - y
 
 
 async def draw_weapon_list(weapon_type: str):
@@ -91,6 +156,17 @@ async def _draw_weapon_list_pil(weapon_type: str):
     # 按类型从小到大排序
     sorted_groups = sorted(weapon_groups.items(), key=lambda x: x[0])
 
+    # 预取所有武器图标
+    all_ids = [w["id"] for _, ws in sorted_groups for w in ws]
+    icon_results = await asyncio.gather(*[get_square_weapon(wid) for wid in all_ids])
+    icon_map = dict(zip(all_ids, icon_results))
+
+    img = await _compose_weapon_list(sorted_groups, target_type, icon_map)
+    return await convert_img(img)
+
+
+@to_thread
+def _compose_weapon_list(sorted_groups, target_type, icon_map):
     # 每行武器数量（单类型4列，全部类型9列）
     weapons_per_row = 9 if target_type is None else 4
     # 图标大小
@@ -160,8 +236,8 @@ async def _draw_weapon_list_pil(weapon_type: str):
                 # 计算位置（居中布局）
                 x_pos = 40 + col * horizontal_spacing
 
-                # 获取武器图标
-                weapon_icon = await get_square_weapon(weapon["id"])
+                # 获取武器图标（预取）
+                weapon_icon = icon_map[weapon["id"]]
                 weapon_icon = weapon_icon.resize((icon_size, icon_size))
 
                 # 获取并调整武器背景框
@@ -198,7 +274,7 @@ async def _draw_weapon_list_pil(weapon_type: str):
     # 裁剪图片到实际高度
     img = img.crop((0, 0, width, y_offset + 50))
     img = add_footer(img, int(width / 2), 10)  # 页脚居中
-    return await convert_img(img)
+    return img
 
 
 async def draw_sonata_list(version: str = ""):
@@ -239,7 +315,19 @@ async def _draw_sonata_list_pil(version: str = ""):
 
     sorted_groups = sorted(sonata_groups.items(), key=lambda x: float(x[0]), reverse=True)
 
-    img = get_waves_bg(900, 3000, "bg6")
+    # 预取所有合鸣效果图标
+    all_names = [s["name"] for _, ss in sorted_groups for s in ss]
+    icon_results = await asyncio.gather(*[get_attribute_effect(n) for n in all_names])
+    icon_map = dict(zip(all_names, icon_results))
+
+    img = await _compose_sonata_list(sorted_groups, version, icon_map)
+    return await convert_img(img)
+
+
+@to_thread
+def _compose_sonata_list(sorted_groups, version, icon_map):
+    canvas_height = _calc_sonata_canvas_height(sorted_groups)
+    img = _get_cover_waves_bg(900, canvas_height, "bg6")
     draw = ImageDraw.Draw(img)
 
     # 绘制标题
@@ -248,9 +336,6 @@ async def _draw_sonata_list_pil(version: str = ""):
 
     # 当前绘制位置
     y_offset = 80
-    col_width = 18  # 列宽（用于文本换行计算）
-    des_height = 25  # 套装效果描述高度
-
     # 添加组间分隔线
     draw.line((40, y_offset, 860, y_offset), fill=SPECIAL_GOLD, width=1)
     y_offset += 20
@@ -263,73 +348,15 @@ async def _draw_sonata_list_pil(version: str = ""):
         # 将组内套装分成两列展示
         for i in range(0, len(sonatas), 2):
             current_y = y_offset  # 记录当前行的起始Y位置
-            max_height = 0  # 记录当前行最大高度（用于移动到下一行）
 
             # 第一列套装
             sonata1 = sonatas[i]
-            name_height = 30
-
-            # 获取套装图标
-            fetter_icon1 = await get_attribute_effect(sonata1["name"])
-            fetter_icon1 = fetter_icon1.resize((50, 50))
-            img.paste(fetter_icon1, (40, current_y), fetter_icon1)
-
-            # 绘制套装名称
-            draw.text((100, current_y), sonata1["name"], font=waves_font_24, fill=SPECIAL_GOLD)
-
-            # 绘制所有套装效果
-            current_height = current_y + name_height
-            for set_num, effect in sorted(sonata1["set"].items(), key=lambda x: int(x[0])):
-                # 绘制件数标签
-                draw.text((100, current_height), f"{set_num}件:", font=waves_font_16, fill="white")
-
-                # 处理效果描述文本
-                desc = effect.get("desc", "")
-                wrapped_desc = textwrap.wrap(desc, width=col_width)
-
-                # 绘制效果描述
-                for j, line in enumerate(wrapped_desc):
-                    draw.text((140, current_height + j * des_height), line, font=waves_font_16, fill="#AAAAAA")
-
-                # 更新当前高度
-                current_height += len(wrapped_desc) * des_height + 5  # 加5像素作为间距
-
-            # 计算当前套装总高度
-            sonata1_height = current_height - current_y
-            max_height = max(max_height, sonata1_height)
+            max_height = _draw_sonata_card_sync(img, draw, sonata1, icon_map[sonata1["name"]], 40, current_y)
 
             # 第二列套装（如果有）
             if i + 1 < len(sonatas):
                 sonata2 = sonatas[i + 1]
-
-                # 获取套装图标
-                fetter_icon2 = await get_attribute_effect(sonata2["name"])
-                fetter_icon2 = fetter_icon2.resize((50, 50))
-                img.paste(fetter_icon2, (460, current_y), fetter_icon2)
-
-                # 绘制套装名称
-                draw.text((520, current_y), sonata2["name"], font=waves_font_24, fill=SPECIAL_GOLD)
-
-                # 绘制所有套装效果
-                current_height2 = current_y + name_height
-                for set_num, effect in sorted(sonata2["set"].items(), key=lambda x: int(x[0])):
-                    # 绘制件数标签
-                    draw.text((520, current_height2), f"{set_num}件:", font=waves_font_16, fill="white")
-
-                    # 处理效果描述文本
-                    desc = effect.get("desc", "")
-                    wrapped_desc = textwrap.wrap(desc, width=col_width)
-
-                    # 绘制效果描述
-                    for j, line in enumerate(wrapped_desc):
-                        draw.text((560, current_height2 + j * des_height), line, font=waves_font_16, fill="#AAAAAA")
-
-                    # 更新当前高度
-                    current_height2 += len(wrapped_desc) * des_height + 5  # 加5像素作为间距
-
-                # 计算当前套装总高度
-                sonata2_height = current_height2 - current_y
-                max_height = max(max_height, sonata2_height)
+                max_height = max(max_height, _draw_sonata_card_sync(img, draw, sonata2, icon_map[sonata2["name"]], 460, current_y))
 
             # 移动到下一行（使用当前行最大高度 + 间距）
             y_offset += max_height + 20  # 增加行间距
@@ -338,7 +365,7 @@ async def _draw_sonata_list_pil(version: str = ""):
         draw.line((40, y_offset, 860, y_offset), fill=SPECIAL_GOLD, width=1)
         y_offset += 20
 
-    # 裁剪图片到实际高度
-    img = img.crop((0, 0, 900, y_offset + 50))
+    # 裁剪图片到实际高度，保留页脚空间，且不超过已经生成的背景画布。
+    img = img.crop((0, 0, 900, min(img.height, y_offset + 90)))
     img = add_footer(img, 450, 10)
-    return await convert_img(img)
+    return img

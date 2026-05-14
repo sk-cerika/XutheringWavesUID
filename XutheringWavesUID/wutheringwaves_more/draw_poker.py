@@ -4,6 +4,7 @@ from pathlib import Path
 from PIL import Image, ImageDraw
 
 from gsuid_core.models import Event
+from gsuid_core.pool import to_thread
 from gsuid_core.utils.image.convert import convert_img
 
 from ..utils.hint import error_reply
@@ -98,7 +99,35 @@ async def draw_poker_img(ev: Event, uid: str, user_id: str):
         return f"用户未展示数据, 请尝试【{PREFIX}登录】"
     account_info = AccountBaseInfo.model_validate(account_info.data)
 
-    # 计算徽章行数来调整总高度
+    # 头像 头像环
+    avatar, avatar_ring = await draw_pic_with_ring(ev)
+
+    # 预取徽章图标
+    badge_icons = []
+    for badge in phantomBattle.badgeList:
+        badge_icons.append(await pic_download_from_url(POKER_PATH, pic_url=badge.iconUrl))
+
+    card_img = await _compose_poker_img(
+        account_info,
+        phantomBattle,
+        avatar,
+        avatar_ring,
+        badge_icons,
+        user_pref,
+    )
+    card_img = await convert_img(card_img)
+    return card_img
+
+
+@to_thread
+def _compose_poker_img(
+    account_info,
+    phantomBattle,
+    avatar,
+    avatar_ring,
+    badge_icons,
+    user_pref,
+) -> Image.Image:
     total_badges = len(phantomBattle.badgeList)
     badges_per_row = 4
     badge_rows = (total_badges + badges_per_row - 1) // badges_per_row
@@ -114,8 +143,6 @@ async def draw_poker_img(ev: Event, uid: str, user_id: str):
     base_info_draw.text((226, 173), f"特征码:  {hide_uid(account_info.id, user_pref=user_pref)}", GOLD, waves_font_25, "lm")
     card_img.paste(base_info_bg, (15, 20), base_info_bg)
 
-    # 头像 头像环
-    avatar, avatar_ring = await draw_pic_with_ring(ev)
     card_img.paste(avatar, (25, 70), avatar)
     card_img.paste(avatar_ring, (35, 80), avatar_ring)
 
@@ -312,7 +339,7 @@ async def draw_poker_img(ev: Event, uid: str, user_id: str):
                 width=2,
             )
 
-        icon_img = await pic_download_from_url(POKER_PATH, pic_url=badge.iconUrl)
+        icon_img = badge_icons[i]
 
         if icon_img:
             # 图标区域
@@ -371,5 +398,4 @@ async def draw_poker_img(ev: Event, uid: str, user_id: str):
     card_img.paste(badge_bg, (15, y_offset), badge_bg)
 
     card_img = add_footer(card_img, 600, 20)
-    card_img = await convert_img(card_img)
     return card_img

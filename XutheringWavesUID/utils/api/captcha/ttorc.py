@@ -5,7 +5,7 @@ import aiohttp
 
 from . import register_solver
 from .base import RemoteCaptchaSolver
-from ..captcha.errors import CaptchaVerifyError
+from .errors import CaptchaVerifyError
 
 # ttorc 只是作为参考
 # https://www.kancloud.cn/ttorc/ttorc/3119237

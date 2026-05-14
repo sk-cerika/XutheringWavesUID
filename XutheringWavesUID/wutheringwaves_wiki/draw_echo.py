@@ -5,6 +5,7 @@ from pathlib import Path
 from PIL import Image, ImageDraw
 
 from gsuid_core.logger import logger
+from gsuid_core.pool import to_thread
 from gsuid_core.utils.image.convert import convert_img
 from gsuid_core.utils.image.image_tools import crop_center_img
 
@@ -58,7 +59,8 @@ async def parse_echo_base_content(echo_id, echo_model: EchoModel, image, card_im
         card_img.alpha_composite(effect_image, (echo_name_width + index * 35, 40))
 
 
-async def parse_echo_detail_content(echo_model: EchoModel, card_img):
+@to_thread
+def parse_echo_detail_content(echo_model: EchoModel, card_img):
     y_padding = 20  # 初始位移
     x_padding = 20  # 初始位移
     line_spacing = 10  # 行间距
@@ -120,7 +122,8 @@ async def parse_echo_detail_content(echo_model: EchoModel, card_img):
     card_img.alpha_composite(image, (330, 80))
 
 
-async def parse_echo_statistic_content(echo_model: EchoModel, echo_image):
+@to_thread
+def parse_echo_statistic_content(echo_model: EchoModel, echo_image):
     rows = echo_model.get_intensity()
     echo_bg = Image.open(TEXT_PATH / "weapon_bg.png")
     echo_bg_temp = Image.new("RGBA", echo_bg.size)

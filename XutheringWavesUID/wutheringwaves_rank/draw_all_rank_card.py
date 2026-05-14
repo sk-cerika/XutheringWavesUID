@@ -114,6 +114,7 @@ async def get_rank(item: RankItem) -> Optional[RankInfoResponse]:
             logger.exception(f"获取排行失败: {e}")
 
 
+# TODO: PIL 卸到线程池 (loop 内 await get_attribute / get_attribute_effect / get_square_weapon 多处, 需要批量预取重构)
 async def draw_all_rank_card(bot: Bot, ev: Event, char: str, rank_type: str, pages: int) -> Union[str, bytes]:
     is_self_ck = False
     self_uid = ""

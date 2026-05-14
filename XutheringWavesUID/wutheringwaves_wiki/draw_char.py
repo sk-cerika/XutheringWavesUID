@@ -7,6 +7,7 @@ from pathlib import Path
 from msgspec import json as msgjson
 from PIL import Image, ImageDraw
 
+from gsuid_core.pool import to_thread
 from gsuid_core.utils.image.convert import convert_img
 
 from ..utils.image import (
@@ -43,6 +44,41 @@ from ..utils.util import clean_tags, wrap_text_with_manual_newlines
 from ..utils.resource.download_file import get_material_img
 
 TEXT_PATH = Path(__file__).parent / "texture2d"
+
+
+def _clean_wiki_text(text: str) -> str:
+    text = clean_tags(str(text or ""))
+    text = text.replace("\r\n", "\n").replace("\r", "\n").replace("&nbsp;", " ")
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
+
+
+def _font_width(text: str, font) -> int:
+    return int(font.getlength(text)) if hasattr(font, "getlength") else int(font.getsize(text)[0])
+
+
+def _wrap_pil_text(text: str, font, max_width: int) -> List[str]:
+    lines: List[str] = []
+    for part in _clean_wiki_text(text).split("\n"):
+        if not part.strip():
+            lines.append("")
+            continue
+
+        current = ""
+        for char in part.strip():
+            test = current + char
+            if _font_width(test, font) <= max_width:
+                current = test
+                continue
+            if current:
+                lines.append(current)
+                current = char
+            else:
+                lines.append(char)
+                current = ""
+        if current:
+            lines.append(current)
+    return lines
 
 
 async def draw_char_materials(char_model: CharacterModel, char_bg: Image.Image, x: int, y: int):
@@ -181,7 +217,17 @@ async def parse_char_forte_data(data: Dict, char_id: str):
     features = data.get("Features", [])
     if features:
         feature_img = await draw_text_block(
-            "角色特点", features, image_width, title_font, detail_font, title_color, detail_color, x_padding, y_padding, shadow_radius, line_spacing
+            "角色特点",
+            [_clean_wiki_text(feature) for feature in features],
+            image_width,
+            title_font,
+            detail_font,
+            title_color,
+            detail_color,
+            x_padding,
+            y_padding,
+            shadow_radius,
+            line_spacing,
         )
         images.append(feature_img)
 
@@ -191,7 +237,7 @@ async def parse_char_forte_data(data: Dict, char_id: str):
 
     for key in sorted_keys:
         instruction_group = instructions[key]
-        group_name = instruction_group.get("Name", "未命名")
+        group_name = _clean_wiki_text(instruction_group.get("Name", "未命名"))
         desc_map = instruction_group.get("Desc", {})
         
         # Sort desc items by key
@@ -211,7 +257,7 @@ async def parse_char_forte_data(data: Dict, char_id: str):
         group_image_blocks = []
         for desc_key in sorted_desc_keys:
             item = desc_map[desc_key]
-            desc_text = clean_tags(item.get("Desc", ""))
+            desc_text = _clean_wiki_text(item.get("Desc", ""))
             input_list = item.get("InputList", [])
             image_list = item.get("ImageList", [])
 
@@ -280,11 +326,12 @@ async def parse_char_forte_data(data: Dict, char_id: str):
     return final_img
 
 
-async def draw_text_block(title, lines, width, title_font, content_font, title_color, content_color, x_pad, y_pad, shadow_rad, line_sp):
+@to_thread
+def draw_text_block(title, lines, width, title_font, content_font, title_color, content_color, x_pad, y_pad, shadow_rad, line_sp):
     # Calculate height
     content_lines = []
     for line in lines:
-        content_lines.extend(textwrap.wrap(line, width=30)) # Approx width
+        content_lines.extend(_wrap_pil_text(line, content_font, width - 2 * (x_pad + shadow_rad)))
     
     header_h = title_font.size + line_sp * 2
     content_h = len(content_lines) * (content_font.size + line_sp)
@@ -308,7 +355,8 @@ async def draw_text_block(title, lines, width, title_font, content_font, title_c
     return img
 
 
-async def draw_mixed_text(desc_text, input_list, width, font, color, x_pad, y_pad, shadow_rad, line_sp):
+@to_thread
+def draw_mixed_text(desc_text, input_list, width, font, color, x_pad, y_pad, shadow_rad, line_sp):
     # Prepare content segments
     segments = []
     parts = re.split(r"{(\d+)}", desc_text)
@@ -317,7 +365,7 @@ async def draw_mixed_text(desc_text, input_list, width, font, color, x_pad, y_pa
         if i % 2 == 0:
             # Text part
             if part:
-                segments.append({"type": "text", "content": part})
+                segments.append({"type": "text", "content": _clean_wiki_text(part)})
         else:
             # Index part
             if part.isdigit():
@@ -462,7 +510,8 @@ async def draw_char_chain_pil(char_id: str):
     return card_img
 
 
-async def parse_char_stats(max_stats: Stats):
+@to_thread
+def parse_char_stats(max_stats: Stats):
     labels = ["基础生命", "基础攻击", "基础防御"]
     values = [f"{max_stats.life:.0f}", f"{max_stats.atk:.0f}", f"{max_stats.def_:.0f}"]
     rows = [(label, value) for label, value in zip(labels, values)]
@@ -501,7 +550,8 @@ async def parse_char_stats(max_stats: Stats):
     return image
 
 
-async def parse_char_chain(data: Dict[int, Chain]):
+@to_thread
+def parse_char_chain(data: Dict[int, Chain]):
     y_padding = 20  # 初始位移
     x_padding = 20  # 初始位移
     line_spacing = 10  # 行间距
@@ -592,21 +642,6 @@ async def parse_char_chain(data: Dict[int, Chain]):
 
 
 async def parse_char_skill(data: Dict[str, Dict[str, Skill]]):
-    y_padding = 20  # 初始位移
-    x_padding = 20  # 初始位移
-    line_spacing = 10  # 行间距
-    block_line_spacing = 20  # 块行间距
-    image_width = 1000  # 每个图像的宽度
-    shadow_radius = 20  # 阴影半径
-
-    title_color = SPECIAL_GOLD
-    title_font_size = 30
-    title_font = waves_font_origin(title_font_size)
-
-    detail_color = "white"
-    detail_color_size = 14
-    detail_font = waves_font_origin(detail_color_size)
-
     keys = [
         ("常态攻击", "1", ["12", "13"]),
         ("共鸣技能", "2", ["10", "14"]),
@@ -617,99 +652,128 @@ async def parse_char_skill(data: Dict[str, Dict[str, Skill]]):
         ("谐度破坏", "17", []),
     ]
 
+    content_w = 900
+    rate_imgs: Dict[str, Optional[Image.Image]] = {}
+    for skill_type, skill_tree_id, _relate in keys:
+        if skill_tree_id not in data:
+            continue
+        item = data[skill_tree_id]["skill"]
+        rate_imgs[skill_tree_id] = await parse_char_skill_rate(item.level, content_w)
+
+    return await _compose_char_skill(data, keys, rate_imgs)
+
+
+@to_thread
+def _compose_char_skill(data, keys, rate_imgs):
+    image_width = 1000
+    card_x = 30
+    card_w = 940
+    content_x = 50
+    content_w = 900
+    title_color = SPECIAL_GOLD
+    title_font = waves_font_origin(30)
+    subtitle_font = waves_font_origin(18)
+    heading_font = waves_font_origin(18)
+    detail_font = waves_font_origin(20)
+    line_gap = 8
+
     images = []
     for skill_type, skill_tree_id, relate_skill_tree_ids in keys:
+        if skill_tree_id not in data:
+            continue
         item = data[skill_tree_id]["skill"]
 
-        # 拼接文本
-        title = skill_type
-        desc = clean_tags(item.get_desc_detail())
+        desc = _clean_wiki_text(item.get_desc_detail())
         if skill_type == "谐度破坏" and not desc.strip():
             desc = "目标【偏谐值】满时，可对其造成【谐度破坏】伤害。"
 
-        # 分行显示标题
-        wrapped_title = textwrap.fill(title, width=10)
-        wrapped_desc = wrap_text_with_manual_newlines(desc, width=65)
-
-        # 获取每行的宽度，确保不会超过设定的 image_width
-        lines_title = wrapped_title.split("\n")
-        lines_desc = wrapped_desc.split("\n")
+        line_items = [
+            ("text", line)
+            for line in _wrap_pil_text(desc, detail_font, content_w)
+        ]
 
         for relate_id in relate_skill_tree_ids:
+            if relate_id not in data:
+                continue
             relate_item = data[relate_id]["skill"]
             _type = relate_item.type if relate_item.type else "属性加成"
             relate_title = f"{_type}: {relate_item.name}"
-            relate_desc = clean_tags(relate_item.get_desc_detail())
-            wrapped_relate_desc = wrap_text_with_manual_newlines(relate_desc, width=65)
+            relate_desc = _clean_wiki_text(relate_item.get_desc_detail())
+            line_items.append(("space", ""))
+            line_items.extend(("heading", line) for line in _wrap_pil_text(relate_title, heading_font, content_w))
+            line_items.extend(("text", line) for line in _wrap_pil_text(relate_desc, detail_font, content_w))
 
-            lines_desc.append(relate_title)
-            lines_desc.extend(wrapped_relate_desc.split("\n"))
+        rate_img = rate_imgs.get(skill_tree_id)
+        body_h = 0
+        for kind, _line in line_items:
+            if kind == "space":
+                body_h += 10
+            elif kind == "heading":
+                body_h += heading_font.size + line_gap
+            else:
+                body_h += detail_font.size + line_gap
+        if rate_img:
+            body_h += 16 + rate_img.height
 
-        # 计算总的绘制高度
-        total_text_height = y_padding + block_line_spacing + shadow_radius * 2
-        total_text_height += len(lines_title) * (title_font_size + line_spacing)  # 标题部分的总高度
-        total_text_height += len(lines_desc) * (detail_color_size + line_spacing)  # 描述部分的总高度
+        total_text_height = 82 + body_h + 26
 
         img = Image.new(
             "RGBA",
             (image_width, total_text_height),
             color=(255, 255, 255, 0),
         )
-        draw = ImageDraw.Draw(img)
-        draw.rectangle(
-            [
-                shadow_radius,
-                shadow_radius,
-                image_width - shadow_radius,
-                total_text_height - shadow_radius,
-            ],
-            fill=(0, 0, 0, int(0.3 * 255)),
+        draw = ImageDraw.Draw(img, "RGBA")
+        draw.rounded_rectangle(
+            [card_x, 0, card_x + card_w, total_text_height - 16],
+            radius=8,
+            fill=(20, 20, 25, 220),
+            outline=(255, 255, 255, 24),
+            width=1,
         )
+        draw.text((content_x, 35), skill_type, title_color, title_font, "lm")
 
-        # 绘制标题文本
-        y_offset = y_padding + shadow_radius
-        x_offset = x_padding + shadow_radius
-        for line in lines_title:
-            draw.text(
-                (x_offset, y_offset),
-                line,
-                font=title_font,
-                fill=title_color,
+        subtitle = item.name or ""
+        if subtitle:
+            sub_w = _font_width(subtitle, subtitle_font) + 22
+            draw.rounded_rectangle(
+                (content_x + content_w - sub_w, 20, content_x + content_w, 50),
+                radius=15,
+                fill=(255, 255, 255, 22),
+                outline=(255, 255, 255, 35),
+                width=1,
             )
-            y_offset += title_font.size + line_spacing
+            draw.text((content_x + content_w - sub_w + 11, 35), subtitle, (190, 190, 190), subtitle_font, "lm")
+        draw.line((content_x, 64, content_x + content_w, 64), fill=(255, 255, 255, 28), width=1)
 
-        y_offset += block_line_spacing
+        y_offset = 84
+        for kind, line in line_items:
+            if kind == "space":
+                y_offset += 10
+                continue
+            font = heading_font if kind == "heading" else detail_font
+            fill = title_color if kind == "heading" else (220, 220, 220)
+            draw.text((content_x, y_offset), line, font=font, fill=fill)
+            y_offset += font.size + line_gap
 
-        # 绘制描述文本
-        for line in lines_desc:
-            color = title_color if line.startswith("属性加成") or line.startswith("固有技能") else detail_color
-            draw.text(
-                (x_offset, y_offset),
-                line,
-                font=detail_font,
-                fill=color,
-            )
-            y_offset += detail_font.size + line_spacing
+        if rate_img:
+            img.alpha_composite(rate_img, (content_x, y_offset + 8))
 
         images.append(img)
 
-        skill_rate = await parse_char_skill_rate(item.level)
-        if skill_rate:
-            images.append(skill_rate)
-
     # 拼接所有图像
-    total_height = sum(img.height for img in images)
+    total_height = sum(img.height for img in images) + max(0, len(images) - 1) * 12
     final_img = Image.new("RGBA", (image_width, total_height), color=(255, 255, 255, 0))
 
     y_offset = 0
     for img in images:
         final_img.paste(img, (0, y_offset))
-        y_offset += img.height
+        y_offset += img.height + 12
 
     return final_img
 
 
-async def parse_char_skill_rate(skillLevels: Optional[Dict[str, SkillLevel]]):
+@to_thread
+def parse_char_skill_rate(skillLevels: Optional[Dict[str, SkillLevel]], table_width: int = 900):
     if not skillLevels:
         return
     rows = []
@@ -736,16 +800,15 @@ async def parse_char_skill_rate(skillLevels: Optional[Dict[str, SkillLevel]]):
         rows.append(row)
 
     font = waves_font_12
-    offset = 20
+    offset = 0
     col_count = len(rows)
-    cell_width = 155
-    first_col_width = cell_width + 50
+    first_col_width = 220
+    cell_width = int((table_width - first_col_width) / 5)
     cell_height = 40
-    table_width = 1000
     table_height = col_count * cell_height
 
     image = Image.new("RGBA", (table_width, table_height), (255, 255, 255, 0))
-    draw = ImageDraw.Draw(image)
+    draw = ImageDraw.Draw(image, "RGBA")
     # 绘制表格
     for row_index, row in enumerate(rows):
         for col_index, cell in enumerate(row):
@@ -761,8 +824,8 @@ async def parse_char_skill_rate(skillLevels: Optional[Dict[str, SkillLevel]]):
             y1 = y0 + cell_height
 
             # 绘制矩形边框
-            _i = 0.3 if row_index % 2 == 0 else 0.7
-            draw.rectangle([x0, y0, x1, y1], fill=(40, 40, 40, int(_i * 255)), outline=GREY)
+            fill = (255, 255, 255, 25) if row_index == 0 else (0, 0, 0, 72 if row_index % 2 == 0 else 105)
+            draw.rectangle([x0, y0, x1, y1], fill=fill, outline=(255, 255, 255, 24))
 
             # 计算文本位置以居中
             bbox = draw.textbbox((0, 0), cell, font=font)

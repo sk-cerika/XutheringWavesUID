@@ -7,6 +7,7 @@ from pathlib import Path
 import httpx
 from PIL import Image, ImageDraw
 
+from gsuid_core.pool import to_thread
 from gsuid_core.logger import logger
 from gsuid_core.models import Event
 from gsuid_core.utils.image.convert import convert_img
@@ -91,6 +92,37 @@ async def new_draw_char_hold_rate(ev: Event, data, group_id: str = "") -> bytes:
     # 按持有率从高到低排序
     char_list = sorted(char_list, key=lambda x: x["hold_rate"], reverse=True)
 
+    # 预加载头像 / 属性图（在线程池里跑 PIL 前先把 await 走完）
+    attr_cache: Dict[str, Image.Image] = {}
+    avatar_cache: Dict[str, Image.Image] = {}
+    for char_data in char_list:
+        char_id = char_data["char_id"]
+        char_model = get_char_model(char_id)
+        if not char_model:
+            continue
+        attribute_name = ATTRIBUTE_ID_MAP[char_model.attributeId]
+        if attribute_name not in attr_cache:
+            attr_cache[attribute_name] = await get_attribute(attribute_name, is_simple=True)
+        if char_id not in avatar_cache:
+            pic = await get_square_avatar(char_id)
+            avatar_cache[char_id] = _build_avatar(pic)
+
+    img = await _render_char_hold_rate(
+        char_list, data, filter_type, group_id, attr_cache, avatar_cache
+    )
+
+    return await convert_img(img)
+
+
+@to_thread
+def _render_char_hold_rate(
+    char_list,
+    data,
+    filter_type,
+    group_id,
+    attr_cache,
+    avatar_cache,
+) -> Image.Image:
     # 设置图像尺寸
     width = 1300
     margin = 30
@@ -164,10 +196,8 @@ async def new_draw_char_hold_rate(ev: Event, data, group_id: str = "") -> bytes:
         bar_bg_draw.text((190, 40), name_text, "white", waves_font_24, "lm")
 
         # 属性
-        attribute_text = char_model.attributeId
-        attribute_name = ATTRIBUTE_ID_MAP[attribute_text]
-        role_attribute = await get_attribute(attribute_name, is_simple=True)
-        role_attribute = role_attribute.resize((40, 40)).convert("RGBA")
+        attribute_name = ATTRIBUTE_ID_MAP[char_model.attributeId]
+        role_attribute = attr_cache[attribute_name].resize((40, 40)).convert("RGBA")
         bar_bg.alpha_composite(role_attribute, (150, 20))
 
         # 绘制共鸣链持有率
@@ -218,20 +248,19 @@ async def new_draw_char_hold_rate(ev: Event, data, group_id: str = "") -> bytes:
         bar_bg.alpha_composite(hole_progress_bg, (135, 71))
 
         # 绘制角色头像
-        avatar = await draw_pic(char_id)
-        bar_bg.paste(avatar, (50, 20), avatar)
+        avatar = avatar_cache.get(char_id)
+        if avatar is not None:
+            bar_bg.paste(avatar, (50, 20), avatar)
 
         img.alpha_composite(bar_bg, (0, header_height + idx * item_spacing))
 
     # 添加页脚
     img = add_footer(img)
 
-    # 转换为字节
-    return await convert_img(img)
+    return img
 
 
-async def draw_pic(roleId):
-    pic = await get_square_avatar(roleId)
+def _build_avatar(pic: Image.Image) -> Image.Image:
     pic_temp = Image.new("RGBA", pic.size)
     pic_temp.paste(pic.resize((160, 160)), (10, 10))
 

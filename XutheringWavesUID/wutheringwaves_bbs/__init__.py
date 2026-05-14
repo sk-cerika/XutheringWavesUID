@@ -12,7 +12,18 @@ from ..utils.database.models import WavesBind
 
 sv_bbs = SV("鸣潮库洛币")
 
-@sv_bbs.on_fullmatch(("库洛币", "库币", "coin"), block=True)
+@sv_bbs.on_fullmatch(
+    ("库洛币", "库币", "coin"),
+    block=True,
+    to_ai="""查询用户鸣潮账号的库洛币余额 + 月卡/每日签到状态。
+
+当用户问「我库洛币多少 / 月卡续了吗 / 今天签到了吗」时调用。需绑定 cookie。
+返回图片。
+
+Args:
+    text: 无需参数，留空即可。
+""",
+)
 async def kuro_coin_(bot: Bot, ev: Event):
     """查询库洛币"""
     logger.info("[鸣潮]开始执行[库洛币]")

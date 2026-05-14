@@ -1,3 +1,4 @@
+import asyncio
 import re
 import os
 from typing import Dict, Optional, List, Any
@@ -89,7 +90,7 @@ async def _get_base_context(char_model: CharacterModel, char_id: str) -> Dict[st
     
     # Background - 顺时针旋转90度
     bg_path = TEXTURE2D_PATH / "bg6.jpg"
-    bg_img = Image.open(bg_path).transpose(Image.ROTATE_270)
+    bg_b64 = await asyncio.to_thread(_load_bg_b64, bg_path)
 
     # Role Pile
     role_pile_path = ROLE_PILE_PATH / f"role_pile_{char_id}.png"
@@ -112,7 +113,7 @@ async def _get_base_context(char_model: CharacterModel, char_id: str) -> Dict[st
         try:
             material_img = await get_material_img(material_id)
             if material_img:
-                materials.append(pil_to_b64(material_img, quality=75))
+                materials.append(await asyncio.to_thread(pil_to_b64, material_img, 75))
         except Exception:
             pass
 
@@ -122,11 +123,16 @@ async def _get_base_context(char_model: CharacterModel, char_id: str) -> Dict[st
         "element_icon": image_to_base64(element_icon_path),
         "weapon_icon": image_to_base64(weapon_icon_path),
         "rarity_icon": image_to_base64(rarity_path),
-        "bg_url": pil_to_b64(bg_img, quality=75),
+        "bg_url": bg_b64,
         "portrait_url": image_to_base64(role_pile_path),
         "materials": materials,
         "footer_url": image_to_base64(TEXTURE2D_PATH / "footer_white.png"),
     }
+
+
+def _load_bg_b64(bg_path) -> str:
+    bg_img = Image.open(bg_path).transpose(Image.ROTATE_270)
+    return pil_to_b64(bg_img, quality=75)
 
 async def draw_char_skill_render(char_id: str):
     use_html_render = WutheringWavesConfig.get_config("UseHtmlRender").data

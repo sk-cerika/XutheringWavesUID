@@ -5,7 +5,7 @@ from PIL import Image
 from gsuid_core.models import Event
 from gsuid_core.utils.image.image_tools import crop_center_img
 
-from ..utils.image import get_event_avatar, get_square_avatar
+from .image import get_event_avatar, get_square_avatar
 
 TEXT_PATH = Path(__file__).parent / "texture2d"
 

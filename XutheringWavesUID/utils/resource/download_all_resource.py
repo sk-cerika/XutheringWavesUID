@@ -259,3 +259,7 @@ async def reload_all_modules():
     # 重新加载本地化字典
     from ..localization import init_localization
     init_localization()
+
+    # 重新注册 AI 知识库（仅 AI 启用时生效）
+    from ...wutheringwaves_ai_rag import reload_ai_rag
+    await reload_ai_rag()

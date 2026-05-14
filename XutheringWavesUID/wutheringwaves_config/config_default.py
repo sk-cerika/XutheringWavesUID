@@ -15,13 +15,13 @@ CONFIG_DEFAULT: Dict[str, GSC] = {
         True,
     ),
     "WavesAnnBBSSub": GsListStrConfig(
-        "库洛BBS订阅博主",
-        "库洛BBS订阅博主",
+        "库洛BBS订阅博主，需用网页版获取博主ID",
+        "库洛BBS订阅博主，需用网页版获取博主ID",
         [],
     ),
     "WavesRankUseTokenGroup": GsListStrConfig(
-        "有token才能进排行，群管理可设置",
-        "有token才能进排行，群管理可设置",
+        "是否登录才参与群排行，群管理可设置",
+        "是否登录才参与群排行，群管理可设置",
         [],
     ),
     "WavesRankNoLimitGroup": GsListStrConfig(
@@ -62,13 +62,13 @@ CONFIG_DEFAULT: Dict[str, GSC] = {
         False,
     ),
     "WavesTencentWord": GsBoolConfig(
-        "腾讯文档",
-        "腾讯文档",
+        "登录链接用腾讯文档重定向",
+        "登录链接用腾讯文档重定向",
         False,
     ),
     "WavesQRLogin": GsBoolConfig(
         "开启后，登录链接变成二维码",
-        "开启后，登录链接变成二维码",
+        "开启后，登录链接变成二维码，用浏览器扫描",
         False,
     ),
     "WavesLoginForward": GsBoolConfig(
@@ -77,18 +77,18 @@ CONFIG_DEFAULT: Dict[str, GSC] = {
         False,
     ),
     "WavesOnlySelfCk": GsBoolConfig(
-        "所有查询使用自己的ck",
-        "所有查询使用自己的ck",
+        "是否所有查询使用自己的登录",
+        "是否所有查询使用自己的登录，打开则仅绑定无法查询",
         False,
     ),
     "QQPicCache": GsBoolConfig(
         "排行榜qq头像缓存开关",
-        "排行榜qq头像缓存开关",
+        "排行榜qq头像缓存开关，占内存",
         False,
     ),
     "RankUseToken": GsBoolConfig(
-        "有token才能进排行",
-        "有token才能进排行",
+        "是否登录才能进群排行",
+        "是否登录才能进群排行，全局默认开关，群管理可设置覆盖",
         True,
     ),
     "GachaRankMin": GsIntConfig(
@@ -144,7 +144,7 @@ CONFIG_DEFAULT: Dict[str, GSC] = {
     ),
     "WavesToken": GsStrConfig(
         "鸣潮全排行token",
-        "鸣潮全排行token",
+        "鸣潮全排行token，绑定总排行上传获取和伤害计算",
         "",
     ),
     "AtCheck": GsBoolConfig(
@@ -186,11 +186,11 @@ CONFIG_DEFAULT: Dict[str, GSC] = {
     "UseGlobalSemaphore": GsBoolConfig(
         "开启后刷新角色面板并发数为全局共享",
         "开启后刷新角色面板并发数为全局共享",
-        False,
+        True,
     ),
     "CaptchaProvider": GsStrConfig(
-        "验证码提供方（重启生效）",
-        "验证码提供方（重启生效）",
+        "验证码提供方（暂时无用）",
+        "验证码提供方",
         "",
         options=["ttorc"],
     ),
@@ -205,7 +205,7 @@ CONFIG_DEFAULT: Dict[str, GSC] = {
         False,
     ),
     "RefreshSingleCharBehavior": GsStrConfig(
-        "刷新单角色面板逻辑",
+        "刷新单角色面板发送逻辑",
         "控制刷新单个角色面板后的行为：refresh_only(仅刷新)、refresh_and_send(刷新并合并发送)、refresh_and_send_separately(刷新并分别发送)、concatenate(拼接为一张图发送)",
         "concatenate",
         options=[

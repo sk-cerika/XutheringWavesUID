@@ -7,7 +7,7 @@ from msgspec import json as msgjson
 from gsuid_core.logger import logger
 
 from .model import CharacterModel
-from ..ascension.constant import fixed_name, sum_percentages
+from .constant import fixed_name, sum_percentages
 from ..resource.RESOURCE_PATH import MAP_DETAIL_PATH
 
 MAP_PATH = MAP_DETAIL_PATH / "char"
@@ -80,7 +80,7 @@ def get_breach(breach: Union[int, None], level: int):
     return breach
 
 
-def extract_param_index(skill_desc: str, search_pattern: str) -> int:
+def extract_param_index(skill_desc: str, search_pattern: str) -> Optional[int]:
     """
     从技能描述中提取参数索引
 
@@ -89,23 +89,21 @@ def extract_param_index(skill_desc: str, search_pattern: str) -> int:
         search_pattern: 搜索模式，如 "共鸣效率提升"
 
     Returns:
-        参数索引，如果找不到则返回 0
+        命中 `{数字}` 占位符时返回该索引；新版 API 把数值直接嵌进 desc
+        (如 "提升10%") 时返回 None，由调用方走 desc 正则兜底。
 
     Examples:
         >>> extract_param_index("莫宁的共鸣效率提升{4}", "共鸣效率提升")
         4
-        >>> extract_param_index("攻击提升15%", "攻击提升")
-        0
+        >>> extract_param_index("攻击提升15%", "攻击提升") is None
+        True
     """
-    # 在描述中查找搜索模式之后是否有 {数字} 的模式
     pattern_index = skill_desc.find(search_pattern)
     if pattern_index == -1:
-        return 0
+        return None
 
-    # 从搜索模式的位置开始，查找后面的 {数字}
     rest_of_desc = skill_desc[pattern_index + len(search_pattern):pattern_index + len(search_pattern) + 20]
 
-    # 使用正则表达式匹配 {数字}
     match = re.search(r'\{(\d+)\}', rest_of_desc)
     if match:
         try:
@@ -113,7 +111,7 @@ def extract_param_index(skill_desc: str, search_pattern: str) -> int:
         except (ValueError, IndexError):
             pass
 
-    return 0
+    return None
 
 
 def get_char_detail(char_id: Union[str, int], level: int, breach: Union[int, None] = None) -> WavesCharResult:
@@ -161,19 +159,19 @@ def get_char_detail(char_id: Union[str, int], level: int, breach: Union[int, Non
                     search_pattern = orig_name if skill_info["desc"].startswith(orig_name) else f"{char_data['name']}的{orig_name}"
                     param_index = extract_param_index(skill_info["desc"], search_pattern)
 
-                    # 尝试获取参数值
-                    try:
-                        param_value = skill_info["param"][param_index]
-                        result.fixed_skill[name] = sum_percentages(param_value, result.fixed_skill[name])
-                    except (IndexError, KeyError, TypeError):
-                        # New API embeds values directly in desc (e.g. "提升20%")
-                        # instead of using {0} placeholders with param array
+                    if param_index is None:
                         desc_text = re.sub(r'<[^>]+>', '', skill_info.get("desc", ""))
                         match = re.search(re.escape(search_pattern) + r'(\d+(?:\.\d+)?%?)', desc_text)
                         if match:
                             result.fixed_skill[name] = sum_percentages(match.group(1), result.fixed_skill[name])
                         else:
                             logger.warning(f"get_char_detail extract_param failed for char_id {char_id}, skill {name}")
+                    else:
+                        try:
+                            param_value = skill_info["param"][param_index]
+                            result.fixed_skill[name] = sum_percentages(param_value, result.fixed_skill[name])
+                        except (IndexError, KeyError, TypeError) as e:
+                            logger.warning(f"get_char_detail param[{param_index}] failed for char_id {char_id}, skill {name}: {e}")
 
     return result
 

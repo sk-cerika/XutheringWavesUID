@@ -25,45 +25,28 @@
         display: inline-flex;
         flex-direction: column;
         align-items: center;
-        padding-bottom: 40px;
-    }
-
-    /* 用户信息 */
-    .user-info {
-        position: absolute;
-        top: 14px;
-        left: 14px;
-        z-index: 10;
-        background: rgba(0, 0, 0, 0.6);
-        backdrop-filter: blur(8px);
-        padding: 10px 18px;
-        border-radius: 12px;
-        display: inline-flex;
-        align-items: center;
-        gap: 12px;
-        white-space: nowrap;
-        border: 1px solid rgba(255, 255, 255, 0.15);
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        padding-bottom: 10px;
     }
 
     .user-name {
-        font-size: 20px;
+        font-size: 26px;
         font-weight: bold;
-        color: #fff;
-        text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
-    }
-
-    .user-divider {
-        width: 1px;
-        height: 18px;
-        background: rgba(255, 255, 255, 0.3);
+        color: {{ month_textColor }};
+        line-height: 1.2;
+        max-width: 260px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
     }
 
     .user-uid {
-        font-size: 14px;
-        color: rgba(255, 255, 255, 0.9);
+        font-size: 20px;
+        font-weight: bold;
+        color: {{ month_textColor }};
+        opacity: 0.75;
         font-family: 'JetBrains Mono', monospace;
-        text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+        letter-spacing: 0.5px;
+        line-height: 1.2;
     }
 
     /* Cover 区域 - 完整显示不裁切 */
@@ -95,18 +78,34 @@
 
     .box-top-text {
         position: absolute;
-        top: 60%;
-        left: 50%;
-        transform: translate(-50%, -50%);
-        text-align: center;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        padding: 32px 44px 0 40px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 20px;
+    }
+
+    .box-top-left,
+    .box-top-right {
         display: flex;
         flex-direction: column;
-        align-items: center;
-        gap: 6px;
+        gap: 10px;
+    }
+
+    .box-top-left {
+        align-items: flex-start;
+    }
+
+    .box-top-right {
+        align-items: flex-end;
     }
 
     .box-top-line1 {
-        font-size: 28px;
+        font-size: 26px;
         font-weight: bold;
         color: {{ month_textColor }};
         white-space: nowrap;
@@ -115,11 +114,11 @@
 
     .box-top-line1 .highlight {
         color: {{ cycle_titleColor }};
-        font-size: 34px;
+        font-size: 32px;
     }
 
     .box-top-line2 {
-        font-size: 18px;
+        font-size: 20px;
         font-weight: bold;
         color: {{ cycle_titleColor }};
         white-space: nowrap;
@@ -130,6 +129,7 @@
     .calendar-area {
         position: relative;
         width: 100%;
+        z-index: 1;
     }
 
     .calendar-center-bg {
@@ -254,13 +254,140 @@
     .box-bottom {
         display: flex;
         justify-content: center;
+        align-items: flex-end;
         margin-top: -30px;
         position: relative;
         z-index: 0;
+        height: 64px;
+        overflow: hidden;
     }
 
     .box-bottom-bg {
         display: block;
+    }
+
+    .cycle-section {
+        width: 690px;
+        height: 258px;
+        box-sizing: border-box;
+        margin-top: 20px;
+        margin-bottom: 30px;
+        background-image: url('{{ cycle_bg }}');
+        background-repeat: no-repeat;
+        background-position: top center;
+        background-size: 690px 258px;
+        padding: 20px 0 20px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+    }
+
+    .cycle-title {
+        margin-bottom: 14px;
+        font-size: 26px;
+        font-weight: bold;
+        color: {{ cycle_titleColor }};
+        line-height: 1;
+        letter-spacing: 1px;
+    }
+
+    .cycle-time {
+        font-size: 18px;
+        font-weight: bold;
+        color: {{ cycle_timeTextColor }};
+        margin-bottom: 24px;
+        text-align: center;
+        font-family: 'JetBrains Mono', 'Source Han Sans CN', sans-serif;
+        letter-spacing: 0.5px;
+    }
+
+    .loop-strip {
+        width: 100%;
+        box-sizing: border-box;
+        padding: 0 30px;
+        display: grid;
+        grid-template-columns: repeat(7, 1fr);
+    }
+
+    .loop-cell {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+    }
+
+    .loop-card {
+        position: relative;
+        width: 78px;
+        height: 78px;
+        line-height: 0;
+    }
+
+    .loop-card-bg {
+        width: 100%;
+        height: 100%;
+        display: block;
+        border-radius: 8px;
+    }
+
+    .loop-icon {
+        position: absolute;
+        top: 4px;
+        left: 4px;
+        width: calc(100% - 8px);
+        height: calc(100% - 8px);
+        object-fit: contain;
+        z-index: 1;
+    }
+
+    .loop-num {
+        position: absolute;
+        bottom: 4px;
+        right: 6px;
+        font-size: 13px;
+        font-weight: bold;
+        color: #333;
+        text-shadow: 0 0 2px rgba(255,255,255,0.9);
+        z-index: 2;
+        line-height: 1;
+    }
+
+    .footer {
+        margin-top: 20px;
+        text-align: center;
+        opacity: 0.7;
+    }
+
+    .footer img {
+        max-width: 100%;
+        height: auto;
+    }
+
+    .loop-signed-overlay {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        z-index: 3;
+        object-fit: cover;
+        pointer-events: none;
+        border-radius: 8px;
+    }
+
+    .loop-mark {
+        width: 100%;
+        height: auto;
+        margin-top: 8px;
+        display: block;
+    }
+
+    .loop-day {
+        margin-top: 6px;
+        font-size: 16px;
+        font-weight: bold;
+        color: {{ cycle_timeTextColor }};
+        line-height: 1;
+        white-space: nowrap;
     }
 </style>
 </head>
@@ -270,12 +397,31 @@
     <!-- Cover -->
     <div class="cover-section">
         <img src="{{ cover_bg }}" class="cover-img">
-        <div class="user-info">
-            <span class="user-name">{{ role_name }}</span>
-            <span class="user-divider"></span>
-            <span class="user-uid">UID: {{ uid }}</span>
+    </div>
+
+    {% if loop_items %}
+    <!-- Cycle Section (限时签到活动) -->
+    <div class="cycle-section">
+        <div class="cycle-title">{{ loop_sign_name }}</div>
+        <div class="cycle-time">{{ loop_time_text }}</div>
+        <div class="loop-strip">
+            {% for item in loop_items %}
+            <div class="loop-cell">
+                <div class="loop-card">
+                    <img src="{{ loop_card_bg }}" class="loop-card-bg">
+                    <img src="{{ item.icon }}" class="loop-icon">
+                    <span class="loop-num">x{{ item.num }}</span>
+                    {% if item.is_gained %}
+                    <img src="{{ had_sign_in_bg }}" class="loop-signed-overlay">
+                    {% endif %}
+                </div>
+                <img src="{% if item.is_gained %}{{ cycle_process_light }}{% else %}{{ cycle_process_grey }}{% endif %}" class="loop-mark">
+                <div class="loop-day">第{{ item.day }}天</div>
+            </div>
+            {% endfor %}
         </div>
     </div>
+    {% endif %}
 
     <!-- Box Section -->
     <div class="box-section">
@@ -283,8 +429,14 @@
         <div class="box-top">
             <img src="{{ box_top_bg }}" class="box-top-bg">
             <div class="box-top-text">
-                <div class="box-top-line1">{{ month }}月累计签到<span class="highlight">{{ sign_num }}</span>天</div>
-                <div class="box-top-line2">漏签{{ omission_num }}天</div>
+                <div class="box-top-left">
+                    <div class="box-top-line1">{{ month }}月累计签到<span class="highlight">{{ sign_num }}</span>天</div>
+                    <div class="box-top-line2">漏签{{ omission_num }}天</div>
+                </div>
+                <div class="box-top-right">
+                    <span class="user-name">{{ role_name }}</span>
+                    <span class="user-uid">UID: {{ uid }}</span>
+                </div>
             </div>
         </div>
 
@@ -327,6 +479,12 @@
         <div class="box-bottom">
             <img src="{{ box_bottom_bg }}" class="box-bottom-bg">
         </div>
+    </div>
+
+    <div class="footer">
+        {% if footer_b64 %}
+        <img src="{{ footer_b64 }}" alt="Footer">
+        {% endif %}
     </div>
 
 </div>

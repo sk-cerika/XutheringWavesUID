@@ -15,8 +15,8 @@ from ..util import timed_async_cache
 from .captcha.base import CaptchaResult
 from ..error_reply import WAVES_CODE_999, WAVES_CODE_104
 from .captcha.errors import CaptchaError
-from ...utils.constants import WAVES_GAME_ID
-from ...utils.database.models import WavesUser
+from ..constants import WAVES_GAME_ID
+from ..database.models import WavesUser
 from ..resource.RESOURCE_PATH import CACHE_PATH
 from ...wutheringwaves_config import WutheringWavesConfig
 from .request_util import (

@@ -12,7 +12,7 @@ from .draw_matrix_card import draw_matrix_img
 from ..utils.error_reply import WAVES_CODE_103
 from .draw_challenge_card import draw_challenge_img
 from ..utils.database.models import WavesBind
-from ..wutheringwaves_abyss.draw_abyss_card import draw_abyss_img
+from .draw_abyss_card import draw_abyss_img
 
 sv_waves_abyss = SV("waves查询深渊")
 sv_waves_challenge = SV("waves查询全息")
@@ -40,6 +40,15 @@ sv_waves_rank_matrix_list = SV("waves矩阵排行", priority=0)
         "实验区",
     ),
     block=True,
+    to_ai="""查询用户本人在鸣潮「逆境深塔」（深境区/超载/稳定/实验）当前期数的挑战记录。
+
+当用户问「我深塔打到几层 / 这期超载怎么样 / 我深塔满星了吗 / 看看我的稳定区」时调用。
+需要绑定 UID + cookie。返回图片，含通关层数、用时、上阵角色等。
+注意：本工具查的是**用户自己已有的挑战记录**，不是查"本期深塔关卡配置/Buff"——那应该用 search_knowledge 查 ww_tower_* 知识库。
+
+Args:
+    text: 无需参数，留空即可。命令本身已涵盖默认深境区。
+""",
 )
 async def send_waves_abyss_info(bot: Bot, ev: Event):
     await bot.logger.info("开始执行[鸣潮查询深渊信息]")
@@ -75,6 +84,15 @@ async def send_waves_abyss_info(bot: Bot, ev: Event):
         "全息战略",
     ),
     block=True,
+    to_ai="""查询用户本人在鸣潮「全息战略」（同步挑战）的通关记录。
+
+「全息战略」是鸣潮的 boss 单挑模拟玩法（如朔雷之鳞、无妄者等），与逆境深塔/矩阵不同。
+当用户问「我全息战略打到哪 / 同步挑战进度 / 朔雷之鳞过了吗」时调用。
+需要绑定 UID + cookie。返回图片，含每个 boss 难度通关情况。
+
+Args:
+    text: 无需参数，留空即可。
+""",
 )
 async def send_waves_challenge_info(bot: Bot, ev: Event):
     await bot.logger.info("开始执行[鸣潮查询全息战略信息]")
@@ -113,6 +131,15 @@ async def send_waves_challenge_info(bot: Bot, ev: Event):
         "再生海域",
     ),
     block=True,
+    to_ai="""查询用户本人在鸣潮「冥歌海墟」（海墟 / 无尽深渊 / 禁忌海域 / 再生海域）的通关记录。
+
+当用户问「我海墟打到几层 / 冥海多少分 / 无尽深渊进度 / 禁忌过了吗」时调用。
+需要绑定 UID + cookie。返回图片。
+本工具查**用户的挑战记录**，不是查"本期 Buff 列表"——后者用 search_knowledge 查 ww_slash_* 知识库。
+
+Args:
+    text: 无需参数，留空即可。
+""",
 )
 async def send_waves_slash_info(bot: Bot, ev: Event):
     user_id = ruser_id(ev)
@@ -149,6 +176,15 @@ async def send_waves_slash_info(bot: Bot, ev: Event):
         "jz"
     ),
     block=True,
+    to_ai="""查询用户本人在鸣潮「全息矩阵」（矩阵叠兵 / 终焉矩阵 / 奇点扩张 / 稳态协议）的挑战记录。
+
+当用户问「我矩阵打到哪 / 这期奇点扩张过了吗 / 矩阵积分多少」时调用。
+需要绑定 UID + cookie。返回图片，含队伍配置、关卡通关状态、积分。
+本工具查**用户的挑战记录**；查"本期矩阵关卡 / 怪物 / Buff"用 search_knowledge 查 ww_matrix_* 知识库。
+
+Args:
+    text: 无需参数，留空即可。
+""",
 )
 async def send_waves_matrix_info(bot: Bot, ev: Event):
     user_id = ruser_id(ev)
@@ -176,6 +212,13 @@ async def send_waves_matrix_info(bot: Bot, ev: Event):
         "冥海总排行榜",
     ),
     block=True,
+    to_ai='''查询全体冥歌海墟无尽层总排行（跨群）。
+
+当用户问「无尽总排行 / 冥海总排行」时调用。
+
+Args:
+    text: 无需参数，留空即可。
+''',
 )
 async def send_waves_rank_slash_info(bot: Bot, ev: Event):
     from ..wutheringwaves_rank.slash_rank import draw_all_slash_rank_card
@@ -198,6 +241,13 @@ async def send_waves_rank_slash_info(bot: Bot, ev: Event):
         "群无尽排名",
     ),
     block=True,
+    to_ai='''查询本群冥歌海墟无尽层排行，仅群聊可用。
+
+当用户在群里问「群里谁海墟最强 / 无尽排行」时调用。私聊会被拒绝。
+
+Args:
+    text: 无需参数，留空即可。
+''',
 )
 async def send_waves_rank_slash_list_info(bot: Bot, ev: Event):
     if not ev.group_id:
@@ -216,6 +266,13 @@ async def send_waves_rank_slash_list_info(bot: Bot, ev: Event):
         "矩阵总排行榜",
     ),
     block=True,
+    to_ai='''查询全体终焉矩阵积分总排行（跨群）。
+
+当用户问「矩阵总排行 / 全体矩阵积分」时调用。
+
+Args:
+    text: 无需参数，留空即可。
+''',
 )
 async def send_waves_rank_matrix_info(bot: Bot, ev: Event):
     from ..wutheringwaves_rank.matrix_rank import draw_all_matrix_rank_card
@@ -238,6 +295,13 @@ async def send_waves_rank_matrix_info(bot: Bot, ev: Event):
         "群矩阵排名",
     ),
     block=True,
+    to_ai='''查询本群终焉矩阵积分排行，仅群聊可用。
+
+当用户在群里问「群里谁矩阵积分最高 / 矩阵排行」时调用。私聊会被拒绝。
+
+Args:
+    text: 无需参数，留空即可。
+''',
 )
 async def send_waves_rank_matrix_list_info(bot: Bot, ev: Event):
     if not ev.group_id:

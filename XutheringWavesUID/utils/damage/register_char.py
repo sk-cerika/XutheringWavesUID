@@ -16,7 +16,7 @@ from .utils import (
     liberation_damage,
 )
 from .damage import DamageAttribute
-from ...utils.damage.abstract import (
+from .abstract import (
     CharAbstract,
     WavesCharRegister,
     WavesWeaponRegister,

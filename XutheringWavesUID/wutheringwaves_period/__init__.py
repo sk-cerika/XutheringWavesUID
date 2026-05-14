@@ -19,6 +19,14 @@ sv_period = SV("waves资源简报")
         "资源简报",
     ),
     block=True,
+    to_ai="""查询自己的鸣潮星声（鸣潮原石/月光波币）收入支出统计图。
+
+当用户问「我花了多少钱 / 星声统计 / 这版本月卡多少 / 月星声花在哪了」时调用。
+text 可附时间范围：版本号(如 "2.3版本") / "本月" / "上周"。无参数则统计全部。
+
+Args:
+    text: 可选时间范围。例: "2.3版本" / "本月" / "上周"。留空统计全部。
+""",
 )
 async def send_period(bot: Bot, ev: Event):
     uid = await WavesBind.get_uid_by_game(ruser_id(ev), ev.bot_id)

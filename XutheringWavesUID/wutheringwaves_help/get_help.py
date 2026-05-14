@@ -4,6 +4,7 @@ from pathlib import Path
 
 from PIL import Image
 
+from gsuid_core.pool import to_thread
 from gsuid_core.help.model import PluginHelp
 from gsuid_core.help.draw_new_plugin_help import get_new_help
 
@@ -27,7 +28,7 @@ def get_help_data() -> Dict[str, PluginHelp]:
     sign_help_items = [
         {
             "name": "签到",
-            "desc": "鸣潮签到",
+            "desc": "鸣潮库街区每日签到（社区签到 + 完成日常任务）。用户主动让 AI 代签到合理；命令字也叫 `qd` / `社区签到` / `每日任务`。",
             "eg": "签到",
             "need_ck": True,
             "need_sk": False,
@@ -35,15 +36,15 @@ def get_help_data() -> Dict[str, PluginHelp]:
         },
         {
             "name": "签到日历",
-            "desc": "鸣潮签到日历",
+            "desc": "查询自己当月签到日历图（哪天签了、当月累计签到多少天、累计奖励）。",
             "eg": "签到日历",
             "need_ck": True,
             "need_sk": False,
             "need_admin": False,
         },
         {
-            "name": "开启自动签到",
-            "desc": "开启每天的自动签到功能",
+            "name": "开启/关闭自动签到",
+            "desc": "为自己绑定的鸣潮账号开启或关闭每日自动签到。开启后由 bot 在每天固定时刻自动代签，不需要再手动 `签到`。命令字 `开启自动签到` / `关闭自动签到`。",
             "eg": "开启自动签到",
             "need_ck": True,
             "need_sk": False,
@@ -54,7 +55,7 @@ def get_help_data() -> Dict[str, PluginHelp]:
     sign_admin_help_items = [
         {
             "name": "全部重新签到",
-            "desc": "全部重新签到所有人",
+            "desc": "管理员一键给所有已开启自动签到的账号执行一次签到任务（管理员功能，普通用户不可调）。",
             "eg": "全部签到",
             "need_ck": False,
             "need_sk": False,
@@ -62,17 +63,17 @@ def get_help_data() -> Dict[str, PluginHelp]:
         },
         {
             "name": "订阅自动签到结果",
-            "desc": "订阅自动签到结果",
+            "desc": "本群订阅每日自动签到结果汇总推送（管理员功能）。命令字 `订阅签到结果` / `取消订阅签到结果`。",
             "eg": "订阅签到结果",
             "need_ck": False,
             "need_sk": False,
             "need_admin": True,
         },
     ]
-    
+
     todayecho_help = {
         "name": "梭哈",
-        "desc": "模拟梭哈声骸",
+        "desc": "本地模拟梭哈声骸（不消耗游戏内资源）。命令格式 `梭哈<次数>`，支持阿拉伯数字或中文数字（如「五次」「10次」）。每日上限 20 次（白名单 10 倍）。",
         "eg": "梭哈10次",
         "need_ck": False,
         "need_sk": False,
@@ -82,7 +83,7 @@ def get_help_data() -> Dict[str, PluginHelp]:
     scoreecho_help_items = [
         {
             "name": "评分",
-            "desc": "图片获得评分",
+            "desc": "ScoreEcho 评分：发送一张声骸面板图 + `评分 <角色>{1c|3c|4c}(主词条)` 让插件给该声骸打分。例: `评分 卡提1c(生命)` 表示对卡提希娅 1 cost 生命主词条声骸评分。命令字 `评分` / `查分` / `pf`。",
             "eg": "评分 卡提1c(生命)",
             "need_ck": False,
             "need_sk": False,
@@ -90,26 +91,26 @@ def get_help_data() -> Dict[str, PluginHelp]:
         },
         {
             "name": "国际服使用",
-            "desc": "国际服子模块",
+            "desc": "ScoreEcho 国际服子模块（一套独立的分析功能）。先发 `分析帮助` 看完整命令列表，含 `分析登录`、`分析<角色>`、`分析练度`、`分析查看<角色>信息` 等。",
             "eg": "分析帮助",
             "need_ck": False,
             "need_sk": False,
             "need_admin": False,
         },
     ]
-    
+
     roverreminder_help_items = [
         {
             "name": "推送邮箱",
-            "desc": "设置体力推送的邮箱",
-            "eg": "推送邮箱 邮箱名",
+            "desc": "设置体力到达阈值时邮件推送的收件邮箱。格式 `推送邮箱 <邮箱>`。若不设置且 user_id 是 QQ 号会自动用 <user_id>@qq.com。",
+            "eg": "推送邮箱 123@qq.com",
             "need_ck": True,
             "need_sk": False,
             "need_admin": False,
         },
         {
-            "name": "开启推送",
-            "desc": "开启体力推送",
+            "name": "开启/关闭体力推送",
+            "desc": "为自己绑定的鸣潮账号开关体力满阈值时的邮件推送提醒。命令字 `开启体力推送` / `关闭体力推送`。需先设置推送邮箱。",
             "eg": "开启/关闭体力推送",
             "need_ck": True,
             "need_sk": False,
@@ -117,8 +118,8 @@ def get_help_data() -> Dict[str, PluginHelp]:
         },
         {
             "name": "推送阈值",
-            "desc": "设置体力推送阈值",
-            "eg": "推送阈值 120",
+            "desc": "设置体力到达多少时推送提醒，范围 120~240。格式 `推送阈值 <数字>`。默认按全局配置。",
+            "eg": "推送阈值 180",
             "need_ck": True,
             "need_sk": False,
             "need_admin": False,
@@ -174,21 +175,36 @@ async def get_help(pm: int):
     else:
         plugin_icon_path = ICON
 
+    plugin_icon, banner_bg, help_bg, cag_bg, item_bg = await _load_help_images(
+        plugin_icon_path, banner_bg_path, help_bg_path
+    )
+
     return await get_new_help(
         plugin_name="XutheringWavesUID",
         plugin_info={f"v{XutheringWavesUID_version}": ""},
-        plugin_icon=Image.open(plugin_icon_path).convert("RGBA"),
+        plugin_icon=plugin_icon,
         plugin_help=plugin_help,
         plugin_prefix=PREFIX,
         help_mode="dark",
-        banner_bg=Image.open(banner_bg_path).convert("RGBA"),
+        banner_bg=banner_bg,
         banner_sub_text="漂泊者，欢迎在这个时代醒来。",
-        help_bg=Image.open(help_bg_path).convert("RGBA"),
-        cag_bg=Image.open(TEXT_PATH / "cag_bg.png").convert("RGBA"),
-        item_bg=Image.open(TEXT_PATH / "item.png").convert("RGBA"),
+        help_bg=help_bg,
+        cag_bg=cag_bg,
+        item_bg=item_bg,
         icon_path=ICON_PATH,
         footer=get_footer(),
         enable_cache=False,
         column=column_config,
         pm=pm,
+    )
+
+
+@to_thread
+def _load_help_images(plugin_icon_path: Path, banner_bg_path: Path, help_bg_path: Path):
+    return (
+        Image.open(plugin_icon_path).convert("RGBA"),
+        Image.open(banner_bg_path).convert("RGBA"),
+        Image.open(help_bg_path).convert("RGBA"),
+        Image.open(TEXT_PATH / "cag_bg.png").convert("RGBA"),
+        Image.open(TEXT_PATH / "item.png").convert("RGBA"),
     )

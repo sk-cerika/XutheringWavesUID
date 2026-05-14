@@ -16,7 +16,7 @@ from ..utils.constants import WAVES_GAME_ID
 from ..utils.database.models import WavesBind, WavesUser, WavesStaminaRecord
 from ..utils.database.waves_user_activity import WavesUserActivity
 from ..wutheringwaves_config import PREFIX, WutheringWavesConfig
-from ..wutheringwaves_user.login_succ import login_success_msg
+from .login_succ import login_success_msg
 
 waves_bind_uid = SV("鸣潮绑定特征码", priority=10)
 waves_add_ck = SV("鸣潮添加token", priority=3)

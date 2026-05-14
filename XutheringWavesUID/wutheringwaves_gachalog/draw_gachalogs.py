@@ -12,6 +12,7 @@ from PIL import Image, ImageDraw
 # 忽略PIL解压缩炸弹警告
 warnings.filterwarnings('ignore', category=Image.DecompressionBombWarning)
 
+from gsuid_core.pool import to_thread
 from gsuid_core.models import Event
 from gsuid_core.utils.image.convert import convert_img
 from gsuid_core.utils.image.image_tools import crop_center_img
@@ -392,6 +393,35 @@ async def draw_card(uid: str, ev: Event):
     # 保存抽卡统计信息到本地
     await save_gacha_stats(uid, total_data)
 
+    # 预加载所有抽卡物品的图标
+    item_icon_cache: Dict[str, Image.Image] = {}
+    for gacha_name, gacha_data in total_data.items():
+        for item in gacha_data["rank_s_list"]:
+            key = f"{item['resourceType']}:{item['resourceId']}"
+            if key in item_icon_cache:
+                continue
+            if item["resourceType"] == "武器":
+                icon = await get_square_weapon(item["resourceId"])
+            else:
+                avatar = await get_square_avatar(item["resourceId"])
+                icon = await cropped_square_avatar(avatar, 130)
+            item_icon_cache[key] = icon
+
+    card_img = await _render_gacha_card(total_data, title_num, item_icon_cache)
+
+    await draw_uid_avatar(uid, ev, card_img)
+
+    card_img = add_footer(card_img, 600, 20)
+    card_img = await convert_img(card_img)
+    return card_img
+
+
+@to_thread
+def _render_gacha_card(
+    total_data: Dict,
+    title_num: int,
+    item_icon_cache: Dict[str, Image.Image],
+) -> Image.Image:
     oset = 280
     bset = 170
 
@@ -421,19 +451,18 @@ async def draw_card(uid: str, ev: Event):
     up_icon = Image.open(TEXT_PATH / "up_tag.png")
     up_icon = up_icon.resize((68, 52))
 
-    async def draw_pic(item) -> Image.Image:
+    def draw_pic(item) -> Image.Image:
         item_bg = Image.new("RGBA", (167, 170))
         item_fg_cp = item_fg.copy()
         item_bg.paste(item_fg_cp, (0, 0), item_fg_cp)
 
         item_temp = Image.new("RGBA", (167, 170))
+        key = f"{item['resourceType']}:{item['resourceId']}"
+        item_icon = item_icon_cache[key]
         if item["resourceType"] == "武器":
-            item_icon = await get_square_weapon(item["resourceId"])
             item_icon = item_icon.resize((130, 130)).convert("RGBA")
             item_temp.paste(item_icon, (22, 0), item_icon)
         else:
-            item_icon = await get_square_avatar(item["resourceId"])
-            item_icon = await cropped_square_avatar(item_icon, 130)
             item_temp.paste(item_icon, (22, 0), item_icon)
 
         item_bg.paste(item_temp, (-2, -2), item_temp)
@@ -505,7 +534,7 @@ async def draw_card(uid: str, ev: Event):
         s_list = gacha_data["rank_s_list"]
         s_list.reverse()
         for index, item in enumerate(s_list):
-            item_bg = await draw_pic(item)
+            item_bg = draw_pic(item)
 
             _x = 95 + 162 * (index % 5)
             _y = _header + bset * (index // 5) + y + gindex * oset
@@ -537,7 +566,7 @@ async def draw_card(uid: str, ev: Event):
         s_list = gacha_data["rank_s_list"]
         if not s_list:
             continue
-        item_bg = await draw_pic(s_list[0])
+        item_bg = draw_pic(s_list[0])
 
         newbie_bg_cp = newbie_bg.copy()
         newbie_bg_cp_draw = ImageDraw.Draw(newbie_bg_cp)
@@ -564,10 +593,6 @@ async def draw_card(uid: str, ev: Event):
         )
         nindex += 1
 
-    await draw_uid_avatar(uid, ev, card_img)
-
-    card_img = add_footer(card_img, 600, 20)
-    card_img = await convert_img(card_img)
     return card_img
 
 

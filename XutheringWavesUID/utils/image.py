@@ -25,7 +25,7 @@ from gsuid_core.models import Event
 from gsuid_core.utils.image.utils import sget
 from gsuid_core.utils.image.image_tools import crop_center_img
 
-from ..utils.resource.RESOURCE_PATH import (
+from .resource.RESOURCE_PATH import (
     AVATAR_PATH,
     CACHE_PATH,
     WEAPON_PATH,
@@ -96,6 +96,52 @@ def rgb_to_hex(rgb: Tuple) -> str:
     if len(rgb) == 4:
         return "rgba({}, {}, {}, {})".format(rgb[0], rgb[1], rgb[2], rgb[3])
     return "#{:02x}{:02x}{:02x}".format(rgb[0], rgb[1], rgb[2])
+
+
+def clean_alpha_matte(img: Image.Image, matte: Tuple[int, int, int, int]) -> Image.Image:
+    """用指定底色清理透明图边缘的 RGB，避免缩放后出现白边/白点。"""
+    img = img.convert("RGBA")
+    alpha = img.getchannel("A")
+    if alpha.getextrema() == (255, 255):
+        return img
+    clean = Image.new("RGBA", img.size, matte)
+    clean.alpha_composite(img)
+    clean.putalpha(alpha)
+    return clean
+
+
+def flatten_rgba(
+    img: Image.Image,
+    bg_color: Union[str, Tuple[int, ...]],
+) -> Image.Image:
+    """把 RGBA 图按指定底色压平成不透明图，避免转 JPEG 时透明层变白。"""
+    base = Image.new("RGBA", img.size, bg_color)
+    base.alpha_composite(img.convert("RGBA"))
+    return base
+
+
+def make_smooth_rounded_mask(size: Tuple[int, int], radius: int, scale: int = 4) -> Image.Image:
+    scaled_size = (size[0] * scale, size[1] * scale)
+    mask = Image.new("L", scaled_size, 0)
+    draw = ImageDraw.Draw(mask)
+    draw.rounded_rectangle(
+        (0, 0, scaled_size[0] - 1, scaled_size[1] - 1),
+        radius=radius * scale,
+        fill=255,
+    )
+    return mask.resize(size, Image.Resampling.LANCZOS)
+
+
+def make_smooth_circle_mask(size: int, scale: int = 4) -> Image.Image:
+    mask_size = size * scale
+    mask = Image.new("L", (mask_size, mask_size), 0)
+    draw = ImageDraw.Draw(mask)
+    inset = scale
+    draw.ellipse(
+        (inset, inset, mask_size - inset - 1, mask_size - inset - 1),
+        fill=255,
+    )
+    return mask.resize((size, size), Image.Resampling.LANCZOS)
 
 
 def pil_to_b64(img: Image.Image, quality: int = 0) -> str:
@@ -558,7 +604,7 @@ async def get_event_avatar(
     img = None
 
     if is_valid_at_param:
-        from ..utils.at_help import is_valid_at
+        from .at_help import is_valid_at
 
         is_valid_at_param = is_valid_at(ev)
 

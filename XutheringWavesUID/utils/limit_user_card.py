@@ -2,7 +2,7 @@ import json
 
 import aiofiles
 
-from ..utils.resource.RESOURCE_PATH import MAP_PATH, PLAYER_PATH
+from .resource.RESOURCE_PATH import MAP_PATH, PLAYER_PATH
 
 LIMIT_PATH = MAP_PATH / "1.json"
 

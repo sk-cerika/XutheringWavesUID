@@ -5,6 +5,7 @@ from pathlib import Path
 from PIL import Image, ImageDraw
 
 from gsuid_core.logger import logger
+from gsuid_core.pool import to_thread
 from gsuid_core.utils.image.convert import convert_img
 from gsuid_core.utils.image.image_tools import crop_center_img
 
@@ -104,7 +105,8 @@ async def parse_weapon_material_content(weapon_model: WeaponModel, card_img):
     card_img.alpha_composite(material_img, (1000 - container_w - 20, 15))
 
 
-async def parse_weapon_detail_content(weapon_model: WeaponModel, card_img):
+@to_thread
+def parse_weapon_detail_content(weapon_model: WeaponModel, card_img):
     y_padding = 20  # 初始位移
     x_padding = 20  # 初始位移
     line_spacing = 10  # 行间距

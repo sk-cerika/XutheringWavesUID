@@ -28,6 +28,20 @@ sv_waves_matrix_info = SV("waves查询矩阵信息", priority=4)
 @sv_waves_guide.on_regex(
     rf"^(?P<wiki_name>{PATTERN})(?P<wiki_type>共鸣链|共鳴鏈|gml|命座|天赋|天賦|技能|jn|图鉴|圖鑑|专武|專武|wiki|介绍|介紹|回路|操作|机制|機制|jz)$",
     block=True,
+    to_ai="""查询鸣潮角色/武器/声骸的 wiki 图（图鉴、共鸣链、技能、机制、专武介绍等）。
+
+当用户问以下场景时调用：
+- 「<角色>共鸣链」/「<角色>命座」: 共鸣链详情
+- 「<角色>技能」/「<角色>天赋」: 技能描述与倍率
+- 「<角色>机制」/「<角色>操作」/「<角色>回路」: 玩法机制说明
+- 「<武器>介绍」/「<角色>专武介绍」: 武器详情
+- 「<声骸>介绍」: 声骸详情
+
+text 必须是 "<对象名><wiki类型后缀>" 格式（regex 匹配）。例: "长离共鸣链"、"椿技能"、"维里奈机制"、"角介绍"。
+
+Args:
+    text: "<对象名><类型后缀>"。类型可选: 共鸣链/命座/技能/天赋/机制/操作/回路/介绍/专武。
+""",
 )
 async def send_waves_wiki(bot: Bot, ev: Event):
     wiki_name = ev.regex_dict.get("wiki_name", "")
@@ -110,7 +124,18 @@ async def send_waves_wiki(bot: Bot, ev: Event):
         return await bot.send(msg, at_sender)
 
 
-@sv_waves_guide.on_regex(rf"^(?P<char>{PATTERN})(?:攻略|gl)$", block=True)
+@sv_waves_guide.on_regex(
+    rf"^(?P<char>{PATTERN})(?:攻略|gl)$",
+    block=True,
+    to_ai="""查询某角色的攻略图（社区作者贡献的配装/共鸣链优先级/技能加点/伤害分析等）。
+
+当用户问「<角色>怎么配 / <角色>攻略 / <角色>推荐配装」时调用。
+text 必须是 "<角色名>攻略" 格式。例: "长离攻略"、"椿攻略"、"忌炎gl"。
+
+Args:
+    text: "<角色名>攻略" 或 "<角色名>gl"。
+""",
+)
 async def send_role_guide_pic(bot: Bot, ev: Event):
     char_name = ev.regex_dict.get("char", "")
     if "设置排除" in char_name:
@@ -119,14 +144,36 @@ async def send_role_guide_pic(bot: Bot, ev: Event):
     await get_guide(bot, ev, char_name)
 
 
-@sv_waves_guide.on_regex(r"^(?:(?P<type>长刃|迅刀|讯刀|佩枪|臂铠|臂甲|音感仪)(?:武器(?:列表)?|列表|wq(?:lb)?)|武器(?:列表)?|wq(?:lb)?)$", block=True)
+@sv_waves_guide.on_regex(
+    r"^(?:(?P<type>长刃|迅刀|讯刀|佩枪|臂铠|臂甲|音感仪)(?:武器(?:列表)?|列表|wq(?:lb)?)|武器(?:列表)?|wq(?:lb)?)$",
+    block=True,
+    to_ai="""查询鸣潮武器一览图，可按武器类型过滤。
+
+当用户问「鸣潮武器列表 / 5星武器 / 音感仪武器」时调用。
+text 可选指定武器类型前缀：长刃 / 迅刀 / 佩枪 / 臂铠 / 音感仪 + "武器(列表)" 后缀。
+
+Args:
+    text: 例: "武器列表" (全部) / "音感仪武器列表" / "迅刀武器" / "wq"。
+""",
+)
 async def send_weapon_list(bot: Bot, ev: Event):
     weapon_type = ev.regex_dict.get("type", "")
     img = await draw_weapon_list(weapon_type)
     await bot.send(img)
 
 
-@sv_waves_guide.on_regex(r"^(?:(?P<version_pre>\d+\.\d+))?(?:套装|套裝)(列表)?(?:(?P<version_post>\d+\.\d+))?$", block=True)
+@sv_waves_guide.on_regex(
+    r"^(?:(?P<version_pre>\d+\.\d+))?(?:套装|套裝)(列表)?(?:(?P<version_post>\d+\.\d+))?$",
+    block=True,
+    to_ai="""查询鸣潮全部合鸣套装一览图（含 2/5 件套效果）。
+
+当用户问「套装列表 / 合鸣有哪些 / 3.0新套装」时调用。
+text 可附版本号（X.Y 格式）筛选特定版本套装。
+
+Args:
+    text: 例: "套装列表" (全部) / "套装列表3.0" / "3.0套装" (筛 3.0 版本)。
+""",
+)
 async def send_sonata_list(bot: Bot, ev: Event):
     # 版本号可以在前面或后面
     version = ev.regex_dict.get("version_pre") or ev.regex_dict.get("version_post") or ""
@@ -136,6 +183,14 @@ async def send_sonata_list(bot: Bot, ev: Event):
 @sv_waves_tower.on_regex(
     r"^(?:深塔|st)(?:(?:信息(?:第)?|第)(?P<period>\d+|下(?:一)?期|下下期|上(?:一)?期|上上期)?|(?P<period_force>\d+|下(?:一)?期|下下期|上(?:一)?期|上上期))期?$",
     block=True,
+    to_ai="""查询逆境深塔某期的关卡配置图（每层 Buff + 怪物 + 体力消耗）。
+
+当用户问「深塔信息 / 这期深塔 / 第N期深塔 / 上期深塔」时调用。
+text 必须含 "深塔" 或 "st" + 期数描述。期数可以是数字、"上一期"/"上期"、"下一期"/"下期"、"上上期"、"下下期"，留空查当期。
+
+Args:
+    text: 例: "深塔信息11" / "深塔上期" / "深塔下一期" / "st信息" (当期) / "深塔第10期"。
+""",
 )
 async def send_tower_challenge_info(bot: Bot, ev: Event):
     """查询深塔挑战信息"""
@@ -167,6 +222,14 @@ async def send_tower_challenge_info(bot: Bot, ev: Event):
 @sv_waves_slash_info.on_regex(
     r"^(?:海墟|冥海|无尽|無盡|hx|wj)(?:(?:信息(?:第)?|第)(?P<period>\d+|下(?:一)?期|下下期|上(?:一)?期|上上期)?|(?P<period_force>\d+|下(?:一)?期|下下期|上(?:一)?期|上上期))期?$",
     block=True,
+    to_ai="""查询冥歌海墟（无尽/冥海）某期的全 Buff 信物列表图。
+
+当用户问「海墟信息 / 这期冥海 buff / 第N期海墟」时调用。
+text 须包含 "海墟"/"冥海"/"无尽"/"hx"/"wj" + 期数描述。期数同 深塔信息。
+
+Args:
+    text: 例: "海墟信息11" / "冥海上期" / "无尽下期" / "hx信息" (当期)。
+""",
 )
 async def send_slash_challenge_info(bot: Bot, ev: Event):
     """查询海墟挑战信息"""
@@ -198,6 +261,14 @@ async def send_slash_challenge_info(bot: Bot, ev: Event):
 @sv_waves_matrix_info.on_regex(
     r"^(?:矩阵|矩陣|jz信息|matrix)(?:(?:信息(?:第)?|第)(?P<period>\d+|下(?:一)?期|下下期|上(?:一)?期|上上期)?|(?P<period_force>\d+|下(?:一)?期|下下期|上(?:一)?期|上上期))期?$",
     block=True,
+    to_ai="""查询全息矩阵（终焉矩阵）某期的关卡配置图（稳态协议+奇点扩张，含 Buff、敌人、推荐角色）。
+
+当用户问「矩阵信息 / 这期矩阵打法 / 第N期矩阵」时调用。
+text 须含 "矩阵"/"matrix"/"jz信息" + 期数描述。
+
+Args:
+    text: 例: "矩阵信息11" / "矩阵上期" / "矩阵下期" / "matrix信息" (当期)。
+""",
 )
 async def send_matrix_challenge_info(bot: Bot, ev: Event):
     """查询矩阵挑战信息"""

@@ -2,7 +2,7 @@ import importlib
 
 from gsuid_core.logger import logger
 
-from ....utils.damage.abstract import DamageRankRegister, DamageDetailRegister
+from ...damage.abstract import DamageRankRegister, DamageDetailRegister
 
 ID_MAPPING = {
     "1102": "1102",

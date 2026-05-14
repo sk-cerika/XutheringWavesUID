@@ -13,17 +13,17 @@ show_path = get_res_path(["XutheringWavesUID", "show"])
 
 SHOW_CONIFG: Dict[str, GSC] = {
     "LoginIndexHtmlPath": GsStrConfig(
-        "登录页面HTML路径",
+        "登录页面HTML路径，一般不用改，可直接上传",
         "自定义登录页面HTML文件路径，请自行确保模板格式正确，尤其注意在移动端显示良好",
         str(show_path / "index.html"),
     ),
     "LoginIndexEmailHtmlPath": GsStrConfig(
-        "邮箱登录页面HTML路径",
+        "邮箱登录页面HTML路径，一般不用改，可直接上传",
         "自定义邮箱登录页面HTML文件路径，请自行确保模板格式正确，尤其注意在移动端显示良好",
         str(show_path / "index_email.html"),
     ),
     "Login404HtmlPath": GsStrConfig(
-        "404页面HTML路径",
+        "404页面HTML路径，一般不用改，可直接上传",
         "自定义404页面HTML文件路径，请自行确保模板格式正确，尤其注意在移动端显示良好",
         str(show_path / "404.html"),
     ),

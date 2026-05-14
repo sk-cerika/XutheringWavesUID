@@ -1,3 +1,4 @@
+import asyncio
 import re
 from io import BytesIO
 from base64 import b64encode
@@ -165,18 +166,18 @@ def compress_image_to_jpg(img: Image.Image, max_size_mb: int) -> bytes:
     return result
 
 
+def _open_and_compress(path: Path, max_size_mb: int) -> bytes:
+    img = Image.open(path)
+    if img.mode in ("RGBA", "P"):
+        img = img.convert("RGB")
+    return compress_image_to_jpg(img, max_size_mb)
+
+
 async def process_images_new(_dir: Path):
     imgs = []
     try:
         max_size_mb = WutheringWavesConfig.get_config("WavesGuideMaxSize").data
-
-        # 打开图片
-        img = Image.open(_dir)
-        if img.mode in ("RGBA", "P"):
-            img = img.convert("RGB")
-
-        # 转为JPG并根据大小限制压缩
-        img_bytes = compress_image_to_jpg(img, max_size_mb)
+        img_bytes = await asyncio.to_thread(_open_and_compress, _dir, max_size_mb)
         img_base64 = f"base64://{b64encode(img_bytes).decode()}"
         imgs.append(img_base64)
     except Exception as e:

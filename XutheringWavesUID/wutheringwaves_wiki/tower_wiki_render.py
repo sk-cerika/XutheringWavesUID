@@ -1,3 +1,4 @@
+import asyncio
 import re
 from typing import Dict, Any, Optional
 from pathlib import Path
@@ -29,6 +30,11 @@ from ..wutheringwaves_abyss.period import (
 )
 
 TEXTURE2D_PATH = Path(__file__).parents[1] / "utils" / "texture2d"
+
+
+def _load_bg_b64(bg_path) -> str:
+    bg_img = Image.open(bg_path).transpose(Image.ROTATE_270)
+    return pil_to_b64(bg_img, quality=75)
 
 ELEMENT_NAME_MAP = {
     0: "无属性",
@@ -164,12 +170,12 @@ async def draw_tower_wiki_render(period: Optional[int] = None) -> Optional[bytes
 
     # 使用相同方式加载背景
     bg_path = TEXTURE2D_PATH / "bg6.jpg"
-    bg_img = Image.open(bg_path).transpose(Image.ROTATE_270)
+    bg_b64 = await asyncio.to_thread(_load_bg_b64, bg_path)
 
     context = {
         "title": f"逆境深塔 第{period}期",
         "duration": duration,
-        "bg_url": pil_to_b64(bg_img, quality=75),
+        "bg_url": bg_b64,
         "theme_color": "#4e7cff", # Blue-ish for Tower
         "left_tower": {
             "name": "残响之塔 (左塔)",
@@ -302,12 +308,12 @@ async def draw_matrix_wiki_render(season: Optional[int] = None) -> Optional[byte
 
     # 加载背景
     bg_path = TEXTURE2D_PATH / "bg6.jpg"
-    bg_img = Image.open(bg_path).transpose(Image.ROTATE_270)
+    bg_b64 = await asyncio.to_thread(_load_bg_b64, bg_path)
 
     context = {
         "title": f"矩阵叠兵 第{season}期",
         "subtitle": level_name,
-        "bg_url": pil_to_b64(bg_img, quality=75),
+        "bg_url": bg_b64,
         "theme_color": "#ff6b6b",
         "buffs": buffs,
         "bosses": bosses,
@@ -418,12 +424,12 @@ async def draw_slash_wiki_render(period: Optional[int] = None) -> Optional[bytes
 
     # 使用相同方式加载背景
     bg_path = TEXTURE2D_PATH / "bg6.jpg"
-    bg_img = Image.open(bg_path).transpose(Image.ROTATE_270)
+    bg_b64 = await asyncio.to_thread(_load_bg_b64, bg_path)
 
     context = {
         "title": f"冥歌海墟 第{period}期",
         "duration": duration,
-        "bg_url": pil_to_b64(bg_img, quality=75),
+        "bg_url": bg_b64,
         "theme_color": "#ffca28", # Gold-ish for Slash
         "desc": desc_lines,
         "global_buffs": global_buffs,
