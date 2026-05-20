@@ -142,17 +142,17 @@ _register({
         "jp": "テスト中",
         "kr": "테스트 중",
     },
-    "以两~三分钟的常规队伍循环为基础，根据当前等级、套装和装备求解得到最优期望伤害的词条作为基准计分。": {
-        "cht": "以兩~三分鐘的常規隊伍循環為基礎，根據當前等級、套裝和裝備求解得到最優期望傷害的詞條作為基準計分。",
-        "en": "Based on a standard 2-3 min team rotation, the substats giving the best expected damage for your level, set and weapon are solved as the full-score baseline.",
-        "jp": "2~3分の通常パーティローテーションを基準に、現在のレベル・セット・武器で期待ダメージが最大となるステータスを求めて満点基準とします。",
-        "kr": "2~3분 일반 팀 로테이션을 기준으로 현재 레벨·세트·무기에서 기대 피해가 가장 높은 옵션을 구해 만점 기준으로 삼습니다.",
+    "以两~三分钟的常规队伍循环为基础，根据当前套装和装备求解得到最优期望伤害的词条作为基准计分": {
+        "cht": "以兩~三分鐘的常規隊伍循環為基礎，根據當前套裝和裝備求解得到最優期望傷害的詞條作為基準計分",
+        "en": "Based on a standard 2-3 min team rotation, the substats giving the best expected damage for your current set and weapon are solved as the full-score baseline.",
+        "jp": "2~3分の通常パーティローテーションを基準に、現在のセット・武器で期待ダメージが最大となるステータスを求めて満点基準とします。",
+        "kr": "2~3분 일반 팀 로테이션을 기준으로 현재 세트·무기에서 기대 피해가 가장 높은 옵션을 구해 만점 기준으로 삼습니다.",
     },
-    "由于共鸣效率会影响限定时间内的循环次数，作为分段线性的独立乘区。单通等特殊场景不适用综合评分。": {
-        "cht": "由於共鳴效率會影響限定時間內的循環次數，作為分段線性的獨立乘區。單通等特殊場景不適用綜合評分。",
-        "en": "Energy Regen affects rotation count within the time limit, so it is treated as a piecewise-linear independent multiplier. The score does not apply to special cases like single-target burst clears.",
-        "jp": "共鳴効率は制限時間内のローテーション回数に影響するため、区分線形の独立乗算区として扱います。単発撃破などの特殊シーンには総合スコアは適用されません。",
-        "kr": "공명 효율은 제한 시간 내 로테이션 횟수에 영향을 주므로 구간 선형의 독립 곱연산 구역으로 처리합니다. 원턴 격파 등 특수 상황에는 종합 점수가 적용되지 않습니다.",
+    "由于共鸣效率会影响限定时间内循环次数，作为分段的独立乘区。单通等特殊场景不适用综合评分": {
+        "cht": "由於共鳴效率會影響限定時間內循環次數，作為分段的獨立乘區。單通等特殊場景不適用綜合評分",
+        "en": "Energy Regen affects rotation count within the time limit, so it is treated as a piecewise independent multiplier. The score does not apply to special cases like single-target burst clears.",
+        "jp": "共鳴効率は制限時間内のローテーション回数に影響するため、区分ごとの独立乗算区として扱います。単発撃破などの特殊シーンには総合スコアは適用されません。",
+        "kr": "공명 효율은 제한 시간 내 로테이션 횟수에 영향을 주므로 구간별 독립 곱연산 구역으로 처리합니다. 원턴 격파 등 특수 상황에는 종합 점수가 적용되지 않습니다.",
     },
     # 伤害区
     "伤害类型": {

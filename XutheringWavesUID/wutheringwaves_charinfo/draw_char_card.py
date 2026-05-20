@@ -796,7 +796,7 @@ async def draw_char_detail_img(
             if (
                 char_state is not None
                 and score_report is not None
-                and score_report.improve_dirs
+                and score_report.partial_max
             ):
                 grade = get_panel_score_grade(score_report.score)
                 if (
@@ -804,7 +804,7 @@ async def draw_char_detail_img(
                     and score_report.score > 40
                     and char_state.get("advice_dirty", True)
                 ):
-                    dirs = " / ".join(score_report.improve_dirs)
+                    dirs = score_report.partial_max[0]
                     advice = f"[鸣潮] {char_name} 建议提升词条方向: {dirs}"
                     if await record_advice_sent(uid, char_id, advice):
                         queue_pending_advice(ev, advice)
@@ -1823,7 +1823,8 @@ async def draw_char_optimize_img(ev: Event, uid: str, char: str, user_id: str, w
         return f"{base}%" if name.endswith("%") else base
 
     score_rows = []
-    dirs = getattr(score_report, "improve_dirs", None) or []
+    _pm = getattr(score_report, "partial_max", None)
+    dirs = [_pm[0]] if _pm else []
     if dirs:
         rec = " / ".join(_loc_stat(d) for d in dirs)
         score_rows.append((t("建议提升词条方向", locale), rec))
