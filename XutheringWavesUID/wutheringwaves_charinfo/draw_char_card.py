@@ -2086,10 +2086,18 @@ async def draw_char_optimize_img(ev: Event, uid: str, char: str, user_id: str, w
         y = 40 + idx * 55
         prop_img = (await get_attribute_prop(row["key"])).resize((40, 40))
         sh_bg.alpha_composite(prop_img, (65, y))
-        draw_text_with_fallback(sh_bg_draw, (120, y + 18), row["name"], "white", waves_font_24, "lm")
+        val_text = f"{row['current']} → {row['best']}"
+        name_text = row["name"]
+        if locale == "en":  # 英文名较长, 截断防与右侧数值重合
+            name_max_w = 480 - waves_font_20.getlength(val_text) - 20 - 120
+            if waves_font_24.getlength(name_text) > name_max_w:
+                while name_text and waves_font_24.getlength(name_text + "…") > name_max_w:
+                    name_text = name_text[:-1]
+                name_text = name_text.rstrip() + "…"
+        draw_text_with_fallback(sh_bg_draw, (120, y + 18), name_text, "white", waves_font_24, "lm")
         draw_text_with_fallback(
             sh_bg_draw, (480, y + 18),
-            f"{row['current']} → {row['best']}",
+            val_text,
             "white", waves_font_20, "rm",
         )
         if row["delta_str"]:
