@@ -67,8 +67,9 @@ async def get_all_roleid_detail_info(
             return all_role_detail
     else:
         # 根据面板数据获取详细信息
+        is_self = not is_peek and user_id == ev.user_id
         if is_refresh or is_peek:
-            await refresh_char(ev, uid, user_id, ck)
+            await refresh_char(ev, uid, user_id, ck, is_self=is_self)
         all_role_detail = await get_all_roleid_detail_info_int(uid)
         if all_role_detail:
             return all_role_detail
@@ -78,7 +79,7 @@ async def get_all_roleid_detail_info(
             return None
 
         # 尝试刷新
-        await refresh_char(ev, uid, user_id, ck)
+        await refresh_char(ev, uid, user_id, ck, is_self=is_self)
         all_role_detail = await get_all_roleid_detail_info_int(uid)
         if all_role_detail:
             return all_role_detail

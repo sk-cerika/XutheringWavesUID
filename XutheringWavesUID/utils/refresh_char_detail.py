@@ -164,6 +164,7 @@ async def save_card_info(
     token: str = "",
     role_info: Optional[RoleList] = None,
     sender_avatar: str = "",
+    is_self: bool = True,
 ):
     if len(waves_data) == 0:
         return
@@ -207,10 +208,11 @@ async def save_card_info(
 
     save_data = list(old_data.values())
 
-    try:
-        await record_refresh_batch(uid, refresh_update.keys(), refresh_unchanged.keys())
-    except Exception as e:
-        logger.warning(f"[鸣潮·state] refresh 状态记录失败 uid={uid}: {e}")
+    if is_self:
+        try:
+            await record_refresh_batch(uid, refresh_update.keys(), refresh_unchanged.keys())
+        except Exception as e:
+            logger.warning(f"[鸣潮·state] refresh 状态记录失败 uid={uid}: {e}")
 
     await send_card(uid, user_id, save_data, is_self_ck, token, role_info, waves_data, sender_avatar)
 
@@ -330,6 +332,7 @@ async def refresh_char(
     waves_map: Optional[Dict] = None,
     is_self_ck: bool = False,
     refresh_type: Union[str, List[str]] = "all",
+    is_self: bool = True,
 ) -> Union[str, List]:
     waves_datas = []
     if not ck:
@@ -478,6 +481,7 @@ async def refresh_char(
         token=ck,
         role_info=role_info,
         sender_avatar=sender_avatar,
+        is_self=is_self,
     )
 
     if not waves_datas:

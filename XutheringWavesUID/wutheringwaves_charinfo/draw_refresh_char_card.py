@@ -253,6 +253,7 @@ async def draw_refresh_char_detail_img(
             waves_map=waves_map,
             is_self_ck=self_ck,
             refresh_type=refresh_type,
+            is_self=user_id == ev.user_id,
         )
         if isinstance(waves_datas, str):
             return waves_datas, 0, None
