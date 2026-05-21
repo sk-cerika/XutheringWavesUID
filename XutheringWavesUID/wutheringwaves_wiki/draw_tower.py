@@ -323,6 +323,7 @@ def _render_slash_pil(period: int, endless_data: Dict[str, Any], buff_data):
             current_y += 10
 
         monsters = floor_data.get("Monsters", {})
+        floor_level = floor_data.get("Level", 0)
 
         if monsters:
             draw_text_with_shadow(draw, "敌人配置", 65, current_y, waves_font_18, (255, 150, 150), anchor="lm")
@@ -339,6 +340,7 @@ def _render_slash_pil(period: int, endless_data: Dict[str, Any], buff_data):
                 element_id = monster_info.get("Element", 0)
                 element_name = ELEMENT_NAME_MAP.get(element_id, "无")
                 color = ELEMENT_COLOR.get(element_id, (200, 200, 200))
+                level = monster_info.get("Level", 0) or floor_level
                 _draw_challenge_monster_card(
                     card_img,
                     (x_pos, current_y),
@@ -347,6 +349,7 @@ def _render_slash_pil(period: int, endless_data: Dict[str, Any], buff_data):
                     name,
                     element_name,
                     color,
+                    level,
                 )
 
                 col += 1
@@ -455,6 +458,7 @@ def _draw_floor_section(
             element_id = monster_info.get("Element", 0)
             element_name = ELEMENT_NAME_MAP.get(element_id, "未知")
             color = ELEMENT_COLOR.get(element_id, (200, 200, 200))
+            level = monster_info.get("Level", 0)
 
             _draw_challenge_monster_card(
                 img,
@@ -464,6 +468,7 @@ def _draw_floor_section(
                 name,
                 element_name,
                 color,
+                level,
             )
 
             col += 1
@@ -548,6 +553,7 @@ def _draw_challenge_monster_card(
     name: str,
     element_name: str,
     color,
+    level: int = 0,
 ) -> None:
     x, y = pos
     draw = ImageDraw.Draw(base, "RGBA")
@@ -566,8 +572,12 @@ def _draw_challenge_monster_card(
     text_x = x + 64
     text_w = max(40, width - 72)
     name_lines = _wrap_matrix_text_px(name, waves_font_18, text_w)
-    for idx, line in enumerate(name_lines[:2]):
+    name_max_lines = 1 if level else 2
+    for idx, line in enumerate(name_lines[:name_max_lines]):
         draw.text((text_x, y + 18 + idx * 20), line, "white", waves_font_18, "lm")
+
+    if level:
+        draw.text((text_x, y + 42), f"Lv.{level}", (210, 210, 210), waves_font_14, "lm")
 
     meta_y = y + height - 18
     tag_text = f"{element_name}抗性" if element_name not in ("无", "无属性", "未知") else element_name

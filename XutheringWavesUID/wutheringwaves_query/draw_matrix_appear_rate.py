@@ -1,3 +1,4 @@
+import math
 import time
 from typing import Dict, List, Optional, Tuple, Union
 from pathlib import Path
@@ -54,6 +55,7 @@ TEAM_CELL_H = 230
 TEAM_CELL_GAP_X = 10
 TEAMS_PER_ROW = 2
 ROWS_PER_SECTION = 4
+EMPTY_SECTION_H = 200
 
 GRID_LEFT_X = 25
 SECTION_BAR_W = TEAM_CELL_W * TEAMS_PER_ROW + TEAM_CELL_GAP_X  # 1000
@@ -107,10 +109,11 @@ async def draw_matrix_appear_rate(ev: Event):
     if not data:
         return "暂无矩阵出场率数据, 请稍后再试"
 
+    max_teams = TEAMS_PER_ROW * ROWS_PER_SECTION
     section_data: List[Tuple[str, str, List[Dict]]] = []
     for key, label, kind in SECTIONS:
         rates = data.get(key, {}).get("rates", [])
-        rates = [r for r in rates if r.get("char_ids")]
+        rates = [r for r in rates if r.get("char_ids")][:max_teams]
         section_data.append((label, kind, rates))
 
     if not any(s[2] for s in section_data):
@@ -158,17 +161,42 @@ def _draw_section_bar(label: str) -> Image.Image:
     return bar
 
 
+def _section_body_h(rates_count: int) -> int:
+    if rates_count <= 0:
+        return EMPTY_SECTION_H
+    rows = math.ceil(rates_count / TEAMS_PER_ROW)
+    return rows * TEAM_CELL_H
+
+
+def _draw_empty_panel(height: int) -> Image.Image:
+    panel = Image.new("RGBA", (SECTION_BAR_W, height), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(panel)
+    draw.rounded_rectangle(
+        [10, 10, SECTION_BAR_W - 10, height - 10],
+        radius=16,
+        fill=(0, 0, 0, 120),
+    )
+    draw.text(
+        (SECTION_BAR_W // 2, height // 2),
+        "暂无数据",
+        GREY,
+        waves_font_30,
+        "mm",
+    )
+    return panel
+
+
 @to_thread
 def _render_matrix_appear(
     sections: List[Tuple[str, str, List[Dict]]],
     avatar_cache: Dict[int, Image.Image],
     filter_name: str,
 ) -> Image.Image:
-    section_h = SECTION_HEADER_H + ROWS_PER_SECTION * TEAM_CELL_H
     num_sections = len(sections)
+    section_body_hs = [_section_body_h(len(rates)) for _, _, rates in sections]
     total_h = (
         TITLE_H
-        + section_h * num_sections
+        + sum(SECTION_HEADER_H + bh for bh in section_body_hs)
         + INTER_SECTION_GAP * (num_sections - 1)
         + FOOTER_H
     )
@@ -231,17 +259,20 @@ def _render_matrix_appear(
         )
 
         cell_area_y = start_y + SECTION_HEADER_H
-        for idx in range(TEAMS_PER_ROW * ROWS_PER_SECTION):
-            if idx >= len(rates):
-                break
-            col = idx % TEAMS_PER_ROW
-            row = idx // TEAMS_PER_ROW
-            x = GRID_LEFT_X + col * (TEAM_CELL_W + TEAM_CELL_GAP_X)
-            y = cell_area_y + row * TEAM_CELL_H
-            cell = _build_team_cell(idx + 1, rates[idx], kind, avatar_cache)
-            card_img.alpha_composite(cell, (x, y))
+        body_h = section_body_hs[sec_idx]
+        if not rates:
+            empty_panel = _draw_empty_panel(body_h)
+            card_img.alpha_composite(empty_panel, (GRID_LEFT_X, cell_area_y))
+        else:
+            for idx, rate_item in enumerate(rates):
+                col = idx % TEAMS_PER_ROW
+                row = idx // TEAMS_PER_ROW
+                x = GRID_LEFT_X + col * (TEAM_CELL_W + TEAM_CELL_GAP_X)
+                y = cell_area_y + row * TEAM_CELL_H
+                cell = _build_team_cell(idx + 1, rate_item, kind, avatar_cache)
+                card_img.alpha_composite(cell, (x, y))
 
-        start_y += SECTION_HEADER_H + ROWS_PER_SECTION * TEAM_CELL_H
+        start_y += SECTION_HEADER_H + body_h
 
     card_img = add_footer(card_img)
     return card_img

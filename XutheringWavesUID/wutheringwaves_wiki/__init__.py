@@ -26,7 +26,7 @@ sv_waves_matrix_info = SV("waves查询矩阵信息", priority=4)
 
 
 @sv_waves_guide.on_regex(
-    rf"^(?P<wiki_name>{PATTERN})(?P<wiki_type>共鸣链|共鳴鏈|gml|命座|天赋|天賦|技能|jn|图鉴|圖鑑|专武|專武|wiki|介绍|介紹|回路|操作|机制|機制|jz)$",
+    rf"^(?P<wiki_name>{PATTERN})(?P<wiki_type>共鸣链|共鳴鏈|gml|命座|天赋|天賦|技能|jn|图鉴|圖鑑|专武|武器|專武|wiki|介绍|介紹|回路|操作|机制|機制|jz)$",
     block=True,
     to_ai="""查询鸣潮角色/武器/声骸的 wiki 图（图鉴、共鸣链、技能、机制、专武介绍等）。
 
@@ -87,7 +87,7 @@ async def send_waves_wiki(bot: Bot, ev: Event):
             msg = "[鸣潮] 未找到指定角色, 请先检查输入是否正确！"
         return await bot.send(msg, at_sender)
     else:
-        if wiki_type in ("专武", "專武"):
+        if wiki_type in ("专武", "專武", "武器"):
             wiki_name = wiki_name + "专武"
         img = await draw_wiki_weapon(wiki_name)
         if isinstance(img, str) or not img:
@@ -181,7 +181,7 @@ async def send_sonata_list(bot: Bot, ev: Event):
 
 
 @sv_waves_tower.on_regex(
-    r"^(?:深塔|st)(?:(?:信息(?:第)?|第)(?P<period>\d+|下(?:一)?期|下下期|上(?:一)?期|上上期)?|(?P<period_force>\d+|下(?:一)?期|下下期|上(?:一)?期|上上期))期?$",
+    r"^(?:第?(?P<period_pre>\d+|下(?:一)?期|下下期|上(?:一)?期|上上期)期?(?:深塔|st)(?:信息)?|(?:深塔|st)(?:(?:信息(?:第)?|第)(?P<period>\d+|下(?:一)?期|下下期|上(?:一)?期|上上期)?|(?P<period_force>\d+|下(?:一)?期|下下期|上(?:一)?期|上上期))期?)$",
     block=True,
     to_ai="""查询逆境深塔某期的关卡配置图（每层 Buff + 怪物 + 体力消耗）。
 
@@ -194,7 +194,7 @@ Args:
 )
 async def send_tower_challenge_info(bot: Bot, ev: Event):
     """查询深塔挑战信息"""
-    period_val = ev.regex_dict.get("period", "") or ev.regex_dict.get("period_force", "")
+    period_val = ev.regex_dict.get("period", "") or ev.regex_dict.get("period_force", "") or ev.regex_dict.get("period_pre", "")
     
     current_period = get_tower_period_number()
     target_period = current_period
@@ -220,7 +220,7 @@ async def send_tower_challenge_info(bot: Bot, ev: Event):
         await bot.send(im)
 
 @sv_waves_slash_info.on_regex(
-    r"^(?:海墟|冥海|无尽|無盡|hx|wj)(?:(?:信息(?:第)?|第)(?P<period>\d+|下(?:一)?期|下下期|上(?:一)?期|上上期)?|(?P<period_force>\d+|下(?:一)?期|下下期|上(?:一)?期|上上期))期?$",
+    r"^(?:第?(?P<period_pre>\d+|下(?:一)?期|下下期|上(?:一)?期|上上期)期?(?:海墟|冥海|无尽|無盡|hx|wj)(?:信息)?|(?:海墟|冥海|无尽|無盡|hx|wj)(?:(?:信息(?:第)?|第)(?P<period>\d+|下(?:一)?期|下下期|上(?:一)?期|上上期)?|(?P<period_force>\d+|下(?:一)?期|下下期|上(?:一)?期|上上期))期?)$",
     block=True,
     to_ai="""查询冥歌海墟（无尽/冥海）某期的全 Buff 信物列表图。
 
@@ -233,7 +233,7 @@ Args:
 )
 async def send_slash_challenge_info(bot: Bot, ev: Event):
     """查询海墟挑战信息"""
-    period_val = ev.regex_dict.get("period", "") or ev.regex_dict.get("period_force", "")
+    period_val = ev.regex_dict.get("period", "") or ev.regex_dict.get("period_force", "") or ev.regex_dict.get("period_pre", "")
     
     current_period = get_slash_period_number()
     target_period = current_period
@@ -259,7 +259,7 @@ async def send_slash_challenge_info(bot: Bot, ev: Event):
 
 
 @sv_waves_matrix_info.on_regex(
-    r"^(?:矩阵|矩陣|jz信息|matrix)(?:(?:信息(?:第)?|第)(?P<period>\d+|下(?:一)?期|下下期|上(?:一)?期|上上期)?|(?P<period_force>\d+|下(?:一)?期|下下期|上(?:一)?期|上上期))期?$",
+    r"^(?:第?(?P<period_pre>\d+|下(?:一)?期|下下期|上(?:一)?期|上上期)期?(?:矩阵|矩陣|jz信息|matrix)(?:信息)?|(?:矩阵|矩陣|jz信息|matrix)(?:(?:信息(?:第)?|第)(?P<period>\d+|下(?:一)?期|下下期|上(?:一)?期|上上期)?|(?P<period_force>\d+|下(?:一)?期|下下期|上(?:一)?期|上上期))期?)$",
     block=True,
     to_ai="""查询全息矩阵（终焉矩阵）某期的关卡配置图（稳态协议+奇点扩张，含 Buff、敌人、推荐角色）。
 
@@ -272,7 +272,7 @@ Args:
 )
 async def send_matrix_challenge_info(bot: Bot, ev: Event):
     """查询矩阵挑战信息"""
-    period_val = ev.regex_dict.get("period", "") or ev.regex_dict.get("period_force", "")
+    period_val = ev.regex_dict.get("period", "") or ev.regex_dict.get("period_force", "") or ev.regex_dict.get("period_pre", "")
 
     current_period = get_matrix_period_number()
     target_period = current_period

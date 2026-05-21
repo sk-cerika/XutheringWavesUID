@@ -313,14 +313,24 @@ def _draw_all_card(
         avatar=char.get("avatar_img"),
         ring=False,
     )
+    char_id = str(char.get("char_id") or "")
     _draw_text(
         draw,
-        (x + 66, y + 25),
+        (x + 66, y + 22),
         _fit_text(char.get("name", ""), waves_font_18, w - 82),
         waves_font_18,
         WHITE,
         "lm",
     )
+    if char_id:
+        _draw_text(
+            draw,
+            (x + 66, y + 44),
+            f"ID {char_id}",
+            waves_font_12,
+            ACCENT_DIM,
+            "lm",
+        )
     draw.line((x + 16, y + 62, x + w - 16, y + 62), fill=(255, 255, 255, 18), width=1)
     _draw_tag_rows(base, draw, char["tag_rows"], x + 16, y + 74, 22, 6, 6, waves_font_12, radius=3)
 

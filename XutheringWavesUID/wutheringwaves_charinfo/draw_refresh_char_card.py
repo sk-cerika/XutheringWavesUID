@@ -43,6 +43,7 @@ from ..utils.fonts.waves_fonts import (
 )
 from ..utils.resource.constant import NAME_ALIAS, SPECIAL_CHAR_NAME
 from ..utils.refresh_char_detail import refresh_char, save_base_info_cache
+from . import base_info_cache
 
 TEXT_PATH = Path(__file__).parent / "texture2d"
 
@@ -229,6 +230,7 @@ async def draw_refresh_char_detail_img(
     account_info = AccountBaseInfo.model_validate(account_info.data)
     # 缓存账户基本信息
     await save_base_info_cache(uid, account_info)
+    base_info_cache.set(uid, account_info)
     # 更新group id
     await WavesBind.insert_waves_uid(user_id, ev.bot_id, uid, ev.group_id, lenth_limit=9)
 

@@ -56,6 +56,10 @@ class DamageRankRegister(WavesRegister):
     _id_cls_map = _shared_map("DamageRankRegister")
 
 
+class ScoreDetailRegister(WavesRegister):
+    _id_cls_map = _shared_map("ScoreDetailRegister")
+
+
 class WeaponAbstract(object):
     id = None
     type = None

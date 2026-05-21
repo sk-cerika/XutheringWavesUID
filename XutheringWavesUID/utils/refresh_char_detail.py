@@ -20,6 +20,7 @@ from .expression_ctx import WavesCharRank, get_waves_char_rank
 from ..wutheringwaves_config import PREFIX, WutheringWavesConfig
 from .resource.RESOURCE_PATH import PLAYER_PATH, CACHE_PATH
 from .char_info_utils import get_all_roleid_detail_info_int
+from .char_state import record_refresh_batch
 from .api.model import AccountBaseInfo as _AccountBaseInfo
 
 
@@ -205,6 +206,11 @@ async def save_card_info(
         old_data[role_id] = item
 
     save_data = list(old_data.values())
+
+    try:
+        await record_refresh_batch(uid, refresh_update.keys(), refresh_unchanged.keys())
+    except Exception as e:
+        logger.warning(f"[鸣潮·state] refresh 状态记录失败 uid={uid}: {e}")
 
     await send_card(uid, user_id, save_data, is_self_ck, token, role_info, waves_data, sender_avatar)
 

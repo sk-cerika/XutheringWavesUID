@@ -227,11 +227,10 @@ class WavesApi:
         if WutheringWavesConfig.get_config("WavesOnlySelfCk").data:
             return None
 
-        # 公共ck 随机一个
+        # 公共 ck 随机抽一个可用的; login_log 失败不计次, refresh 最多深探 5 个 (耗配额)
         user_list = await WavesUser.get_waves_all_user()
         random.shuffle(user_list)
-        ck_list = []
-        times = 1
+        deep_probe = 0
         for user in user_list:
             if self.is_net(user.uid):
                 # 国际服账号 cookie 是 launcher auto_token，作为 kurobbs JWT 用必失败
@@ -244,21 +243,22 @@ class WavesApi:
                 await data.mark_cookie_invalid(user.uid, user.cookie)
                 continue
 
+            if deep_probe >= 5:
+                break
+            deep_probe += 1
+
             data = await self.refresh_data(user.uid, user.cookie)
+            if not data.success and data.is_bat_token_invalid:
+                # bat 失效但 login 仍有效: 续 bat 后重探, 不算 cookie 失效
+                await self.refresh_bat_token(user)
+                data = await self.refresh_data(user.uid, user.cookie)
             if not data.success:
-                await data.mark_cookie_invalid(user.uid, user.cookie)
-
-                if times <= 0:
-                    break
-
-                times -= 1
+                # 维护 / 续 bat 后仍失败: cookie 未必失效, 不标失效
+                if not (data.is_server_maintenance or data.is_bat_token_invalid):
+                    await data.mark_cookie_invalid(user.uid, user.cookie)
                 continue
 
-            ck_list.append(user.cookie)
-            break
-
-        if len(ck_list) > 0:
-            return random.choices(ck_list, k=1)[0]
+            return user.cookie
 
     async def get_kuro_role_list(self, token: str, did: str, game_id: Union[int, str] = WAVES_GAME_ID):
         header = await get_base_header()

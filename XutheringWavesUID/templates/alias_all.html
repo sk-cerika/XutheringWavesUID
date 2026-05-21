@@ -83,10 +83,26 @@
         background: #222;
     }
 
+    .card-name-wrap {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        min-width: 0;
+    }
+
     .card-name {
         font-size: 18px;
         font-weight: 800;
         color: #fff;
+        line-height: 1.1;
+    }
+
+    .card-id {
+        font-family: 'JetBrains Mono';
+        font-size: 11px;
+        color: var(--c-accent);
+        opacity: 0.75;
+        letter-spacing: 0.5px;
     }
 
     .card-aliases {
@@ -139,7 +155,10 @@
                     {% else %}
                     <div class="card-avatar" style="display:flex;justify-content:center;align-items:center;color:#555;font-size:16px;">?</div>
                     {% endif %}
-                    <div class="card-name">{{ item.name }}</div>
+                    <div class="card-name-wrap">
+                        <div class="card-name">{{ item.name }}</div>
+                        {% if item.char_id %}<div class="card-id">ID {{ item.char_id }}</div>{% endif %}
+                    </div>
                 </div>
                 <div class="card-aliases">
                     {% for a in item.aliases %}

@@ -554,8 +554,8 @@ def _compose_rank_list(card_img, bar, rankInfoList_display, results, char_avatar
 
             if sorted_roles:
                 best_score = f"{int(sorted_roles[0][1])}"
-                bar_draw.text((770, 45), best_score, "lightgreen", waves_font_30, "mm")
-                bar_draw.text((770, 75), "最高分", "white", waves_font_16, "mm")
+                bar_draw.text((760, 45), best_score, "lightgreen", waves_font_30, "mm")
+                bar_draw.text((760, 75), "最高分", "white", waves_font_16, "mm")
 
         bar_draw.text(
             (880, 45),

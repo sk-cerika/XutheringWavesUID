@@ -91,7 +91,7 @@ async def _process_floor_data(floor_data: Dict[str, Any]) -> Dict[str, Any]:
         
         monsters_data.append({
             "name": m_name,
-            # "level": m_info.get("Level", 0), # 用户要求移除等级显示
+            "level": m_info.get("Level", 0),
             "element": element_name,
             "color": ELEMENT_COLOR_MAP.get(element_name, "#b4b4b4"),
             "icon": icon_base64

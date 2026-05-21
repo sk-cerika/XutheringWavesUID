@@ -246,6 +246,14 @@
             margin-top: 4px;
         }
 
+        .monster-level {
+            font-family: 'Oswald', sans-serif;
+            font-size: 13px;
+            color: #d0d0d0;
+            margin-top: 2px;
+            text-shadow: 0 1px 3px rgba(0,0,0,0.6);
+        }
+
         .element-badge {
             font-family: 'Oswald', sans-serif;
             font-weight: bold;
@@ -321,6 +329,9 @@
 
                                     <div class="monster-info">
                                         <div class="monster-name">{{ monster.name }}</div>
+                                        {% if monster.level %}
+                                        <div class="monster-level">Lv.{{ monster.level }}</div>
+                                        {% endif %}
                                         <div class="monster-details">
                                             {% if monster.element %}
                                             <span class="element-badge" style="color: {{ monster.color }};">{{ monster.element }}抗性</span>
@@ -368,6 +379,9 @@
 
                                     <div class="monster-info">
                                         <div class="monster-name">{{ monster.name }}</div>
+                                        {% if monster.level %}
+                                        <div class="monster-level">Lv.{{ monster.level }}</div>
+                                        {% endif %}
                                         <div class="monster-details">
                                             {% if monster.element %}
                                             <span class="element-badge" style="color: {{ monster.color }};">{{ monster.element }}抗性</span>
@@ -417,6 +431,9 @@
 
                                 <div class="monster-info">
                                     <div class="monster-name">{{ monster.name }}</div>
+                                    {% if monster.level %}
+                                    <div class="monster-level">Lv.{{ monster.level }}</div>
+                                    {% endif %}
                                     <div class="monster-details">
                                         {% if monster.element %}
                                         <span class="element-badge" style="color: {{ monster.color }};">{{ monster.element }}抗性</span>

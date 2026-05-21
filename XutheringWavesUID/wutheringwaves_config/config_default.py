@@ -100,22 +100,22 @@ CONFIG_DEFAULT: Dict[str, GSC] = {
         False,
     ),
     "ResourceDownloadTime": GsListStrConfig(
-        "自动资源更新时间设置 重启生效",
-        "每天自动下载全部资源时间设置（时，分），将在该时间点后一小时内随机时间下载资源，注意可能伴随重启，请避开自动签到",
+        "自动资源更新时间设置 重载生效",
+        "每天自动下载全部资源时间设置（时，分），将在该时间点后一小时内随机时间下载资源，注意可能伴随重载，请避开自动签到",
         ["22", "0"],
     ),
     "AnnMinuteCheck": GsIntConfig(
         "公告推送时间检测（单位min）", "公告推送时间检测（单位min）", 10, 60
     ),
     "RefreshInterval": GsIntConfig(
-        "刷新全部面板间隔，重启生效（单位秒）",
-        "刷新全部面板间隔，重启生效（单位秒）",
+        "刷新全部面板间隔，重载生效（单位秒）",
+        "刷新全部面板间隔，重载生效（单位秒）",
         0,
         600,
     ),
     "RefreshSingleCharInterval": GsIntConfig(
-        "刷新单角色面板间隔，重启生效（单位秒）",
-        "刷新单角色面板间隔，重启生效（单位秒）",
+        "刷新单角色面板间隔，重载生效（单位秒）",
+        "刷新单角色面板间隔，重载生效（单位秒）",
         0,
         600,
     ),
@@ -159,8 +159,8 @@ CONFIG_DEFAULT: Dict[str, GSC] = {
         30,
     ),
     "KuroUrlProxyUrl": GsStrConfig(
-        "库洛域名代理（重启生效）",
-        "库洛域名代理（重启生效）",
+        "库洛域名代理（重载生效）",
+        "库洛域名代理（重载生效）",
         "",
     ),
     "LocalProxyUrl": GsStrConfig(
@@ -226,7 +226,7 @@ CONFIG_DEFAULT: Dict[str, GSC] = {
         True,
     ),
     "HelpExtraModules": GsListStrConfig(
-        "帮助显示额外模块（重启生效）",
+        "帮助显示额外模块（重载生效）",
         "在帮助中额外显示的模块：roversign(签到)、todayecho(梭哈)、scoreecho(评分)、roverreminder(体力推送)，需自行安装对应插件",
         [],
         ["roversign", "todayecho", "scoreecho", "roverreminder", "all"],
@@ -249,8 +249,8 @@ CONFIG_DEFAULT: Dict[str, GSC] = {
         True,
     ),
     "UseHtmlRender": GsBoolConfig(
-        "使用HTML渲染",
-        "开启后将使用HTML渲染公告卡片，关闭后将回退到PIL或纯文本",
+        "使用HTML渲染，低配机器（1c2g以下）建议不开",
+        "开启后将使用HTML渲染公告卡片，关闭后将回退到PIL",
         True,
     ),
     "RemoteRenderEnable": GsBoolConfig(

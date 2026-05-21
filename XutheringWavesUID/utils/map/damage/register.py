@@ -1,79 +1,64 @@
 import importlib
+import re
+from pathlib import Path
 
 from gsuid_core.logger import logger
 
-from ...damage.abstract import DamageRankRegister, DamageDetailRegister
+from ...damage.abstract import DamageRankRegister, DamageDetailRegister, ScoreDetailRegister
 
-ID_MAPPING = {
-    "1102": "1102",
-    "1103": "1103",
-    "1104": "1104",
-    "1105": "1105",
-    "1106": "1106",
-    "1107": "1107",
-    "1108": "1108",
-    "1202": "1202",
-    "1203": "1203",
-    "1204": "1204",
-    "1205": "1205",
-    "1206": "1206",
-    "1207": "1207",
-    "1208": "1208",
-    "1209": "1209",
-    "1210": "1210",
-    "1211": "1211",
-    "1301": "1301",
-    "1302": "1302",
-    "1303": "1303",
-    "1304": "1304",
-    "1305": "1305",
-    "1306": "1306",
-    "1307": "1307",
-    "1402": "1402",
-    "1403": "1403",
-    "1404": "1404",
-    "1405": "1405",
-    "1406": "1406",
-    "1407": "1407",
-    "1409": "1409",
-    "1410": "1410",
-    "1411": "1411",
+# 漂泊者男女共用同一份伤害模块，需要把女性 ID 显式重定向到男性 ID 的模块上
+ID_ALIASES = {
     "1408": "1406",
-    "1503": "1503",
-    "1504": "1504",
-    "1505": "1505",
-    "1506": "1506",
-    "1507": "1507",
-    "1508": "1508",
-    "1509": "1509",
-    "1510": "1510",
     "1501": "1502",
-    "1502": "1502",
-    "1601": "1601",
-    "1602": "1602",
-    "1603": "1603",
-    "1606": "1606",
-    "1607": "1607",
-    "1608": "1608",
-    "1604": "1604",
     "1605": "1604",
-    "1412": "1412",
 }
 
-# 一次完整 reload_all_register 里, 单个 damage_<id>.py 可能被 reload 4-6 次
-# (register_damage + register_rank, ID_MAPPING 还有 1408→1406 / 1501→1502 / 1605→1604
-# 这种别名共用模块)。把"首装时模块尚未下载完"的初始噪声合并提示一次, 但运行期再发生
-# 任何 ImportError 必须能在日志里看到具体是哪个 char / 哪条 import 链。
+_SKIP_IDS = {"0000"}
+
+_DAMAGE_FILE_RE = re.compile(r"^damage_(\d+)(?:\.|$)")
+
+
+def _discover_id_mapping():
+    waves_build_dir = Path(__file__).resolve().parent.parent / "waves_build"
+    mapping = {}
+    if waves_build_dir.is_dir():
+        for entry in waves_build_dir.iterdir():
+            if not entry.is_file():
+                continue
+            if entry.suffix not in (".py", ".so", ".pyd"):
+                continue
+            m = _DAMAGE_FILE_RE.match(entry.name)
+            if not m:
+                continue
+            char_id = m.group(1)
+            if char_id in _SKIP_IDS:
+                continue
+            mapping[char_id] = char_id
+    mapping.update(ID_ALIASES)
+    return mapping
+
+
+ID_MAPPING = _discover_id_mapping()
+
+# 一次完整 reload_all_register 里, 单个 damage_<id>.py 会被 register_damage /
+# register_rank / register_score 各扫一遍, 加上 ID_MAPPING 里 1408→1406 / 1501→1502 /
+# 1605→1604 这类别名共用模块, 不做去重会被 reload 多次, 触发 SQLModel 等的
+# "类已存在" 警告。_reloaded_modules 在一次 reload_all_register 周期内共享, 保证
+# 每个模块文件 reload 一次即可。
 _INITIAL_IMPORT_NOTICE_SHOWN = False
 
-def _dynamic_load_and_register(attr_name, register_cls, force_reload=False):
-    global _INITIAL_IMPORT_NOTICE_SHOWN
+def _dynamic_load_and_register(attr_name, register_cls, force_reload=False, reloaded_set=None):
+    global _INITIAL_IMPORT_NOTICE_SHOWN, ID_MAPPING
+    # 重新扫盘以兼容「首装时模块尚未下载完，下载完成后再 reload」的路径
+    ID_MAPPING = _discover_id_mapping()
     current_globals = globals()
+    if reloaded_set is None:
+        reloaded_set = set()
     for char_id, module_suffix in ID_MAPPING.items():
         module_path = f"..waves_build.damage_{module_suffix}"
         try:
             module = importlib.import_module(module_path, package=__package__)
-            if force_reload:
+            if force_reload and module_suffix not in reloaded_set:
                 # 编译扩展 (.so/.pyd) reload 行为不稳定, 仅 reload .py / .pyc。
                 origin = ""
                 spec = getattr(module, "__spec__", None)
@@ -86,8 +71,9 @@ def _dynamic_load_and_register(attr_name, register_cls, force_reload=False):
                         f"[鸣潮·伤害注册] 跳过编译扩展 reload module={module_path} "
                         f"origin={origin}"
                     )
+                reloaded_set.add(module_suffix)
             if not hasattr(module, attr_name):
-                logger.warning(
+                logger.debug(
                     f"[鸣潮·伤害注册] {module_path} 缺失 attr={attr_name} (char_id={char_id})"
                 )
                 continue
@@ -119,12 +105,16 @@ def _dynamic_load_and_register(attr_name, register_cls, force_reload=False):
             )
 
 
-def register_damage(reload=False):
-    _dynamic_load_and_register(attr_name="damage_detail", register_cls=DamageDetailRegister, force_reload=reload)
+def register_damage(reload=False, reloaded_set=None):
+    _dynamic_load_and_register(attr_name="damage_detail", register_cls=DamageDetailRegister, force_reload=reload, reloaded_set=reloaded_set)
 
 
-def register_rank(reload=False):
-    _dynamic_load_and_register(attr_name="rank", register_cls=DamageRankRegister, force_reload=reload)
+def register_rank(reload=False, reloaded_set=None):
+    _dynamic_load_and_register(attr_name="rank", register_cls=DamageRankRegister, force_reload=reload, reloaded_set=reloaded_set)
+
+
+def register_score(reload=False, reloaded_set=None):
+    _dynamic_load_and_register(attr_name="score_detail", register_cls=ScoreDetailRegister, force_reload=reload, reloaded_set=reloaded_set)
 
 
 def reload_all_register():
@@ -137,8 +127,11 @@ def reload_all_register():
     register_weapon()
     register_echo()
 
-    register_damage(reload=True)
-    register_rank(reload=True)
+    # 一个 cycle 内三个 register 共享 reloaded_set, 同一 damage_<id>.py 只 reload 一次
+    reloaded_set = set()
+    register_damage(reload=True, reloaded_set=reloaded_set)
+    register_rank(reload=True, reloaded_set=reloaded_set)
+    register_score(reload=True, reloaded_set=reloaded_set)
 
     register_char()
 
