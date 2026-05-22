@@ -57,8 +57,17 @@ async def send_download_resource_msg(bot: Bot, ev: Event):
 
 
 async def startup():
-    copy_if_different(BUILD_TEMP, BUILD_PATH, "安全工具资源")
-    copy_if_different(MAP_BUILD_TEMP, MAP_BUILD_PATH, "伤害计算资源")
+    # 插件 import 时已加载磁盘上的 .so; 若此处把上次下载的新构建覆盖到磁盘,
+    # 内存旧 .so 与磁盘新 .so 混版会段错误 → 一旦真的复制了, 立即重启用新进程干净导入
+    build_applied = copy_if_different(BUILD_TEMP, BUILD_PATH, "安全工具资源")
+    map_applied = copy_if_different(MAP_BUILD_TEMP, MAP_BUILD_PATH, "伤害计算资源")
+    if build_applied or map_applied:
+        logger.info("[鸣潮] 应用已下载的新构建, 重启加载...")
+        from gsuid_core.buildin_plugins.core_command.core_restart.restart import (
+            restart_genshinuid,
+        )
+        await restart_genshinuid(is_send=False)
+        return
 
     await reload_all_modules()  # 已有资源，先加载，不然检查资源列表太久了
     logger.info("[鸣潮] 等待资源下载完成...")
