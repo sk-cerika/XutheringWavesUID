@@ -6,7 +6,7 @@ from io import BytesIO
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Tuple
 
-from PIL import Image
+from PIL import Image, ImageChops
 from gsuid_core.logger import logger
 from gsuid_core.pool import to_thread
 
@@ -672,6 +672,27 @@ async def send_repeated_custom_cards(
         await bot.send(batch)
 
 
+def _trim_white_border(image: Image.Image, tol: int = 8) -> Image.Image:
+    """裁掉面板图四周的白色/透明边。"""
+    rgba = image.convert("RGBA")
+    bg = Image.new("RGBA", rgba.size, (255, 255, 255, 255))
+    flat = Image.alpha_composite(bg, rgba).convert("RGB")
+    diff = ImageChops.difference(flat, Image.new("RGB", flat.size, (255, 255, 255)))
+    mask = diff.convert("L").point(lambda p: 255 if p > tol else 0)
+    bbox = mask.getbbox()
+    return image.crop(bbox) if bbox else image
+
+
+@to_thread
+def _trim_card_file(path: Path) -> Optional[Image.Image]:
+    try:
+        with Image.open(path) as im:
+            im.load()
+            return _trim_white_border(im)
+    except Exception:
+        return None
+
+
 async def send_custom_card_single(
     bot: Bot,
     ev: Event,
@@ -707,7 +728,8 @@ async def send_custom_card_single(
         msg = f"[鸣潮] 角色【{char}】未找到id为【{hash_id}】的{type_label}图！"
         return await bot.send((" " if at_sender else "") + msg, at_sender)
 
-    img = await convert_img(target)
+    trimmed = await _trim_card_file(target) if target_type == "card" else None
+    img = await convert_img(trimmed if trimmed is not None else target)
     await bot.send(img)
 
 
@@ -747,5 +769,6 @@ async def send_custom_card_single_by_id(
         return await bot.send((" " if at_sender else "") + msg, at_sender)
 
     t, other_char_id, path = filtered[0]
-    img = await convert_img(path)
+    trimmed = await _trim_card_file(path) if t == "card" else None
+    img = await convert_img(trimmed if trimmed is not None else path)
     await bot.send(img)
