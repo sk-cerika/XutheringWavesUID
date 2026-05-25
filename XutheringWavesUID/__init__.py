@@ -17,10 +17,8 @@ if "XutheringWavesUID" not in SL.plugins:
     Plugins(name="XutheringWavesUID", force_prefix=["ww"], allow_empty_prefix=False)
 
 # 扩展(.pyd/.so)被 import 前先落盘新构建; Windows 下 .pyd 加载后锁定无法替换
-from .utils.resource.RESOURCE_PATH import BUILD_PATH, BUILD_TEMP, MAP_BUILD_PATH, MAP_BUILD_TEMP
-from .utils.download_utils import copy_if_different
-copy_if_different(BUILD_TEMP, BUILD_PATH, "安全工具资源")
-copy_if_different(MAP_BUILD_TEMP, MAP_BUILD_PATH, "伤害计算资源")
+from .utils.download_utils import copy_build_files
+copy_build_files()
 
 # 安装 Bot 消息发送 Hook
 from .utils.bot_send_hook import install_bot_hooks

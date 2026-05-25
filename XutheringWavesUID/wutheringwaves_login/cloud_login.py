@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import threading
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -17,20 +18,36 @@ from gsuid_core.web_app import app
 
 from ..utils.database.models import WavesBind
 from ..utils.database.waves_gacha_cloud import WavesGachaCloud
-from ..utils.resource.RESOURCE_PATH import custom_waves_template, waves_templates
-from ..utils.util import get_hide_uid_pref, hide_uid
-from ..utils.waves_build.cloud_api import (
-    GEETEST_CAPTCHA_ID,
-    GEETEST_PRODUCT,
-    cloud_api,
-    gen_did,
-    gen_device_num,
+from ..utils.download_utils import import_after_build_copy
+from ..utils.resource.RESOURCE_PATH import (
+    custom_waves_template,
+    waves_templates,
 )
+from ..utils.util import get_hide_uid_pref, hide_uid
 from ..wutheringwaves_config import PREFIX, ShowConfig
 from .login import cache, get_token, get_url, send_login
 
 GAME_TITLE = "[鸣潮]"
 LOGIN_FLOW = "cloud"
+
+_CLOUD_API_MODULE = None
+_CLOUD_API_IMPORT_LOCK = threading.RLock()
+
+
+def _get_cloud_api_module():
+    global _CLOUD_API_MODULE
+    if _CLOUD_API_MODULE is None:
+        with _CLOUD_API_IMPORT_LOCK:
+            if _CLOUD_API_MODULE is None:
+                _CLOUD_API_MODULE = import_after_build_copy(
+                    "..utils.waves_build.cloud_api",
+                    package=__package__,
+                )
+    return _CLOUD_API_MODULE
+
+
+def _cloud_api():
+    return _get_cloud_api_module().cloud_api
 
 
 # ===== 复用续期（DB 薄封装，请求链在 cloud_api）=================
@@ -47,7 +64,7 @@ async def fetch_cloud_record_id(
         await WavesGachaCloud.mark_invalid(user_id, bot_id, uid)
         return None
 
-    record_id, new_info, status = await cloud_api.refresh_record_id(info)
+    record_id, new_info, status = await _cloud_api().refresh_record_id(info)
     if status == "ok":
         if new_info is not None:
             await WavesGachaCloud.update_login_info(
@@ -118,8 +135,8 @@ async def _cloud_login_web(bot: Bot, ev: Event, url: str):
             "user_id": ev.user_id,
             "bot_id": ev.bot_id,
             "group_id": ev.group_id,
-            "device_num": gen_device_num(),
-            "did": gen_did(),
+            "device_num": _get_cloud_api_module().gen_device_num(),
+            "did": _get_cloud_api_module().gen_did(),
         },
     )
 
@@ -291,8 +308,8 @@ async def render_cloud_login_page(auth: str, state: Dict[str, Any]) -> HTMLRespo
             server_url=url,
             auth=auth,
             userId=state.get("user_id", ""),
-            captchaId=GEETEST_CAPTCHA_ID,
-            product=GEETEST_PRODUCT,
+            captchaId=_get_cloud_api_module().GEETEST_CAPTCHA_ID,
+            product=_get_cloud_api_module().GEETEST_PRODUCT,
         )
     )
 
@@ -318,8 +335,10 @@ async def waves_cloud_send_code(data: CloudSendCodeRequest):
     if len(data.phone) != 11 or not data.phone.isdigit():
         return {"success": False, "msg": "手机号格式错误"}
 
-    device_num = str(state.get("device_num") or gen_device_num())
-    resp = await cloud_api.send_phone_code(data.phone, data.geetest, device_num)
+    device_num = str(
+        state.get("device_num") or _get_cloud_api_module().gen_device_num()
+    )
+    resp = await _cloud_api().send_phone_code(data.phone, data.geetest, device_num)
     if not resp.success:
         return {"success": False, "msg": resp.msg or "验证码发送失败"}
     return {"success": True}
@@ -333,11 +352,13 @@ async def waves_cloud_login(data: CloudLoginRequest):
     if len(data.phone) != 11 or not data.phone.isdigit() or not data.code.strip():
         return {"success": False, "msg": "手机号或验证码格式错误"}
 
-    device_num = str(state.get("device_num") or gen_device_num())
-    did = str(state.get("did") or gen_did())
+    device_num = str(
+        state.get("device_num") or _get_cloud_api_module().gen_device_num()
+    )
+    did = str(state.get("did") or _get_cloud_api_module().gen_did())
 
     try:
-        ok, msg, result = await cloud_api.do_cloud_login(
+        ok, msg, result = await _cloud_api().do_cloud_login(
             data.phone, data.code, device_num, did
         )
     except Exception as e:

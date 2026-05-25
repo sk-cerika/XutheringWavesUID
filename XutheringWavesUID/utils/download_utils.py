@@ -1,11 +1,16 @@
 import os
+import importlib
 import json
 import shutil
 import hashlib
 import tempfile
+import threading
+import time
 from pathlib import Path
 
 from gsuid_core.logger import logger
+
+BUILD_COPY_LOCK = threading.RLock()
 
 
 def count_files(directory: Path, pattern: str = "*") -> int:
@@ -65,29 +70,114 @@ def check_file_hash(path: Path) -> bool:
 
 
 
+_WINDOWS_LOCK_ERRORS = {5, 32}
+_REPLACE_RETRY_DELAYS = (0.2, 0.5, 1.0, 2.0)
+
+
+def _is_same_file(src_file: Path, dst_file: Path) -> bool:
+    if not dst_file.exists():
+        return False
+    try:
+        return get_file_hash(src_file) == get_file_hash(dst_file)
+    except Exception:
+        return False
+
+
+def _replace_with_retry(tmp: str, dst_file: Path, src_file: Path):
+    last_error = None
+    for index, delay in enumerate((0, *_REPLACE_RETRY_DELAYS)):
+        if delay:
+            time.sleep(delay)
+        try:
+            if dst_file.exists():
+                try:
+                    dst_file.chmod(0o666)
+                except OSError:
+                    pass
+            os.replace(tmp, dst_file)
+            return True
+        except OSError as e:
+            last_error = e
+            winerror = getattr(e, "winerror", None)
+            if winerror not in _WINDOWS_LOCK_ERRORS:
+                raise
+            if _is_same_file(src_file, dst_file):
+                try:
+                    os.unlink(tmp)
+                except OSError:
+                    pass
+                return False
+            if index == len(_REPLACE_RETRY_DELAYS):
+                break
+            logger.warning(
+                f"[鸣潮] 构建文件被占用，等待后重试: {dst_file} "
+                f"(WinError {winerror})"
+            )
+    raise last_error
+
+
 def _atomic_copy_tree(src, dst):
     """逐文件 写临时文件 + os.replace 原子替换。"""
     src_path = Path(src)
     files = [f for f in src_path.rglob("*") if f.is_file()]
     # 锁敏感的编译扩展先复制
     files.sort(key=lambda p: p.suffix.lower() not in (".pyd", ".so", ".dll", ".dylib"))
+    updated = 0
     for src_file in files:
         dst_file = Path(dst) / src_file.relative_to(src_path)
+        if _is_same_file(src_file, dst_file):
+            continue
         dst_file.parent.mkdir(parents=True, exist_ok=True)
         fd, tmp = tempfile.mkstemp(dir=dst_file.parent, prefix=".tmp_")
         os.close(fd)
         try:
             shutil.copy2(src_file, tmp)
-            os.replace(tmp, dst_file)
+            if _replace_with_retry(tmp, dst_file, src_file):
+                updated += 1
         except Exception:
             try:
                 os.unlink(tmp)
             except OSError:
                 pass
             raise
+    return updated
 
 
-def copy_if_different(src, dst, name, soft=False):
+def copy_build_files(soft=False):
+    with BUILD_COPY_LOCK:
+        return _copy_build_files(soft)
+
+
+def import_after_build_copy(module_name, package=None):
+    with BUILD_COPY_LOCK:
+        _copy_build_files()
+        return importlib.import_module(module_name, package=package)
+
+
+def _copy_build_files(soft=False):
+    from .resource.RESOURCE_PATH import (
+        BUILD_PATH,
+        BUILD_TEMP,
+        MAP_BUILD_PATH,
+        MAP_BUILD_TEMP,
+    )
+
+    build_updated = _copy_if_different(
+        BUILD_TEMP,
+        BUILD_PATH,
+        "安全工具资源",
+        soft=soft,
+    )
+    map_updated = _copy_if_different(
+        MAP_BUILD_TEMP,
+        MAP_BUILD_PATH,
+        "伤害计算资源",
+        soft=soft,
+    )
+    return build_updated, map_updated
+
+
+def _copy_if_different(src, dst, name, soft=False):
     """复制并返回是否有更新"""
     if not os.path.exists(src):
         logger.debug(f"[鸣潮] {name} 源目录不存在")

@@ -8,16 +8,14 @@ from gsuid_core.aps import scheduler
 from gsuid_core.logger import logger
 
 from ..wutheringwaves_config import WutheringWavesConfig
-from ..utils.download_utils import copy_if_different, check_file_hash
+from ..utils.download_utils import copy_build_files, check_file_hash
 from ..utils.resource.download_all_resource import (
     reload_all_modules,
     download_all_resource,
     notify_master_and_restart,
 )
 from ..utils.resource.RESOURCE_PATH import (
-    BUILD_PATH,
     BUILD_TEMP,
-    MAP_BUILD_PATH,
     MAP_BUILD_TEMP,
 )
 
@@ -42,8 +40,7 @@ async def send_download_resource_msg(bot: Bot, ev: Event):
     if check_file_hash(BUILD_TEMP) or check_file_hash(MAP_BUILD_TEMP):    
         await download_all_resource()
     
-    build_updated = copy_if_different(BUILD_TEMP, BUILD_PATH, "安全工具资源", soft=True)
-    map_updated = copy_if_different(MAP_BUILD_TEMP, MAP_BUILD_PATH, "伤害计算资源", soft=True)
+    build_updated, map_updated = copy_build_files(soft=True)
 
     if build_updated or map_updated:
         await bot.send("[鸣潮] 构建文件已更新，正在重启...")
@@ -65,8 +62,7 @@ async def startup():
     if check_file_hash(BUILD_TEMP) or check_file_hash(MAP_BUILD_TEMP):
         await download_all_resource()
 
-    build_updated = copy_if_different(BUILD_TEMP, BUILD_PATH, "安全工具资源", soft=True)
-    map_updated = copy_if_different(MAP_BUILD_TEMP, MAP_BUILD_PATH, "伤害计算资源", soft=True)
+    build_updated, map_updated = copy_build_files(soft=True)
 
     if build_updated or map_updated:
         logger.info("[鸣潮] 构建文件已更新，正在重启...")
@@ -87,8 +83,7 @@ async def auto_download_resource():
     if check_file_hash(BUILD_TEMP) or check_file_hash(MAP_BUILD_TEMP):    
         await download_all_resource()
 
-    build_updated = copy_if_different(BUILD_TEMP, BUILD_PATH, "安全工具资源", soft=True)
-    map_updated = copy_if_different(MAP_BUILD_TEMP, MAP_BUILD_PATH, "伤害计算资源", soft=True)
+    build_updated, map_updated = copy_build_files(soft=True)
     if build_updated or map_updated:
         logger.info("[鸣潮] 定时任务: 构建文件已更新，正在重启...")
         await notify_master_and_restart("定时任务: 构建文件已更新，正在重启...")
