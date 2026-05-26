@@ -14,6 +14,32 @@ class EchoSlotConfig:
     sub_options: List[str]
 
 
+def make_43311(sub_options: List[str], cost4_main: Optional[List[str]] = None,
+               cost3_main: Optional[List[str]] = None) -> List["EchoSlotConfig"]:
+    """构造标准 43311 cost 布局 (cost4 / cost3×2 含元素加成 / cost1×2)。"""
+    c4 = list(cost4_main) if cost4_main else ["暴击", "暴击伤害", "攻击"]
+    c3 = list(cost3_main) if cost3_main else ["属性伤害加成", "攻击%"]
+    return [
+        EchoSlotConfig(cost=4, main_options=c4, sub_options=sub_options),
+        EchoSlotConfig(cost=3, main_options=c3, sub_options=sub_options),
+        EchoSlotConfig(cost=3, main_options=c3, sub_options=sub_options),
+        EchoSlotConfig(cost=1, main_options=["攻击%"], sub_options=sub_options),
+        EchoSlotConfig(cost=1, main_options=["攻击%"], sub_options=sub_options),
+    ]
+
+
+def make_44111(sub_options: List[str], cost4_main: Optional[List[str]] = None) -> List["EchoSlotConfig"]:
+    """构造 44111 cost 布局 (双 cost4 主词条, 牺牲 1 费), 供 slot_config_alts 用。"""
+    c4 = list(cost4_main) if cost4_main else ["暴击", "暴击伤害", "攻击"]
+    return [
+        EchoSlotConfig(cost=4, main_options=c4, sub_options=sub_options),
+        EchoSlotConfig(cost=4, main_options=c4, sub_options=sub_options),
+        EchoSlotConfig(cost=1, main_options=["攻击%"], sub_options=sub_options),
+        EchoSlotConfig(cost=1, main_options=["攻击%"], sub_options=sub_options),
+        EchoSlotConfig(cost=1, main_options=["攻击%"], sub_options=sub_options),
+    ]
+
+
 DEFAULT_ENERGY_RECOMMENDED = 120.0
 DEFAULT_W_LOW = 0.7
 DEFAULT_W_MID = 0.8
@@ -29,6 +55,10 @@ class ScoreHyperParams:
     energy_w_mid: float = DEFAULT_W_MID
     energy_w_peak: float = DEFAULT_W_PEAK
     slot_config: Optional[List[EchoSlotConfig]] = None
+    # 备选 cost 布局: 优化器会把 slot_config 与这里每一组都各搜一遍, 取分最高的。
+    # 用于"有时 43311、有时 44111"的角色 —— 例如主 slot_config 给 43311(cost3 元素加成),
+    # 再在此追加一组 44111(双 cost4 暴击/暴伤, 牺牲 1 费换主词条)。每组都是完整 5 槽 EchoSlotConfig。
+    slot_config_alts: Optional[List[List[EchoSlotConfig]]] = None
     template_override: Optional[CharTemplate] = None
     apply_buffs: Optional[ApplyBuffsFunc] = None
     skill_weight_overrides: Optional[Dict[int, List[float]]] = None

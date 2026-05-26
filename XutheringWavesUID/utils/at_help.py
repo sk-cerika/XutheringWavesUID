@@ -27,4 +27,6 @@ def is_intl_uid(uid) -> bool:
 
 
 def intl_unavailable_msg(uid) -> str:
-    return f"[鸣潮] UID {uid} 暂不可用"
+    from .util import hide_uid
+
+    return f"[鸣潮] UID {hide_uid(uid)} 暂不可用"

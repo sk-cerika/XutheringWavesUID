@@ -6,12 +6,14 @@ from gsuid_core.logger import logger
 from gsuid_core.models import Event
 
 from .email_login import email_login_entry
+from .cloud_login import cloud_login_entry
 from .login import code_login, page_login
 from ..wutheringwaves_config import PREFIX
 
-sv_kuro_login = SV("库洛登录")
+sv_kuro_login = SV("街区登录")
 # sv_kuro_login_help = SV("库洛登录帮助", pm=0, priority=4)
-sv_email_login = SV("国际服登录")
+sv_email_login = SV("邮箱登录")
+sv_cloud_login = SV("抽卡登录")
 
 
 @sv_kuro_login.on_command(("登录", "登陆", "登入", "登龙", "login", "dl"), block=True)
@@ -50,3 +52,25 @@ async def get_email_login_msg(bot: Bot, ev: Event):
         f"group_id={ev.group_id}"
     )
     return await email_login_entry(bot, ev)
+
+
+@sv_cloud_login.on_fullmatch(
+    (
+        "抽卡登录",
+        "抽卡登陆",
+        "抽卡登入",
+        "云鸣潮登录",
+        "云鸣潮登陆",
+        "云鸣潮登入",
+        "云登录",
+        "云登陆",
+        "云登入",
+    ),
+    block=True,
+)
+async def get_cloud_login_msg(bot: Bot, ev: Event):
+    logger.debug(
+        f"[鸣潮登录] cloud_login user_id={ev.user_id} bot_id={ev.bot_id} "
+        f"group_id={ev.group_id}"
+    )
+    return await cloud_login_entry(bot, ev)

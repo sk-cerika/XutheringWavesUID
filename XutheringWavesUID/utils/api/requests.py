@@ -928,12 +928,12 @@ class WavesApi:
             value = [{**x, "id": int(x["postId"])} for x in raw_data["data"]["postList"]]
             self.ann_list_data.extend(value)
 
-        res = await self.get_bbs_list("10011001", pageIndex=1, pageSize=9)
+        res = await self.get_bbs_list("10011001", pageIndex=1, pageSize=20)
         if res.success:
             raw_data = res.model_dump()
-            post_list = raw_data["data"]["postList"]
+            post_list = [x for x in raw_data["data"]["postList"] if x.get("gameId") == WAVES_GAME_ID]
             post_list.sort(key=lambda x: x.get("showTime", 0), reverse=True)
-            value = [{**x, "id": int(x["postId"]), "eventType": 4} for x in post_list]
+            value = [{**x, "id": int(x["postId"]), "eventType": 4} for x in post_list[:9]]
             self.ann_list_data.extend(value)
 
         return self.ann_list_data

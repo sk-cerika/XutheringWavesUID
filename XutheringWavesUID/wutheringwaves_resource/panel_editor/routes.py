@@ -28,6 +28,11 @@ from . import storage as st
 
 _STATIC_DIR = Path(__file__).parent / "static"
 
+# 框选可超出原图(越界部分白色填充)后, 画布尺寸的安全上限, 防 OOM:
+# 单边 ≤ 原图各边 3 倍且 ≤ 8000px; 同时总像素 ≤ 40MP(单边限幅挡不住极端长宽比)。
+_MAX_CROP_DIM = 8000
+_MAX_CROP_PIXELS = 40_000_000
+
 
 def _try_update_orb_cache(p: Path) -> None:
     try:
@@ -184,7 +189,7 @@ async def api_thumb(
     target = st.safe_target_image(type, char_id, name)
     if target is None or not target.is_file():
         raise HTTPException(404, "image not found")
-    cache = st.get_or_make_thumb(target, size)
+    cache = st.get_or_make_thumb(target, size, type)
     if cache is None:
         return FileResponse(target)
     return FileResponse(cache, media_type="image/webp", headers={"Cache-Control": "max-age=86400"})
@@ -195,12 +200,32 @@ async def api_image(
     type: str,
     char_id: str,
     name: str,
+    trim: int = 0,
     _: str = Depends(auth_or_guest),
 ):
     target = st.safe_target_image(type, char_id, name)
     if target is None or not target.is_file():
         raise HTTPException(404, "image not found")
-    return FileResponse(target)
+    headers = {"Cache-Control": "no-store"}
+    if trim and type == "card":
+        from ...wutheringwaves_charinfo.card_utils import _trim_card_file
+        img = await _trim_card_file(target)
+        with Image.open(target) as orig:
+            orig_size = orig.size
+        if img is not None and img.size != orig_size:
+            buf = BytesIO()
+            ext = target.suffix.lower()
+            if ext in (".jpg", ".jpeg"):
+                img.convert("RGB").save(buf, "JPEG", quality=95)
+                mt = "image/jpeg"
+            elif ext == ".webp":
+                img.save(buf, "WEBP", quality=95)
+                mt = "image/webp"
+            else:
+                img.save(buf, "PNG")
+                mt = "image/png"
+            return Response(buf.getvalue(), media_type=mt, headers=headers)
+    return FileResponse(target, headers=headers)
 
 
 # ------------------------- 临时上传 / 裁剪 -------------------------
@@ -276,11 +301,8 @@ async def api_tmp_crop(
     _: None = Depends(require_auth),
 ):
     """对 tmp 图执行裁剪。
-    payload:
-      token: str
-      x, y, w, h: float (相对当前 tmp 图的像素坐标, 允许越界后会 clamp)
-    在 current 上做增量裁剪 (前端展示的就是 current, 坐标必须以它为基准, 否则
-    第二次起的裁剪会与可视框错位); original 仅用于 /tmp/restore 还原。
+    payload: token; x,y,w,h = 相对【原图】的绝对像素坐标 (前端用 current 在原图内的 offset 换算),
+    越界部分白色填充。始终从 original 裁, 故放大裁剪框能找回先前被裁掉的内容; current 仅是裁剪结果缓存。
     """
     token = payload.get("token")
     if not st.is_safe_token(token):
@@ -299,14 +321,31 @@ async def api_tmp_crop(
     if current is None or original is None:
         raise HTTPException(404, "tmp not found")
 
-    with Image.open(current) as im:
+    with Image.open(original) as im:
         im.load()
         ow, oh = im.size
-        x = max(0, min(x, ow - 1))
-        y = max(0, min(y, oh - 1))
-        w = max(1, min(w, ow - x))
-        h = max(1, min(h, oh - y))
-        cropped = im.crop((x, y, x + w, y + h))
+
+        # 允许框选超出原图: 越界部分白色填充, 不再 clamp 到原图范围。仍限制画布尺寸防 OOM。
+        if w > min(_MAX_CROP_DIM, ow * 3) or h > min(_MAX_CROP_DIM, oh * 3):
+            raise HTTPException(400, "crop size too large")
+        if w * h > _MAX_CROP_PIXELS:
+            raise HTTPException(400, "crop size too large")
+
+        is_jpeg = current.suffix.lower() in (".jpg", ".jpeg")
+        keep_alpha = (not is_jpeg) and im.mode in ("RGBA", "LA", "P")
+        mode = "RGBA" if keep_alpha else "RGB"
+        fill = (255, 255, 255, 255) if keep_alpha else (255, 255, 255)
+        canvas = Image.new(mode, (w, h), fill)
+
+        # 原图与框选框的重叠区域(原图坐标系), 仅在有重叠时把对应内容贴回白底画布。
+        ix0, iy0 = max(0, x), max(0, y)
+        ix1, iy1 = min(ow, x + w), min(oh, y + h)
+        if ix1 > ix0 and iy1 > iy0:
+            region = im.crop((ix0, iy0, ix1, iy1))
+            if region.mode != mode:
+                region = region.convert(mode)
+            canvas.paste(region, (ix0 - x, iy0 - y))
+        cropped = canvas
 
     suffix = current.suffix
     out = BytesIO()
@@ -522,4 +561,5 @@ async def api_meta(role: str = Depends(auth_or_guest)):
         "id2name": dict(id2name),
         "role": role,
         "guest_view_enabled": is_guest_view_enabled(),
+        "thumb_ver": st._THUMB_VERSION,
     }

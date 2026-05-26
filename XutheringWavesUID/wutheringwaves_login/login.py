@@ -78,15 +78,18 @@ def get_token(userId: str):
     return hashlib.sha256(userId.encode()).hexdigest()[:8]
 
 
-async def send_login(bot: Bot, ev: Event, url):
+async def send_login(bot: Bot, ev: Event, url, refresh_panel: bool = True):
     at_sender = True if ev.group_id else False
 
     if WutheringWavesConfig.get_config("WavesQRLogin").data:
         path = Path(__file__).parent / f"{ev.user_id}.gif"
 
+        scan_tip = "请用浏览器扫描获取地址"
+        if refresh_panel:
+            scan_tip += "，完成后将刷新全部面板，无需立即刷新"
         im = [
             f"{game_title} 您的id为【{ev.user_id}】\n",
-            "请用浏览器扫描获取地址，完成后将刷新全部面板，无需立即刷新",
+            scan_tip,
             MessageSegment.image(await get_qrcode_base64(url, path, ev.bot_id)),
         ]
 
@@ -106,7 +109,7 @@ async def send_login(bot: Bot, ev: Event, url):
             url = f"https://docs.qq.com/scenario/link.html?url={url}"
         im = [
             f"{game_title} 您的id为【{ev.user_id}】",
-            "完成后将刷新全部面板，无需立即刷新",
+            *(["完成后将刷新全部面板，无需立即刷新"] if refresh_panel else []),
             f" {url}" if WutheringWavesConfig.get_config("WavesLoginForward").data else url,
             "3分钟内有效",
         ]
@@ -349,6 +352,11 @@ async def waves_login_index(auth: str):
         from .email_login import render_email_login_page
 
         return await render_email_login_page(auth, state)
+
+    if isinstance(state, dict) and state.get("flow") == "cloud":
+        from .cloud_login import render_cloud_login_page
+
+        return await render_cloud_login_page(auth, state)
 
     temp = state
     if temp is None:

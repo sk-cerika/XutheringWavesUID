@@ -177,15 +177,67 @@ def list_images(t: str, char_id: str) -> List[dict]:
     return items
 
 
+# 缩略图按"角色卡实际显示区"裁剪的版本号; 改裁剪逻辑时 +1 使旧缓存失效。
+_THUMB_VERSION = 2
+
+# card 自定义图经 contain 缩放居中进 PANEL_OUT, 仅 PANEL_VIS 窗口在角色卡可见
+# (与 card_utils._PANEL_VISIBLE_BOX_LOCAL / 前端 app.js panelVisibleRectInCrop 对齐)。
+_PANEL_OUT = (560, 1000)
+_PANEL_VIS = (60, 95, 500, 900)
+# stamina/MR 卡背景容器 (stamina_card.html .container), bg 以 object-fit:cover 居中填充。
+_BG_DISPLAY_RATIO = 1150 / 850
+
+
+def _panel_visible_box(w: int, h: int) -> Optional[Tuple[int, int, int, int]]:
+    if w <= 0 or h <= 0:
+        return None
+    ow, oh = _PANEL_OUT
+    l0, t0, r0, b0 = _PANEL_VIS
+    f = (ow / w) if w > h else (oh / h)
+    px = (ow - w * f) / 2
+    py = (oh - h * f) / 2
+    l = max(0.0, min((l0 - px) / f, w))
+    t = max(0.0, min((t0 - py) / f, h))
+    r = max(0.0, min((r0 - px) / f, w))
+    b = max(0.0, min((b0 - py) / f, h))
+    if r <= l or b <= t:
+        return None
+    return round(l), round(t), round(r), round(b)
+
+
+def _cover_box(w: int, h: int, ratio: float) -> Optional[Tuple[int, int, int, int]]:
+    if w <= 0 or h <= 0:
+        return None
+    if w / h > ratio:
+        nw = round(h * ratio)
+        x0 = (w - nw) // 2
+        return x0, 0, x0 + nw, h
+    nh = round(w / ratio)
+    y0 = (h - nh) // 2
+    return 0, y0, w, y0 + nh
+
+
+def _display_crop_box(t: Optional[str], w: int, h: int) -> Optional[Tuple[int, int, int, int]]:
+    """该类型在角色卡里的实际显示区 (源图坐标); 无则 None 走原图。"""
+    if t == "card":
+        return _panel_visible_box(w, h)
+    if t == "bg":
+        return _cover_box(w, h, _BG_DISPLAY_RATIO)
+    return None
+
+
 def thumb_path_for(target: Path, max_size: int) -> Path:
-    """缩略图缓存路径, 基于源图绝对路径 hash 防冲突。"""
+    """缩略图缓存路径, 基于源图绝对路径 hash 防冲突 (路径已隐含类型, 无需再编码)。"""
     abs_str = str(target.resolve())
     digest = hashlib.md5(abs_str.encode()).hexdigest()[:12]
-    return PANEL_EDIT_THUMBS / f"{digest}_{max_size}.webp"
+    return PANEL_EDIT_THUMBS / f"{digest}_{max_size}_v{_THUMB_VERSION}.webp"
 
 
-def get_or_make_thumb(target: Path, max_size: int = 360) -> Optional[Path]:
-    """生成 (或复用) 缩略图, 返回 cache 文件路径。失败返回 None。"""
+def get_or_make_thumb(target: Path, max_size: int = 360, t: Optional[str] = None) -> Optional[Path]:
+    """生成 (或复用) 缩略图, 返回 cache 文件路径。失败返回 None。
+
+    t 为类型 (card/bg/...) 时, 缩略图先裁到角色卡实际显示区再缩放。
+    """
     if not target.is_file():
         return None
     cache = thumb_path_for(target, max_size)
@@ -197,6 +249,9 @@ def get_or_make_thumb(target: Path, max_size: int = 360) -> Optional[Path]:
 
     try:
         with Image.open(target) as im:
+            box = _display_crop_box(t, im.width, im.height)
+            if box:
+                im = im.crop(box)
             im = im.convert("RGB") if im.mode in ("RGBA", "LA", "P") else im
             im.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
             cache.parent.mkdir(parents=True, exist_ok=True)

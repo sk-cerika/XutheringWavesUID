@@ -7,7 +7,7 @@ from pathlib import Path
 from datetime import datetime
 
 import aiofiles
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFilter
 
 # 忽略PIL解压缩炸弹警告
 warnings.filterwarnings('ignore', category=Image.DecompressionBombWarning)
@@ -86,7 +86,9 @@ async def draw_card_help():
         [
             "如何导入抽卡记录",
             "",
-            f"使用命令【{PREFIX}导入抽卡链接 + 你复制的内容】即可开始进行抽卡分析",
+            f"利用云鸣潮：使用命令【{PREFIX}抽卡登录】登录一次后，可直接刷新抽卡数据",
+            "",
+            f"传统方法：使用命令【{PREFIX}导入抽卡链接 + 你复制的内容】即可开始进行抽卡分析",
             "",
             "抽卡链接具有有效期，请在有效期内尽快导入",
         ]
@@ -424,32 +426,75 @@ def _render_gacha_card(
 ) -> Image.Image:
     oset = 280
     bset = 170
-
-    _numlen = 0
-    newbie_flag = False
-    for name in total_data:
-        _num = len(total_data[name]["rank_s_list"])
-        if "新手" in name:
-            if _num > 0:
-                newbie_flag = True
-        else:
-            _num = len(total_data[name]["rank_s_list"])
-            if _num == 0:
-                _numlen += 50
-            else:
-                _numlen += bset * get_num_h(_num, 5)
-
-    _newbielen = 395 if newbie_flag else 0
-    _header = 380
+    pitch = 162
+    row_h = bset
+    _header = 430
     footer = 50
-    w, h = 1000, _header + title_num * oset + _numlen + _newbielen + footer
 
-    card_img = get_waves_bg(w, h)
+    # 仅展示有抽卡记录（总抽数 > 0）的卡池
+    show_main = [n for n in total_data if "新手" not in n and total_data[n]["total"] > 0]
+    show_newbie = [n for n in total_data if "新手" in n and total_data[n]["total"] > 0]
+    drawable_newbie = [n for n in show_newbie if total_data[n]["rank_s_list"]]
+    title_num = len(show_main)
+    _newbielen = 395 if drawable_newbie else 0
+
+    def _content_h(col: int) -> int:
+        body = 0
+        for n in show_main:
+            _num = len(total_data[n]["rank_s_list"])
+            body += 50 if _num == 0 else row_h * get_num_h(_num, col)
+        return _header + title_num * oset + body + _newbielen + footer
+
+    # 列数：让「角色精准调谐」池的 5 星网格接近 2:3（宽:高），图标原尺寸、列数 5~15。
+    # 没有该池数据时退用展示池中金数最多者。
+    ref_n = len(total_data.get("角色精准调谐", {}).get("rank_s_list", []))
+    if ref_n == 0:
+        ref_n = max((len(total_data[n]["rank_s_list"]) for n in show_main), default=0)
+    column = 5
+    if ref_n > 0:
+        best_diff = None
+        for col in range(5, 16):
+            ratio = (pitch * col) / (row_h * get_num_h(ref_n, col))
+            diff = abs(ratio - 2 / 3)
+            if best_diff is None or diff < best_diff:
+                column, best_diff = col, diff
+    w = pitch * column + 190
+    h = _content_h(column)
+
+    card_img = get_waves_bg(w, h, bg="bg13")
     card_draw = ImageDraw.Draw(card_img)
 
     item_fg = Image.open(TEXT_PATH / "char_bg.png")
     up_icon = Image.open(TEXT_PATH / "up_tag.png")
     up_icon = up_icon.resize((68, 52))
+    title_overlays = []
+    for overlay_name in (
+        "gacha_title_sky_overlay.png",
+        "gacha_title_sky_overlay_1.png",
+        "gacha_title_sky_overlay_2.png",
+        "gacha_title_sky_overlay_3.png",
+    ):
+        overlay_path = TEXT_PATH / overlay_name
+        if overlay_path.exists():
+            title_overlays.append(Image.open(overlay_path).convert("RGBA"))
+
+    def _shuffle_title_overlays() -> List[Image.Image]:
+        overlay_pool = title_overlays.copy()
+        random.shuffle(overlay_pool)
+        return overlay_pool
+
+    title_overlay_pool = _shuffle_title_overlays()
+
+    def _take_title_overlay() -> Image.Image:
+        nonlocal title_overlay_pool
+        if not title_overlay_pool:
+            title_overlay_pool = _shuffle_title_overlays()
+        return title_overlay_pool.pop()
+
+    def _crop_title_overlay(overlay: Image.Image, width: int) -> Image.Image:
+        overlay_x_max = overlay.width - width
+        overlay_x = 0 if overlay_x_max <= 0 else random.randint(0, overlay_x_max)
+        return overlay.crop((overlay_x, 0, overlay_x + width, 300))
 
     def draw_pic(item) -> Image.Image:
         item_bg = Image.new("RGBA", (167, 170))
@@ -486,14 +531,86 @@ def _render_gacha_card(
             item_bg.paste(up_icon_cp, (88, 3), up_icon_cp)
         return item_bg
 
+    def _text_width(draw: ImageDraw.ImageDraw, text: str, font) -> int:
+        bbox = draw.textbbox((0, 0), text, font=font)
+        return bbox[2] - bbox[0]
+
+    def _draw_metric(
+        draw: ImageDraw.ImageDraw,
+        box: tuple,
+        value: str,
+        label: str,
+        accent: tuple,
+    ):
+        x1, y1, x2, y2 = box
+        draw.rounded_rectangle(
+            box,
+            radius=16,
+            fill=(6, 20, 29, 186),
+            outline=(128, 213, 213, 58),
+            width=1,
+        )
+        draw.rounded_rectangle(
+            [x1 + 12, y1 + 10, x2 - 12, y1 + 14],
+            radius=2,
+            fill=accent,
+        )
+        draw.text(
+            ((x1 + x2) // 2, y1 + 40),
+            value,
+            (255, 255, 255),
+            waves_font_32,
+            "mm",
+            stroke_width=1,
+            stroke_fill=(0, 0, 20, 110),
+        )
+        draw.text(
+            ((x1 + x2) // 2, y1 + 72),
+            label,
+            (205, 230, 230),
+            waves_font_20,
+            "mm",
+        )
+
     y = 0
     gindex = 0
-    for _, gacha_name in enumerate(total_data):
-        if "新手" in gacha_name:
-            continue
+    for gacha_name in show_main:
         gacha_data = total_data[gacha_name]
-        title = Image.open(TEXT_PATH / "bar.png")
+        title_overlay = _take_title_overlay()
+        title_w = max(980, min(w - 20, title_overlay.width))
+        title = Image.new("RGBA", (title_w, 300), (0, 0, 0, 0))
+
+        shadow = Image.new("RGBA", title.size, (0, 0, 0, 0))
+        shadow_draw = ImageDraw.Draw(shadow)
+        shadow_draw.rounded_rectangle([66, 24, title_w - 66, 258], radius=28, fill=(3, 16, 24, 145))
+        shadow = shadow.filter(ImageFilter.GaussianBlur(12))
+        title.alpha_composite(shadow)
+
+        panel_box = [70, 16, title_w - 70, 248]
+        panel = Image.new("RGBA", title.size, (0, 0, 0, 0))
+        panel_draw = ImageDraw.Draw(panel)
+        panel_draw.rounded_rectangle(panel_box, radius=28, fill=(6, 24, 34, 238))
+        panel_draw.rounded_rectangle([panel_box[0], panel_box[1], panel_box[2], 88], radius=28, fill=(18, 54, 65, 66))
+        panel.alpha_composite(_crop_title_overlay(title_overlay, title_w))
+
+        panel_mask = Image.new("L", title.size, 0)
+        panel_mask_draw = ImageDraw.Draw(panel_mask)
+        panel_mask_draw.rounded_rectangle(panel_box, radius=28, fill=255)
+        panel.putalpha(panel_mask)
+        title.alpha_composite(panel)
+
         title_draw = ImageDraw.Draw(title)
+        content_left = panel_box[0] + 28
+        right_panel_w = 232
+        right_panel_x = panel_box[2] - right_panel_w - 26
+        title_draw.rounded_rectangle(panel_box, radius=28, outline=(161, 224, 223, 94), width=2)
+        title_draw.rounded_rectangle(
+            [panel_box[0] + 6, panel_box[1] + 6, panel_box[2] - 6, panel_box[3] - 6],
+            radius=22,
+            outline=(234, 255, 253, 23),
+            width=1,
+        )
+        title_draw.line([right_panel_x - 42, 54, right_panel_x - 42, 226], fill=(175, 232, 229, 38), width=1)
 
         remain_s = f"{gacha_data['remain']}"
         avg_s = f"{gacha_data['avg']}"
@@ -505,29 +622,129 @@ def _render_gacha_card(
             time_range = gacha_data["time_range"]
         else:
             time_range = "暂未抽过卡!"
-        title_draw.text(
-            (110, 120),
-            time_range,
-            (220, 220, 220),
-            waves_font_18,
-            "lm",
-        )
 
         level_path = TEXT_PATH / f"{level}"
         level_icon = Image.open(random.choice(list(level_path.iterdir())))
         level_icon = level_icon.resize((140, 140)).convert("RGBA")
         tag = HOMO_TAG[level]
 
-        title_draw.text((160, 178), avg_s, "white", waves_font_32, "mm")
-        title_draw.text((300, 178), avg_up_s, "white", waves_font_32, "mm")
-        title_draw.text((457, 178), total, "white", waves_font_32, "mm")
-        title_draw.text((110, 80), gacha_type_meta_rename[gacha_name], "white", waves_font_40, "lm")
-        title_draw.text((380, 87), "已", "white", waves_font_23, "rm")
-        title_draw.text((410, 84), remain_s, "red", waves_font_40, "mm")
-        title_draw.text((530, 87), "抽未出金", "white", waves_font_23, "rm")
+        title_name = gacha_type_meta_rename[gacha_name]
+        title_draw.text(
+            (content_left, 58),
+            title_name,
+            (255, 255, 255),
+            waves_font_40,
+            "lm",
+            stroke_width=1,
+            stroke_fill=(0, 0, 24, 130),
+        )
 
-        title.paste(level_icon, (710, 51), level_icon)
-        title_draw.text((783, 225), tag, "white", waves_font_24, "mm")
+        remain_prefix = "已"
+        remain_suffix = "抽未出金"
+        remain_content_w = (
+            _text_width(title_draw, remain_prefix, waves_font_23)
+            + 10
+            + _text_width(title_draw, remain_s, waves_font_40)
+            + 8
+            + _text_width(title_draw, remain_suffix, waves_font_23)
+        )
+        remain_w = max(238, remain_content_w + 46)
+        title_name_w = _text_width(title_draw, title_name, waves_font_40)
+        remain_x0 = min(content_left + title_name_w + 48, right_panel_x - remain_w - 56)
+        remain_x0 = max(content_left + 300, remain_x0)
+        remain_box = [remain_x0, 38, remain_x0 + remain_w, 82]
+        title_draw.rounded_rectangle(
+            remain_box,
+            radius=23,
+            fill=(10, 22, 31, 178),
+            outline=(166, 226, 224, 62),
+            width=1,
+        )
+        remain_x = remain_box[0] + 23
+        title_draw.text((remain_x, 60), remain_prefix, (224, 245, 244), waves_font_23, "lm")
+        remain_x += _text_width(title_draw, remain_prefix, waves_font_23) + 10
+        title_draw.text(
+            (remain_x, 58),
+            remain_s,
+            (245, 86, 105),
+            waves_font_40,
+            "lm",
+            stroke_width=1,
+            stroke_fill=(66, 0, 24, 150),
+        )
+        remain_x += _text_width(title_draw, remain_s, waves_font_40) + 8
+        title_draw.text((remain_x, 60), remain_suffix, (224, 245, 244), waves_font_23, "lm")
+
+        time_text_w = _text_width(title_draw, time_range, waves_font_18)
+        time_box_w = min(time_text_w + 34, right_panel_x - content_left - 82)
+        title_draw.rounded_rectangle(
+            [content_left, 100, content_left + time_box_w, 128],
+            radius=14,
+            fill=(5, 18, 28, 126),
+        )
+        title_draw.text(
+            (content_left + 17, 114),
+            time_range,
+            (209, 229, 230),
+            waves_font_18,
+            "lm",
+        )
+
+        metric_gap = 14
+        metric_w = min(172, max(150, (right_panel_x - content_left - 82 - metric_gap * 2) // 3))
+        metric_y1 = 152
+        metric_y2 = 238
+        _draw_metric(
+            title_draw,
+            [content_left, metric_y1, content_left + metric_w, metric_y2],
+            avg_s,
+            "平均出金",
+            (133, 210, 224, 184),
+        )
+        metric_x = content_left + metric_w + metric_gap
+        _draw_metric(
+            title_draw,
+            [metric_x, metric_y1, metric_x + metric_w, metric_y2],
+            avg_up_s,
+            "平均UP",
+            (151, 222, 194, 184),
+        )
+        metric_x += metric_w + metric_gap
+        _draw_metric(
+            title_draw,
+            [metric_x, metric_y1, metric_x + metric_w, metric_y2],
+            total,
+            "总抽数",
+            (222, 211, 139, 178),
+        )
+
+        title_draw.rounded_rectangle(
+            [right_panel_x, 38, right_panel_x + right_panel_w, 236],
+            radius=22,
+            fill=(8, 20, 30, 142),
+            outline=(166, 226, 224, 68),
+            width=1,
+        )
+        avatar_x = right_panel_x + (right_panel_w - 140) // 2
+        title_draw.rounded_rectangle(
+            [avatar_x - 6, 50, avatar_x + 146, 202],
+            radius=22,
+            fill=(5, 15, 24, 184),
+        )
+        icon_mask = Image.new("L", (140, 140), 0)
+        icon_mask_draw = ImageDraw.Draw(icon_mask)
+        icon_mask_draw.rounded_rectangle([0, 0, 139, 139], radius=18, fill=255)
+        title.paste(level_icon, (avatar_x, 56), icon_mask)
+        tag_center_x = right_panel_x + right_panel_w // 2
+        title_draw.text(
+            (tag_center_x, 219),
+            tag,
+            (255, 255, 255),
+            waves_font_24,
+            "mm",
+            stroke_width=1,
+            stroke_fill=(0, 0, 22, 130),
+        )
 
         card_img.paste(title, (10, _header + y + gindex * oset), title)
         gindex += 1
@@ -536,8 +753,8 @@ def _render_gacha_card(
         for index, item in enumerate(s_list):
             item_bg = draw_pic(item)
 
-            _x = 95 + 162 * (index % 5)
-            _y = _header + bset * (index // 5) + y + gindex * oset
+            _x = 95 + pitch * (index % column)
+            _y = _header + row_h * (index // column) + y + gindex * oset
 
             card_img.paste(
                 item_bg,
@@ -546,7 +763,7 @@ def _render_gacha_card(
             )
         if not s_list:
             card_draw.text(
-                (475, _header + y + gindex * oset + 25),
+                (w // 2, _header + y + gindex * oset + 25),
                 "当前该卡池暂未有5星数据噢!",
                 (157, 157, 157),
                 waves_font_20,
@@ -554,41 +771,92 @@ def _render_gacha_card(
             )
             y += 50
         else:
-            y += get_num_h(len(s_list), 5) * bset
+            y += get_num_h(len(s_list), column) * row_h
 
-    newbie_bg = Image.open(TEXT_PATH / "newbie.png")
+    newbie_card_w = 250
+    newbie_card_h = 360
+    newbie_gap = 30
+    newbie_total_w = len(drawable_newbie) * newbie_card_w + max(0, len(drawable_newbie) - 1) * newbie_gap
+    newbie_start_x = max(10, (w - newbie_total_w) // 2)
     nindex = 0
-    for _, gacha_name in enumerate(total_data):
-        if "新手" not in gacha_name:
-            continue
+    for gacha_name in drawable_newbie:
         gacha_data = total_data[gacha_name]
 
         s_list = gacha_data["rank_s_list"]
-        if not s_list:
-            continue
         item_bg = draw_pic(s_list[0])
 
-        newbie_bg_cp = newbie_bg.copy()
+        newbie_bg_cp = Image.new("RGBA", (newbie_card_w, newbie_card_h), (0, 0, 0, 0))
+        newbie_shadow = Image.new("RGBA", newbie_bg_cp.size, (0, 0, 0, 0))
+        newbie_shadow_draw = ImageDraw.Draw(newbie_shadow)
+        newbie_shadow_draw.rounded_rectangle(
+            [10, 12, newbie_card_w - 10, newbie_card_h - 20],
+            radius=24,
+            fill=(3, 16, 24, 150),
+        )
+        newbie_shadow = newbie_shadow.filter(ImageFilter.GaussianBlur(10))
+        newbie_bg_cp.alpha_composite(newbie_shadow)
+
+        newbie_panel = Image.new("RGBA", newbie_bg_cp.size, (0, 0, 0, 0))
+        newbie_panel_draw = ImageDraw.Draw(newbie_panel)
+        newbie_panel_box = [8, 8, newbie_card_w - 8, newbie_card_h - 24]
+        newbie_panel_draw.rounded_rectangle(newbie_panel_box, radius=24, fill=(6, 24, 34, 238))
+        newbie_overlay = _take_title_overlay()
+        newbie_panel.alpha_composite(_crop_title_overlay(newbie_overlay, newbie_card_w), (0, 18))
+        newbie_mask = Image.new("L", newbie_bg_cp.size, 0)
+        newbie_mask_draw = ImageDraw.Draw(newbie_mask)
+        newbie_mask_draw.rounded_rectangle(newbie_panel_box, radius=24, fill=255)
+        clipped_newbie = Image.new("RGBA", newbie_bg_cp.size, (0, 0, 0, 0))
+        clipped_newbie.paste(newbie_panel, (0, 0), newbie_mask)
+        newbie_bg_cp.alpha_composite(clipped_newbie)
+
         newbie_bg_cp_draw = ImageDraw.Draw(newbie_bg_cp)
-        newbie_bg_cp.paste(item_bg, (115, 220), item_bg)
-        newbie_bg_cp_draw.text((200, 160), gacha_type_meta_rename[gacha_name], "white", waves_font_40, "mm")
+        newbie_bg_cp_draw.rounded_rectangle(newbie_panel_box, radius=24, outline=(161, 224, 223, 94), width=2)
+        newbie_bg_cp_draw.rounded_rectangle(
+            [16, 16, newbie_card_w - 16, newbie_card_h - 32],
+            radius=20,
+            outline=(234, 255, 253, 24),
+            width=1,
+        )
+        newbie_bg_cp_draw.text(
+            (newbie_card_w // 2, 54),
+            gacha_type_meta_rename[gacha_name],
+            "white",
+            waves_font_32,
+            "mm",
+            stroke_width=1,
+            stroke_fill=(0, 0, 22, 130),
+        )
         if gacha_data["time_range"]:
             time_range = (
                 gacha_data["time_range"].split("~")[1] if "~" in gacha_data["time_range"] else gacha_data["time_range"]
             )
         else:
             time_range = "暂未抽过卡!"
-        newbie_bg_cp_draw.text(
-            (100, 200),
-            time_range,
-            "white",
-            waves_font_18,
-            "lm",
+        newbie_bg_cp_draw.rounded_rectangle(
+            [28, 82, newbie_card_w - 28, 110],
+            radius=14,
+            fill=(5, 18, 28, 140),
         )
+        newbie_bg_cp_draw.text(
+            (newbie_card_w // 2, 96),
+            time_range,
+            (209, 229, 230),
+            waves_font_18,
+            "mm",
+        )
+        item_frame_x = (newbie_card_w - 184) // 2
+        newbie_bg_cp_draw.rounded_rectangle(
+            [item_frame_x, 132, item_frame_x + 184, 322],
+            radius=18,
+            fill=(5, 15, 24, 148),
+            outline=(128, 213, 213, 58),
+            width=1,
+        )
+        newbie_bg_cp.paste(item_bg, ((newbie_card_w - 167) // 2, 142), item_bg)
 
         card_img.paste(
             newbie_bg_cp,
-            (10 + nindex * 290, _header + y + gindex * oset - 80),
+            (newbie_start_x + nindex * (newbie_card_w + newbie_gap), _header + y + gindex * oset + 35),
             newbie_bg_cp,
         )
         nindex += 1

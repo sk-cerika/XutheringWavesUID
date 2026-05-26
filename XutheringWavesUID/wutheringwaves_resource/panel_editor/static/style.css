@@ -568,7 +568,7 @@ input[type="search"] {
   cursor: pointer;
   transition: transform var(--t-fast), border-color var(--t-fast);
 }
-.tile.is-landscape { aspect-ratio: 16 / 9; }
+/* 缩略图框比例由 JS tileAspect() 按显示区算出, 写在 inline style; 此处仅留非 card/bg 的默认 3/4 */
 .tile:hover {
   transform: translateY(-1px);
   border-color: var(--line-3);
@@ -751,11 +751,9 @@ input[type="search"] {
   background-size: 16px 16px;
   border: 1px solid var(--line-1);
   border-radius: var(--r-2);
-  /* 锚到左上角: 增量裁剪后 current 尺寸会变, 用 flex 居中会让 wrap 在 stage 内
-     重新定位, 视觉上图片整块平移。统一靠左上角对齐, 内容只会"变小"不会"漂移"。 */
+  /* 居中: wrap 用 margin:auto 在 stage 内水平/垂直居中(PC 不再左对齐), 且 overflow 滚动时
+     不裁切起始边(规避 justify-content:center 在内容超出时左/上侧不可滚的问题)。 */
   display: flex;
-  align-items: flex-start;
-  justify-content: flex-start;
   padding: 14px;
   min-height: 380px;
   overflow: auto;
@@ -763,6 +761,10 @@ input[type="search"] {
 .cropper__canvas-wrap {
   position: relative;
   display: inline-block;
+  margin: auto;
+  /* 初始最小留白; 框选超出原图时由 app.js 按超出量动态增大对应侧 padding(白色填充预览) */
+  padding: 12px;
+  background: #fff;
   user-select: none;
   /* 阻止浏览器把触摸手势当作滚动/缩放抢走 */
   touch-action: none;
@@ -801,6 +803,14 @@ input[type="search"] {
   border-top: 1px solid rgba(255, 255, 255, 0.18);
   border-bottom: 1px solid rgba(255, 255, 255, 0.18);
   background: transparent;
+}
+/* 面板「查看面板图」实际可见区引导: 虚线框 + 区域外淡灰蒙版。
+   置于 .cropper__rect 之下(DOM 在其前), 故仅在裁剪框选区内显现, 提示选区里哪部分会被显示。 */
+.cropper__visbox {
+  position: absolute;
+  pointer-events: none;
+  border: 1px dashed rgba(255, 255, 255, 0.7);
+  box-shadow: 0 0 0 9999px rgba(120, 124, 132, 0.28);
 }
 .handle {
   position: absolute;
@@ -1005,6 +1015,17 @@ input[type="search"] {
   align-items: center;
   gap: 6px;
 }
+.preview-auto {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--fg-2);
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+.preview-auto input { accent-color: var(--accent); cursor: pointer; }
 
 /* renderer toggle (HTML / PIL) */
 .seg {

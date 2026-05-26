@@ -26,8 +26,9 @@ const state = {
   thumbSize: null,
   // single-crop tmp:
   cropTmp: null,              // {token, suffix, source: {w,h}, current: {w,h}, kind: "upload" | "edit-existing", origin: {char_id,name}? }
-  cropRect: null,             // {x,y,w,h} display coords
+  cropRect: null,             // {x,y,w,h} display coords (图像坐标系, 原点=图片左上角)
   cropImgEl: null,
+  cropClient: null,           // {w,h} 上次记录的图片显示尺寸, 供窗口缩放校正
   // batch:
   batchItems: [],             // [{token,name,suffix,width,height,size,confirmed?,charId?}]
   batchAllow: false,          // confirm-all checkbox
@@ -36,6 +37,7 @@ const state = {
 
   // preview auto-refresh:
   previewSeq: 0,
+  previewAuto: (() => { try { return localStorage.getItem("ww.panelEdit.previewAuto") !== "0"; } catch (_) { return true; } })(),
 
   // edit-existing warning dismissed
   editWarnDismissed: false,
@@ -67,7 +69,7 @@ const el = (tag, props, ...children) => {
 // API helpers
 // ============================================================
 async function api(path, opts = {}) {
-  const res = await fetch(`${API}${path}`, opts);
+  const res = await fetch(`${API}${path}`, { cache: "no-store", ...opts });
   if (!res.ok) {
     let detail = res.statusText;
     try {
@@ -456,8 +458,10 @@ function renderCenterBody() {
 
 function renderTile(img, isLandscape) {
   const isSelected = state.selectedImage?.name === img.name;
+  const ar = tileAspect(state.type);
   const tile = el("div", {
     class: "tile" + (isLandscape ? " is-landscape" : "") + (isSelected ? " is-selected" : ""),
+    style: ar ? `aspect-ratio:${ar}` : null,
     role: "button",
     tabindex: "0",
     "aria-label": `${img.hash_id} ${img.name}`,
@@ -475,7 +479,7 @@ function renderTile(img, isLandscape) {
   },
     el("div", { class: "tile__skeleton" }),
     (() => {
-      const url = `${API}/thumb?type=${state.type}&char_id=${encodeURIComponent(state.selectedCharId)}&name=${encodeURIComponent(img.name)}&size=360`;
+      const url = `${API}/thumb?type=${state.type}&char_id=${encodeURIComponent(state.selectedCharId)}&name=${encodeURIComponent(img.name)}&size=360&v=${state.meta?.thumb_ver ?? 0}-${img.mtime ?? 0}-${img.size ?? 0}`;
       const i = el("img", { alt: img.hash_id, loading: "lazy", decoding: "async", "data-src": url });
       LazyImages.observe(i);
       return i;
@@ -483,7 +487,7 @@ function renderTile(img, isLandscape) {
     el("div", { class: "tile__menu" },
       el("a", {
         class: "tile-act tile-act--link",
-        href: `${API}/image?type=${state.type}&char_id=${encodeURIComponent(state.selectedCharId)}&name=${encodeURIComponent(img.name)}`,
+        href: `${API}/image?type=${state.type}&char_id=${encodeURIComponent(state.selectedCharId)}&name=${encodeURIComponent(img.name)}&trim=1&v=${img.mtime ?? 0}-${img.size ?? 0}`,
         download: img.name,
         title: "下载原图",
         "aria-label": "下载原图",
@@ -629,7 +633,7 @@ function renderCropper(body) {
       el("button", { class: "btn", onClick: applyCrop }, "应用裁剪"),
       el("button", { class: "btn", onClick: restoreCrop }, "还原"),
       el("button", { class: "btn btn--ghost", onClick: cancelCrop }, "取消"),
-      el("button", { class: "btn btn--primary",
+      el("button", { id: "cropConfirmBtn", class: "btn btn--primary",
         onClick: tmp.kind === "edit-existing" ? confirmReplace : confirmUpload },
         tmp.kind === "edit-existing" ? "确认覆盖" : "确认上传"),
     ),
@@ -649,21 +653,67 @@ function renderCropper(body) {
   body.append(bar, stage);
 }
 
+// 裁剪框贴边时的最小留白(px), 也是 CSS .cropper__canvas-wrap 的初始 padding。
+// 框选超出原图时, 该侧 padding 会按超出量动态增大(见 layoutCropper), 形成"往外拉自动外扩"的白色填充预览。
+const CROP_FRAME = 12;
+
+// 面板(card)图渲染参数: 自定义图经 resize_and_center 以 contain 方式缩放居中进 PANEL_OUT,
+// 「查看面板图」只显示其中 PANEL_VIS 窗口(与后端 card_utils._PANEL_VISIBLE_BOX_LOCAL 对齐)。
+const PANEL_OUT = { w: 560, h: 1000 };
+const PANEL_VIS = { l: 60, t: 95, r: 500, b: 900 };
+// stamina/MR 卡背景容器 (对齐 stamina_card.html .container / 后端 storage._BG_DISPLAY_RATIO)
+const MR_CARD = { w: 1150, h: 850 };
+
+// 缩略图框比例 = 该类型在角色卡的实际显示区比例 (card 取 PANEL_VIS 窗口, bg 取背景容器)
+function tileAspect(type) {
+  if (type === "card") return (PANEL_VIS.r - PANEL_VIS.l) / (PANEL_VIS.b - PANEL_VIS.t);
+  if (type === "bg") return MR_CARD.w / MR_CARD.h;
+  return null;
+}
+
+// 计算「查看面板图」实际可见窗口, 返回相对"裁剪框左上角"的显示坐标(裁剪框即将来保存的图)。
+// 裁剪框尺寸变化时实时重算 → 虚线随裁剪框联动。无法计算时返回 null。
+// 复刻后端 card_utils.resize_and_center: W×H 以 contain 缩放居中进 560×1000, 仅显示窗口 (60,95,500,900)。
+// 直接用裁剪框显示尺寸计算: 显示是源的等比缩放, 可见窗口占框的"比例"与源坐标系一致, 故结果等价。
+function panelVisibleRectInCrop(W, H) {
+  if (!(W > 0) || !(H > 0)) return null;
+  const f = (W > H) ? (PANEL_OUT.w / W) : (PANEL_OUT.h / H);
+  const pasteX = (PANEL_OUT.w - W * f) / 2;
+  const pasteY = (PANEL_OUT.h - H * f) / 2;
+  // 可见窗口映射回框坐标, 并 clamp 到框内(超出部分是居中留白/白色填充, 不算可见内容)
+  const l = Math.max(0, Math.min((PANEL_VIS.l - pasteX) / f, W));
+  const t = Math.max(0, Math.min((PANEL_VIS.t - pasteY) / f, H));
+  const r = Math.max(0, Math.min((PANEL_VIS.r - pasteX) / f, W));
+  const b = Math.max(0, Math.min((PANEL_VIS.b - pasteY) / f, H));
+  if (r <= l || b <= t) return null;
+  return { x: l, y: t, w: r - l, h: b - t };
+}
+
 function initCropRect(img, wrap) {
   // Initialize crop rect to full image (display coords)
   const w = img.clientWidth;
   const h = img.clientHeight;
   state.cropRect = { x: 0, y: 0, w, h };
+  state.cropClient = { w, h };  // 记录当前显示尺寸, 供窗口缩放时按比例校正
   drawCropRect(wrap);
   updateRectReadout();
 }
 
 function drawCropRect(wrap) {
-  let rect = wrap.querySelector(".cropper__rect");
   if (!state.cropRect) {
-    rect?.remove();
+    wrap.querySelector(".cropper__rect")?.remove();
+    wrap.querySelector(".cropper__visbox")?.remove();
     return;
   }
+  // 仅面板(card)类型显示「查看面板图」实际可见区引导(灰蒙版); 体力/背景类型不显示。
+  if (state.type === "card") {
+    if (!wrap.querySelector(".cropper__visbox")) {
+      wrap.append(el("div", { class: "cropper__visbox" }));
+    }
+  } else {
+    wrap.querySelector(".cropper__visbox")?.remove();
+  }
+  let rect = wrap.querySelector(".cropper__rect");
   if (!rect) {
     rect = el("div", { class: "cropper__rect" });
     for (const h_ of ["nw", "n", "ne", "e", "se", "s", "sw", "w"]) {
@@ -672,15 +722,64 @@ function drawCropRect(wrap) {
     rect.addEventListener("pointerdown", ev => startDrag(ev, wrap, rect));
     wrap.append(rect);
   }
-  applyRectStyle(rect, state.cropRect);
+  layoutCropper(wrap);
 }
 
-function applyRectStyle(rect, r) {
-  rect.style.left = `${r.x}px`;
-  rect.style.top = `${r.y}px`;
-  rect.style.width = `${r.w}px`;
-  rect.style.height = `${r.h}px`;
+// 统一布局: 按框选超出量动态设置 wrap padding(白色外扩区), 再据此定位裁剪框与可见区引导框。
+function layoutCropper(wrap) {
+  const r = state.cropRect;
+  const img = state.cropImgEl;
+  if (!wrap || !r || !img) return;
+  const iw = img.clientWidth, ih = img.clientHeight;
+  // 框选超出原图时, 对应侧 padding 按超出量动态增大(白色填充预览); 未超出侧保持最小留白。
+  // 用 ceil 保证 padL ≥ -r.x, 框左/上边不会溢出白色填充区(亚像素也不漏)。
+  const padL = Math.max(CROP_FRAME, Math.ceil(-r.x));
+  const padT = Math.max(CROP_FRAME, Math.ceil(-r.y));
+  const padR = Math.max(CROP_FRAME, Math.ceil(r.x + r.w - iw));
+  const padB = Math.max(CROP_FRAME, Math.ceil(r.y + r.h - ih));
+  wrap.style.padding = `${padT}px ${padR}px ${padB}px ${padL}px`;
+
+  // 图片左上角位于 padding 盒内 (padL, padT); 裁剪框用图像坐标系, 叠加该偏移。
+  const rect = wrap.querySelector(".cropper__rect");
+  if (rect) {
+    rect.style.left = `${padL + r.x}px`;
+    rect.style.top = `${padT + r.y}px`;
+    rect.style.width = `${r.w}px`;
+    rect.style.height = `${r.h}px`;
+  }
+  // 可见区引导: 相对裁剪框计算(框=将来保存的图), 故随裁剪框实时联动; 再叠加框在 wrap 内的位置。
+  const vis = wrap.querySelector(".cropper__visbox");
+  if (vis) {
+    const v = panelVisibleRectInCrop(r.w, r.h);
+    if (v) {
+      vis.style.display = "";
+      vis.style.left = `${padL + r.x + v.x}px`;
+      vis.style.top = `${padT + r.y + v.y}px`;
+      vis.style.width = `${v.w}px`;
+      vis.style.height = `${v.h}px`;
+    } else {
+      vis.style.display = "none";
+    }
+  }
 }
+
+// 浏览器窗口缩放时图片显示尺寸会变, 按比例校正 cropRect 并重新布局, 否则裁剪框与图片错位。
+function onCropperResize() {
+  if (state.mode !== "single-crop") return;
+  const img = state.cropImgEl;
+  if (!img || !state.cropRect || !state.cropClient) return;
+  const nw = img.clientWidth, nh = img.clientHeight;
+  const ow = state.cropClient.w, oh = state.cropClient.h;
+  if (!ow || !oh) { state.cropClient = { w: nw, h: nh }; return; }
+  if (nw === ow && nh === oh) return;
+  const rx = nw / ow, ry = nh / oh;
+  const r = state.cropRect;
+  state.cropRect = { x: r.x * rx, y: r.y * ry, w: r.w * rx, h: r.h * ry };
+  state.cropClient = { w: nw, h: nh };
+  layoutCropper(img.parentElement);
+  updateRectReadout();
+}
+window.addEventListener("resize", onCropperResize);
 
 function startDrag(ev, wrap, rect) {
   ev.preventDefault();
@@ -701,28 +800,31 @@ function startDrag(ev, wrap, rect) {
   let pending = null;
   const flush = () => {
     pending = null;
-    applyRectStyle(rect, state.cropRect);
+    layoutCropper(wrap);
     updateRectReadout();
   };
 
   const move = e => {
-    let { x, y, w, h } = start;
     const dx = e.clientX - start.sx;
     const dy = e.clientY - start.sy;
+    // 允许框选超出原图: 各边最多向外扩展一个图尺寸(即输出 ≤ 3×), 越界部分由后端白色填充
+    const MIN = 8;
+    const minBX = -maxW, maxBX = 2 * maxW;
+    const minBY = -maxH, maxBY = 2 * maxH;
+    let { x, y, w, h } = start;
     if (!isHandle) {
-      x += dx; y += dy;
+      // 整体拖动: 平移后 clamp 位置, 尺寸不变
+      x = Math.min(Math.max(start.x + dx, minBX), maxBX - w);
+      y = Math.min(Math.max(start.y + dy, minBY), maxBY - h);
     } else {
-      if (direction.includes("w")) { x += dx; w -= dx; }
-      if (direction.includes("e")) { w += dx; }
-      if (direction.includes("n")) { y += dy; h -= dy; }
-      if (direction.includes("s")) { h += dy; }
+      // 拉伸: 只移动被拖的边, 对边固定(避免触边时把对边一起带动)
+      let left = start.x, top = start.y, right = start.x + start.w, bottom = start.y + start.h;
+      if (direction.includes("w")) left = Math.min(Math.max(left + dx, minBX), right - MIN);
+      if (direction.includes("e")) right = Math.max(Math.min(right + dx, maxBX), left + MIN);
+      if (direction.includes("n")) top = Math.min(Math.max(top + dy, minBY), bottom - MIN);
+      if (direction.includes("s")) bottom = Math.max(Math.min(bottom + dy, maxBY), top + MIN);
+      x = left; y = top; w = right - left; h = bottom - top;
     }
-    w = Math.max(8, w);
-    h = Math.max(8, h);
-    x = Math.max(0, Math.min(x, maxW - w));
-    y = Math.max(0, Math.min(y, maxH - h));
-    w = Math.min(w, maxW - x);
-    h = Math.min(h, maxH - y);
     state.cropRect = { x, y, w, h };
     if (pending == null) pending = requestAnimationFrame(flush);
   };
@@ -749,23 +851,28 @@ function startDrag(ev, wrap, rect) {
 // 静止 IDLE_MS 才真正落库, 期间任何新拖动都会重置计时器, 让连续微调流畅。
 const _AUTO_CROP_IDLE_MS = 800;
 let _autoCropTimer = null;
-let _autoCropInflight = false;
+let _cropInflight = false;
+
+// 裁剪结果落库前禁用「确认」, 防止保存到旧 tmp 丢失最新一次裁剪。
+function isCropBusy() { return _autoCropTimer != null || _cropInflight; }
+function syncCropConfirm() {
+  const btn = document.getElementById("cropConfirmBtn");
+  if (btn) btn.disabled = isCropBusy();
+}
+
 function scheduleAutoCrop() {
   clearTimeout(_autoCropTimer);
   _autoCropTimer = setTimeout(async () => {
     _autoCropTimer = null;
-    if (_autoCropInflight) {
+    if (_cropInflight) {
       // 在途时排队再触发一次, 保证最新一次操作一定被应用
       _autoCropTimer = setTimeout(scheduleAutoCrop, 200);
+      syncCropConfirm();
       return;
     }
-    _autoCropInflight = true;
-    try {
-      await applyCrop({ silent: true });
-    } finally {
-      _autoCropInflight = false;
-    }
+    await applyCrop({ silent: true });
   }, _AUTO_CROP_IDLE_MS);
+  syncCropConfirm();
 }
 
 function displayToSourceRect(rect) {
@@ -774,8 +881,9 @@ function displayToSourceRect(rect) {
   const sx = img.naturalWidth / img.clientWidth;
   const sy = img.naturalHeight / img.clientHeight;
   return {
-    x: Math.max(0, Math.round(rect.x * sx)),
-    y: Math.max(0, Math.round(rect.y * sy)),
+    // 允许负坐标(框选越过原图左/上边界), 越界部分后端白色填充
+    x: Math.round(rect.x * sx),
+    y: Math.round(rect.y * sy),
     w: Math.max(1, Math.round(rect.w * sx)),
     h: Math.max(1, Math.round(rect.h * sy)),
   };
@@ -794,8 +902,14 @@ async function applyCrop(opts = {}) {
   if (!tmp) return;
   const src = displayToSourceRect(state.cropRect);
   if (!src) return;
+  // src 是相对 current 的坐标; 叠加 current 在原图内的 offset → 原图绝对坐标, 始终从原图裁
+  const off = tmp.offset || { x: 0, y: 0 };
+  const abs = { x: off.x + src.x, y: off.y + src.y, w: src.w, h: src.h };
+  _cropInflight = true;
+  syncCropConfirm();
   try {
-    const r = await apiJson("/tmp/crop", { token: tmp.token, ...src });
+    const r = await apiJson("/tmp/crop", { token: tmp.token, ...abs });
+    tmp.offset = { x: abs.x, y: abs.y };
     tmp.current = { w: r.width, h: r.height };
     const sizeEl = document.getElementById("cropCurSize");
     if (sizeEl) sizeEl.textContent = `${r.width}×${r.height}`;
@@ -804,14 +918,20 @@ async function applyCrop(opts = {}) {
     if (!silent) toast("已裁剪", "ok", 1800);
   } catch (e) {
     toast(`裁剪失败: ${e.message}`, "err");
+  } finally {
+    _cropInflight = false;
+    syncCropConfirm();
   }
 }
 
 async function restoreCrop() {
   const tmp = state.cropTmp;
   if (!tmp) return;
+  _cropInflight = true;
+  syncCropConfirm();
   try {
     const r = await apiJson("/tmp/restore", { token: tmp.token });
+    tmp.offset = { x: 0, y: 0 };
     tmp.current = { w: r.width, h: r.height };
     document.getElementById("cropCurSize").textContent = `${r.width}×${r.height}`;
     refreshCropImg();
@@ -819,6 +939,9 @@ async function restoreCrop() {
     toast("已还原", "ok", 1800);
   } catch (e) {
     toast(`还原失败: ${e.message}`, "err");
+  } finally {
+    _cropInflight = false;
+    syncCropConfirm();
   }
 }
 
@@ -831,7 +954,11 @@ function _resetCropState() {
   state.cropTmp = null;
   state.cropRect = null;
   state.cropImgEl = null;
+  state.cropClient = null;
   state.editWarnDismissed = false;
+  clearTimeout(_autoCropTimer);
+  _autoCropTimer = null;
+  _cropInflight = false;
 }
 
 async function cancelCrop() {
@@ -898,8 +1025,8 @@ async function confirmReplace() {
 // ============================================================
 async function editExisting(img) {
   try {
-    const url = `${API}/image?type=${state.type}&char_id=${encodeURIComponent(state.selectedCharId)}&name=${encodeURIComponent(img.name)}`;
-    const blob = await (await fetch(url)).blob();
+    const url = `${API}/image?type=${state.type}&char_id=${encodeURIComponent(state.selectedCharId)}&name=${encodeURIComponent(img.name)}&v=${img.mtime ?? 0}-${img.size ?? 0}`;
+    const blob = await (await fetch(url, { cache: "no-store" })).blob();
     const fd = new FormData();
     fd.append("file", new File([blob], img.name, { type: blob.type || "image/jpeg" }));
     const r = await api("/tmp/upload", { method: "POST", body: fd });
@@ -1090,10 +1217,11 @@ function renderPreview() {
     subEl.textContent = "未选中";
   }
 
-  // refresh button
+  // refresh controls
   if (needPreview) {
+    head.append(buildPreviewAutoToggle());
     head.append(el("button", { class: "btn btn--ghost", title: "刷新预览",
-      onClick: () => triggerPreview(true) }, "刷新"));
+      onClick: () => triggerPreview(true, true) }, "刷新"));
   }
 
   if (!needPreview) {
@@ -1119,7 +1247,26 @@ function renderPreview() {
     );
   }
 
+  if (!state.previewAuto) {
+    foot.append(el("span", { class: "muted", text: "自动刷新已关闭 · 点「刷新」更新" }));
+  }
   triggerPreview();
+}
+
+function buildPreviewAutoToggle() {
+  return el("label", { class: "preview-auto", title: "连续调整时关闭可避免反复重渲染闪烁；关闭后需手动点「刷新」" },
+    el("input", {
+      type: "checkbox",
+      ...(state.previewAuto ? { checked: "checked" } : {}),
+      onChange: e => {
+        state.previewAuto = e.target.checked;
+        try { localStorage.setItem("ww.panelEdit.previewAuto", state.previewAuto ? "1" : "0"); } catch (_) {}
+        clearTimeout(previewTimer);
+        renderPreview();
+      },
+    }),
+    el("span", { text: "自动刷新" }),
+  );
 }
 
 function buildRendererToggle() {
@@ -1185,9 +1332,11 @@ function setPreviewSrc(url, loading) {
 }
 
 let previewTimer = null;
-function triggerPreview(force = false) {
+function triggerPreview(force = false, manual = false) {
   // 访客一律不发预览请求, 防止任何路径意外触达 /api/preview。
   if (isGuest()) return setPreviewSrc(null, false);
+  // 关闭自动刷新: 仅手动「刷新」(manual) 触发渲染
+  if (!manual && !state.previewAuto) return;
   const url = buildPreviewUrl();
   if (!url) return setPreviewSrc(null, false);
   clearTimeout(previewTimer);

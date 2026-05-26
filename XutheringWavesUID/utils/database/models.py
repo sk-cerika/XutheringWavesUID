@@ -20,6 +20,7 @@ from gsuid_core.utils.database.models import Subscribe
 from .waves_subscribe import WavesSubscribe
 from .waves_user_activity import WavesUserActivity
 from .waves_user_sdk import WavesUserSdk
+from .waves_gacha_cloud import WavesGachaCloud
 
 exec_list.extend(
     [
@@ -46,6 +47,8 @@ exec_list.extend(
         "ALTER TABLE WavesUser DROP COLUMN pgr_sign_switch",
         "ALTER TABLE WavesUser DROP COLUMN pgr_uid",
         "DELETE FROM WavesStaminaRecord WHERE id NOT IN (SELECT MAX(id) FROM WavesStaminaRecord GROUP BY user_id, bot_id, uid)",
+        'CREATE TABLE IF NOT EXISTS "WavesGachaCloud" (id INTEGER NOT NULL, bot_id VARCHAR NOT NULL, user_id VARCHAR NOT NULL, uid VARCHAR NOT NULL, login_info VARCHAR NOT NULL, is_valid BOOLEAN NOT NULL, created_time INTEGER, last_used_time INTEGER, PRIMARY KEY (id))',
+        'CREATE INDEX IF NOT EXISTS "ix_WavesGachaCloud_uid" ON "WavesGachaCloud" (uid)',
     ]
 )
 
@@ -790,3 +793,14 @@ class WavesUserSdkAdmin(GsAdminModel):
     )  # type: ignore
 
     model = WavesUserSdk
+
+
+@site.register_admin
+class WavesGachaCloudAdmin(GsAdminModel):
+    pk_name = "id"
+    page_schema = PageSchema(
+        label="鸣潮云登录",
+        icon="fa fa-cloud",
+    )  # type: ignore
+
+    model = WavesGachaCloud

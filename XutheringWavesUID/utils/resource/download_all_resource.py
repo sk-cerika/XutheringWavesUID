@@ -263,3 +263,27 @@ async def reload_all_modules():
     # 重新注册 AI 知识库（仅 AI 启用时生效）
     from ...wutheringwaves_ai_rag import reload_ai_rag
     await reload_ai_rag()
+
+
+async def notify_master_and_restart(reason: str = "构建文件已更新，正在重启..."):
+    from gsuid_core.subscribe import gs_subscribe
+    from gsuid_core.buildin_plugins.core_command.core_restart.restart import (
+        restart_genshinuid,
+    )
+
+    try:
+        subs = await gs_subscribe.get_subscribe("联系主人")
+    except Exception as e:
+        subs = None
+        logger.warning(f"[鸣潮] 获取主人订阅失败: {e}")
+
+    if subs:
+        for sub in subs:
+            try:
+                await sub.send(f"[鸣潮] {reason}")
+            except Exception as e:
+                logger.warning(f"[鸣潮] 重启通知发送失败: {e}")
+    else:
+        logger.info("[鸣潮] 无【联系主人】订阅, 跳过重启通知")
+
+    await restart_genshinuid(is_send=False)

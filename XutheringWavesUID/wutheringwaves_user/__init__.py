@@ -10,7 +10,7 @@ from gsuid_core.logger import logger
 from gsuid_core.models import Event
 
 from .deal import add_cookie, get_cookie, refresh_bind, delete_cookie
-from ..utils.util import hide_uid
+from ..utils.util import get_hide_uid_pref, hide_uid
 from ..utils.button import WavesButton
 from ..utils.constants import WAVES_GAME_ID
 from ..utils.database.models import WavesBind, WavesUser, WavesStaminaRecord
@@ -354,13 +354,14 @@ async def send_waves_bind_uid_msg(bot: Bot, ev: Event):
                 (" " if at_sender else "") + msg,
                 at_sender,
             )
+        user_pref = await get_hide_uid_pref(uid, qid, ev.bot_id)
         data = await WavesBind.delete_uid(qid, ev.bot_id, uid)
         return await send_diff_msg(
             bot,
             data,
             {
-                0: f"[鸣潮] 删除特征码[{uid}]成功！",
-                -1: f"[鸣潮] 该特征码[{uid}]不在已绑定列表中！",
+                0: f"[鸣潮] 删除特征码[{hide_uid(uid, user_pref)}]成功！",
+                -1: f"[鸣潮] 该特征码[{hide_uid(uid, user_pref)}]不在已绑定列表中！",
             },
             at_sender=at_sender,
         )

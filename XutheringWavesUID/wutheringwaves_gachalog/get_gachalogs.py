@@ -16,6 +16,7 @@ from .model import WWUIDGacha
 from ..version import XutheringWavesUID_version
 from ..utils.api.model import GachaLog
 from ..utils.constants import WAVES_GAME_ID
+from ..utils.util import get_hide_uid_pref, hide_uid
 from ..utils.waves_api import waves_api
 from ..utils.database.models import WavesUser
 from .model_for_waves_plugin import WavesPluginGacha
@@ -321,11 +322,12 @@ async def save_gachalogs(
     all_add = sum(gachalogs_count_add.values())
 
     # 回复文字
+    user_pref = await get_hide_uid_pref(uid, ev.user_id, ev.bot_id)
     im = []
     if all_add == 0:
-        im.append(f"🌱UID{uid}没有新增唤取数据!")
+        im.append(f"🌱UID{hide_uid(uid, user_pref)}没有新增唤取数据!")
     else:
-        im.append(f"🌱UID{uid}数据更新成功！")
+        im.append(f"🌱UID{hide_uid(uid, user_pref)}数据更新成功！")
         for k, v in gachalogs_count_add.items():
             if v > 0:
                 im.append(f"[{k}]新增{v}个数据！")

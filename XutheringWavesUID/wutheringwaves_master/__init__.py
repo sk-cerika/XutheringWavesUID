@@ -12,9 +12,6 @@ master_name_ann = "联系主人"
 
 @sv_master.on_regex(("^(联系|取消联系)主人$"))
 async def rover_sign_result(bot: Bot, ev: Event):
-    if ev.bot_id != "onebot":
-        logger.debug(f"非onebot禁止联系主人 【{ev.bot_id}】")
-        return
 
     if "取消" in ev.raw_text:
         option = "关闭"

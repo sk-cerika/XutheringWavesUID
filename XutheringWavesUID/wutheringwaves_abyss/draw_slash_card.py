@@ -146,8 +146,11 @@ async def draw_slash_img(ev: Event, uid: str, user_id: str) -> Union[bytes, str]
 
                 # 加载分数背景
                 rank = challenge.get_rank()
-                score_bg = Image.open(TEXT_PATH / f"score_{rank}.png")
-                score_bg_url = pil_to_b64(score_bg, quality=75)
+                if rank:
+                    score_bg = Image.open(TEXT_PATH / f"score_{rank}.png")
+                    score_bg_url = pil_to_b64(score_bg, quality=75)
+                else:
+                    score_bg_url = ""
 
                 # 构建半场数据
                 half_list = []

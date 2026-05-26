@@ -93,9 +93,9 @@ def get_matrix_total_rank_color(score: int) -> tuple:
 
 def get_matrix_local_rank_color(score: int) -> tuple:
     """矩阵 群排行 分档颜色。与 detail 共用同一份阈值 + 配色"""
-    if score >= 200000:
+    if score >= 100000:
         return CRYSTAL_SENTINEL
-    if score >= 150000:
+    if score >= 58000:
         return (255, 82, 82)
     if score >= 45000:
         return (255, 213, 79)

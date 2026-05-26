@@ -5,6 +5,7 @@ from gsuid_core.logger import logger
 
 from ..utils.api.model import RoleDetailData, EquipPhantomData
 from ..utils.waves_api import waves_api
+from ..utils.util import hide_uid
 from ..utils.name_convert import (
     easy_id_to_name,
     alias_to_sonata_name,
@@ -724,14 +725,14 @@ async def change_role_phantom(
     if parserWavesUid and user_id and bot_id:
         _, ck = await waves_api.get_ck_result(waves_id, user_id, bot_id)
         if not ck:
-            return f"[鸣潮] 替换目标UID【{waves_id}】的角色【{parserCharName}】数据查询失败"
+            return f"[鸣潮] 替换目标UID【{hide_uid(waves_id)}】的角色【{parserCharName}】数据查询失败"
 
     remote_role_detail_info = await get_remote_role_detail_info(find_char_id, waves_id, ck)
     if not remote_role_detail_info:
-        return f"[鸣潮] 替换目标UID【{waves_id}】的角色【{parserCharName}】数据查询失败"
+        return f"[鸣潮] 替换目标UID【{hide_uid(waves_id)}】的角色【{parserCharName}】数据查询失败"
 
     if not remote_role_detail_info.phantomData or not remote_role_detail_info.phantomData.equipPhantomList:
-        return f"[鸣潮] 替换目标UID【{waves_id}】的角色【{parserCharName}】没有声骸数据"
+        return f"[鸣潮] 替换目标UID【{hide_uid(waves_id)}】的角色【{parserCharName}】没有声骸数据"
 
     if not parserPositions or not parserToPositions:
         role_detail.phantomData = remote_role_detail_info.phantomData

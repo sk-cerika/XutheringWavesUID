@@ -347,7 +347,7 @@ async def ph_card_draw(
             score_temp_draw = ImageDraw.Draw(score_temp)
 
             draw_text_with_fallback(score_temp_draw, (180, 260), t("声骸评级", locale), GREY, waves_font_30 if locale == 'en' else waves_font_40, "mm")
-            draw_text_with_fallback(score_temp_draw, (180, 380), f"{phantom_score:.2f}分", "white", waves_font_40, "mm")
+            draw_text_with_fallback(score_temp_draw, (180, 380), f"{phantom_score:.2f}{t('分', locale)}", "white", waves_font_40, "mm")
             draw_text_with_fallback(score_temp_draw, (180, 440), t("声骸评分", locale), GREY, waves_font_30 if locale == 'en' else waves_font_40, "mm")
         else:
             abs_bg = Image.open(TEXT_PATH / "abs.png")
@@ -791,7 +791,9 @@ async def draw_char_detail_img(
         except Exception as e:
             logger.warning(f"[鸣潮·评分] {char_name} 计算失败: {e}")
 
-    if not is_limit_query and not change_list_regex:
+    # 仅本人查询写 state: 他人/特征码查询不动本人 view 计数、脏标记与建议
+    is_self = not waves_id and user_id == ev.user_id
+    if not is_limit_query and not change_list_regex and is_self:
         try:
             char_state = await record_view(uid, char_id)
             if (
@@ -801,7 +803,7 @@ async def draw_char_detail_img(
             ):
                 grade = get_panel_score_grade(score_report.score)
                 if (
-                    grade in ("a", "b", "c")
+                    grade in ("b", "c")
                     and score_report.score > 40
                     and char_state.get("advice_dirty", True)
                 ):
@@ -854,10 +856,10 @@ async def draw_char_detail_img(
     # 右侧属性: 有评分时左半留分数位, 否则用旧布局
     right_image_temp = Image.new("RGBA", (600, 1100))
     if score_report is not None:
-        right_prop_y = 90
-        right_weapon_banner_y = 595
-        weapon_name_y = 745
-        weapon_bg_y = 745
+        right_prop_y = 100
+        right_weapon_banner_y = 620
+        weapon_name_y = 780
+        weapon_bg_y = 750
     else:
         right_prop_y = 80
         right_weapon_banner_y = 550
@@ -1144,7 +1146,7 @@ async def draw_char_detail_img(
         img.alpha_composite(grade_icon, dest=(90, 1080 + bar_shift))
         score_draw = ImageDraw.Draw(img)
         draw_text_with_fallback(score_draw, (400, 1140 + bar_shift), f"{score_report.score:.2f}", "white", waves_font_40, "mm")
-        draw_text_with_fallback(score_draw, (400, 1200 + bar_shift), t("综合评分", locale), GREY, waves_font_40, "mm")
+        draw_text_with_fallback(score_draw, (400, 1210 + bar_shift), t("综合评分", locale), GREY, waves_font_40, "mm")
 
     img = add_footer(img)
     if need_convert_img:
@@ -1366,7 +1368,7 @@ async def draw_char_score_img(ev: Event, uid: str, char: str, user_id: str, wave
             score_temp_draw = ImageDraw.Draw(score_temp)
 
             draw_text_with_fallback(score_temp_draw, (180, 260), t("声骸评级", locale), GREY, waves_font_30 if locale == 'en' else waves_font_40, "mm")
-            draw_text_with_fallback(score_temp_draw, (180, 380), f"{phantom_score:.2f}分", "white", waves_font_40, "mm")
+            draw_text_with_fallback(score_temp_draw, (180, 380), f"{phantom_score:.2f}{t('分', locale)}", "white", waves_font_40, "mm")
             draw_text_with_fallback(score_temp_draw, (180, 440), t("声骸评分", locale), GREY, waves_font_30 if locale == 'en' else waves_font_40, "mm")
         else:
             abs_bg = Image.open(TEXT_PATH / "abs.png")
@@ -1569,7 +1571,7 @@ async def ph_card_draw_optimal(
     ph_sum_value: int = 250,
     locale: str = "",
 ):
-    """最优声骸区域: ph_card_draw 布局, 声骸卡使用 best_loadout, 评分槽显示综合评分."""
+    """最优声骸区域: ph_card_draw 布局, 声骸卡使用 best_loadout, 评分槽显示培养目标 (SSS/150)."""
     best_loadout = getattr(score_report, "best_loadout", None) or []
     equipPhantomList = (
         role_detail.phantomData.equipPhantomList
@@ -1681,8 +1683,7 @@ async def ph_card_draw_optimal(
             ),
         )
 
-    score = float(getattr(score_report, "score", 0.0) or 0.0)
-    grade = get_panel_score_grade(score)
+    grade = "sss"
     sh_score_bg_c = Image.open(TEXT_PATH / f"sh_score_bg_{grade}.png")
     score_temp = Image.new("RGBA", sh_score_bg_c.size)
     score_temp.alpha_composite(sh_score_bg_c)
@@ -1690,19 +1691,20 @@ async def ph_card_draw_optimal(
     score_temp.alpha_composite(sh_score_c)
     score_temp_draw = ImageDraw.Draw(score_temp)
     draw_text_with_fallback(score_temp_draw, (180, 260), t("综合评级", locale), GREY, waves_font_30 if locale == "en" else waves_font_40, "mm")
-    draw_text_with_fallback(score_temp_draw, (180, 380), f"{score:.2f}分", "white", waves_font_40, "mm")
+    draw_text_with_fallback(score_temp_draw, (180, 380), f"150.00{t('分', locale)}", "white", waves_font_40, "mm")
     draw_text_with_fallback(score_temp_draw, (180, 440), t("综合评分", locale), GREY, waves_font_30 if locale == "en" else waves_font_40, "mm")
     phantom_temp.alpha_composite(score_temp, dest=(30, 120 + ph_sum_value))
 
     return phantom_temp
 
 
-_SCORE_RULE_TITLE = "综合评分规则（测试中）"
+_SCORE_RULE_TITLE = "综合评分规则"
 _SCORE_RULE_LINES = (
     "以2-3分钟的常规队伍循环为基础，根据当前套装和装备求解得到最优期望伤害的词条作为基准计分",
     "由于共鸣效率会影响限定时间内循环次数，作为分段的独立乘区。单通等特殊场景不适用综合评分",
     "显示的共鸣效率部分建议仅对于循环流畅度考虑，共效挂钩的加成等会另外计算收益得分",
     "最优面板共效可能由于词条取最大值导致偏高，请折算为常见效率词条数值",
+    "部分角色4c可能显示为攻击，该计算基于副词条双爆满值，请根据实际情况进行搭配",
     "仅针对常见队伍和流程，请以实际情况为准。如有建议请联系开发者提供反馈",
 )
 
@@ -1729,8 +1731,9 @@ def _wrap_plain(text: str, cjk_chars: int) -> List[str]:
     return [text[i:i + cjk_chars] for i in range(0, len(text), cjk_chars)]
 
 
-async def draw_char_optimize_img(ev: Event, uid: str, char: str, user_id: str, waves_id: Optional[str] = None):
-    """综合评分优化建议图: 复用无评分面板布局, 仅替换声骸评分槽/声骸卡和底部说明行."""
+async def draw_char_optimize_img(ev: Event, uid: str, char: str, user_id: str, waves_id: Optional[str] = None, change_list_regex: Optional[str] = None):
+    """综合评分优化建议图: 复用无评分面板布局, 仅替换声骸评分槽/声骸卡和底部说明行.
+    支持替换指令(换角色X链/换声骸…), 优化结果基于替换后的配置."""
     locale = await WavesLangSettings.get_lang(ev.user_id)
     user_pref = await get_hide_uid_pref(waves_id or uid, user_id, ev.bot_id)
 
@@ -1747,8 +1750,9 @@ async def draw_char_optimize_img(ev: Event, uid: str, char: str, user_id: str, w
     ph_sum_value = 60
     jineng_len = 180
     echo_list = 1400
-    score_offset = 0
-    bar_shift = 0
+    score_offset = 115
+    bar_shift = 25
+    jineng_len += score_offset + bar_shift
 
     # ── 账户 / CK ────────────────────────────────────────────────────────
     ck = ""
@@ -1778,20 +1782,37 @@ async def draw_char_optimize_img(ev: Event, uid: str, char: str, user_id: str, w
         base_info_cache.set(uid, account_info)
 
     # ── 获取数据 ─────────────────────────────────────────────────────────
-    avatar, role_detail = await get_role_need(ev, char_id, ck, uid, char_name, waves_id)
+    avatar, role_detail = await get_role_need(
+        ev, char_id, ck, uid, char_name, waves_id, change_list_regex=change_list_regex
+    )
     if isinstance(role_detail, str):
         return role_detail
+
+    enemy_detail: Optional[EnemyDetailData] = EnemyDetailData()
+
+    # ── 替换指令 (换角色X链 / 换声骸… → 改写 role_detail, 优化基于替换后配置) ──
+    change_command = ""
+    if change_list_regex:
+        _temp = copy.deepcopy(role_detail)
+        try:
+            role_detail, change_command = await change_role_detail(
+                uid, ck, role_detail, enemy_detail, change_list_regex,
+                user_id=str(user_id), bot_id=ev.bot_id,
+            )
+            if change_command and change_command.startswith("[鸣潮]"):
+                return change_command
+        except Exception as e:
+            logger.exception("角色数据转换错误", e)
+            role_detail = _temp
 
     pd = role_detail.phantomData
     eq_list = pd.equipPhantomList if pd else None
     if not eq_list or sum(1 for p in eq_list if p and getattr(p, "phantomProp", None)) < 5:
         return f"[鸣潮] {char_name} 声骸件数不足, 暂无优化建议"
 
-    enemy_detail: Optional[EnemyDetailData] = EnemyDetailData()
-
-    # ── 声骸计算 (先跑 calc, 再用其数据渲染最优卡) ────────────────────────
+    # ── 声骸计算 (先跑 calc, 再用其数据渲染最优卡; 替换时 change_command 使 is_limit 生效) ──
     calc, _phantom_temp_unused, _phantom_score = await ph_card_draw(
-        ph_sum_value, role_detail, False, "", enemy_detail, False, locale
+        ph_sum_value, role_detail, False, change_command, enemy_detail, False, locale
     )
     calc.role_card = calc.enhance_summation_card_value(calc.phantom_card)
 
@@ -1826,10 +1847,12 @@ async def draw_char_optimize_img(ev: Event, uid: str, char: str, user_id: str, w
         base = t(name.rstrip("%"), locale, partial=True)
         return f"{base}%" if name.endswith("%") else base
 
+    # 仅本人查询展示建议方向, 他人/特征码查询隐藏
+    is_self = not waves_id and user_id == ev.user_id
     score_rows = []
     _pm = getattr(score_report, "partial_max", None)
     dirs = [_pm[0]] if _pm else []
-    if dirs:
+    if dirs and is_self:
         rec = " / ".join(_loc_stat(d) for d in dirs)
         score_rows.append((t("建议提升词条方向", locale), rec))
     # 词条收益拆分成 3 项/行, 防止单行塞不下
@@ -1873,10 +1896,10 @@ async def draw_char_optimize_img(ev: Event, uid: str, char: str, user_id: str, w
     # ── 右侧属性/武器区 ───────────────────────────────────────────────────
     right_image_temp = Image.new("RGBA", (600, 1100))
 
-    right_prop_y = 80
-    right_weapon_banner_y = 550
-    weapon_name_y = 680
-    weapon_bg_y = 620
+    right_prop_y = 100
+    right_weapon_banner_y = 620
+    weapon_name_y = 780
+    weapon_bg_y = 750
 
     # 武器 banner
     banner2 = Image.open(TEXT_PATH / "banner2.png")
@@ -2011,6 +2034,11 @@ async def draw_char_optimize_img(ev: Event, uid: str, char: str, user_id: str, w
         t(_SCORE_RULE_TITLE, locale, partial=True),
         SPECIAL_GOLD, waves_font_28, "lm",
     )
+    draw_text_with_fallback(
+        rp_draw, (_rule_w - 40, _RULE_TITLE_H // 2 + 4),
+        f"{t('评分细则请发送', locale)} {PREFIX}综合评分说明",
+        SPECIAL_GOLD, waves_font_28, "rm",
+    )
     rp_draw.line(
         [(40, _RULE_TITLE_H), (_rule_w - 40, _RULE_TITLE_H)],
         fill=(255, 255, 255, 45), width=2,
@@ -2135,6 +2163,15 @@ async def draw_char_optimize_img(ev: Event, uid: str, char: str, user_id: str, w
         skill_bar.alpha_composite(skill_bg_temp, dest=(_x, _y))
         temp_i += 1
     img.alpha_composite(skill_bar, dest=(0, 1150 + score_offset + bar_shift))
+
+    # 综合评分块: 立绘下方 / skill_bar 上方 (与面板一致)
+    grade = get_panel_score_grade(score_report.score)
+    grade_icon = Image.open(TEXT_PATH / f"panel_score_{grade}.png")
+    grade_icon = grade_icon.resize((200, 200))
+    img.alpha_composite(grade_icon, dest=(90, 1080 + bar_shift))
+    score_draw = ImageDraw.Draw(img)
+    draw_text_with_fallback(score_draw, (400, 1140 + bar_shift), f"{score_report.score:.2f}", "white", waves_font_40, "mm")
+    draw_text_with_fallback(score_draw, (400, 1210 + bar_shift), t("综合评分", locale), GREY, waves_font_40, "mm")
 
     img = add_footer(img)
     img = await convert_img(img)
