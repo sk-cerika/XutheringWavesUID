@@ -2282,10 +2282,17 @@ async def generate_online_role_detail(char_id: str):
 
     char_template_data = copy.deepcopy(await get_template_data())
 
+    def _safe_fmt(tmpl: str, args) -> str:
+        try:
+            return tmpl.format(*args)
+        except (IndexError, KeyError, ValueError) as exc:
+            logger.debug(f"[鸣潮] desc.format 失败, 用原文: char_id={char_id} err={exc}")
+            return tmpl
+
     # 命座
     for i, j in zip(char_model.chains.values(), char_template_data["chainList"]):
         j["name"] = i.name
-        j["description"] = i.desc.format(*i.param)
+        j["description"] = _safe_fmt(i.desc, i.param)
         j["iconUrl"] = ""
         j["unlocked"] = False
 
@@ -2305,7 +2312,7 @@ async def generate_online_role_detail(char_id: str):
         skill_detail = char_model.skillTree[skill_map[skill_type]]["skill"]
 
         temp_skill["name"] = skill_detail.name
-        temp_skill["description"] = skill_detail.desc.format(*skill_detail.param)
+        temp_skill["description"] = _safe_fmt(skill_detail.desc, skill_detail.param)
         temp_skill["iconUrl"] = ""
 
     # role
@@ -2322,7 +2329,7 @@ async def generate_online_role_detail(char_id: str):
     # 武器
     char_template_data["weaponData"]["resonLevel"] = 1
     temp_weapon = char_template_data["weaponData"]["weapon"]
-    temp_weapon["weaponEffectName"] = weapon_model.effect.format(*[i[-1] for i in weapon_model.param])
+    temp_weapon["weaponEffectName"] = _safe_fmt(weapon_model.effect, [i[-1] for i in weapon_model.param])
     temp_weapon["weaponIcon"] = ""
     temp_weapon["weaponId"] = weapon_id
     temp_weapon["weaponName"] = weapon_model.name
