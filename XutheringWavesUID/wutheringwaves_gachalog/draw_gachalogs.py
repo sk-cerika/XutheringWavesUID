@@ -225,9 +225,9 @@ async def get_gacha_stats(uid: str) -> Dict:
             else:
                 if gacha_name == "角色精准调谐":
                     if current_data["avg_up"] != 0:
-                        current_data["level"] = get_level_from_list(current_data["avg_up"], [74, 87, 99, 105, 120])
+                        current_data["level"] = get_level_from_list(current_data["avg_up"], [68, 81, 93, 99, 114])
                     elif current_data["avg"] != 0:
-                        current_data["level"] = get_level_from_list(current_data["avg"], [53, 60, 68, 73, 75])
+                        current_data["level"] = get_level_from_list(current_data["avg"], [47, 54, 62, 67, 69])
 
         # 返回转换后的统计数据
         stats_data = {}
@@ -377,9 +377,9 @@ async def draw_card(uid: str, ev: Event):
         else:
             if gacha_name == "角色精准调谐":
                 if current_data["avg_up"] != "-":
-                    current_data["level"] = get_level_from_list(current_data["avg_up"], [74, 87, 99, 105, 120])
+                    current_data["level"] = get_level_from_list(current_data["avg_up"], [68, 81, 93, 99, 114])
                 elif current_data["avg"] != "-":
-                    current_data["level"] = get_level_from_list(current_data["avg"], [53, 60, 68, 73, 75])
+                    current_data["level"] = get_level_from_list(current_data["avg"], [47, 54, 62, 67, 69])
             elif gacha_name in [
                 "武器精准调谐",
                 "角色调谐（常驻池）",

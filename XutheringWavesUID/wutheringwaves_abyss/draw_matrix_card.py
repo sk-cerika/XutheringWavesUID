@@ -374,6 +374,12 @@ async def _draw_matrix_detail_pil(
         if isinstance(account_info, str):
             return account_info
 
+        # 与 slash/abyss 一致: PIL 路径独立触发上传 (HTML 回退时会和顶层一起双发, 服务端幂等无害)
+        sender_avatar = "" if is_valid_at(ev) else ((ev.sender or {}).get("avatar") or "")
+        if not (isinstance(sender_avatar, str) and sender_avatar.startswith(("http://", "https://"))):
+            sender_avatar = ""
+        await upload_matrix_record(True, uid, matrix_detail, char_ids_map or {}, sender_avatar)
+
         role_detail_info_map = await get_all_roleid_detail_info(uid)
         return await draw_matrix_detail_img_pil(
             ev,
