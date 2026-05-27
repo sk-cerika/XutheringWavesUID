@@ -1485,4 +1485,12 @@ input[type="search"] {
   .topbar__mark { display: none; }
   .grid { gap: 6px; }
   .batch-grid { gap: 6px; }
+  /* 4 个按钮在 96px tile 会溢出, 收窄 + 允许换行 */
+  .tile__menu { gap: 2px; flex-wrap: wrap; justify-content: flex-end; max-width: calc(100% - 12px); }
+  .tile-act { width: 22px; height: 22px; font-size: 12px; }
+}
+
+/* 触摸设备默认显示 menu (无 hover 状态) */
+@media (pointer: coarse) {
+  .tile__menu { opacity: 1; }
 }

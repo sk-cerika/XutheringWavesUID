@@ -533,7 +533,7 @@ async def api_preview(
     访客不渲染 (走 require_auth), 避免占用 Playwright/CPU 资源。
     """
     check_preview_rate(request)
-    from .preview import render_panel_preview, render_mr_preview
+    from .preview import render_panel_preview, render_mr_preview, render_rank_preview
 
     target = st.safe_target_image(type, char_id, name)
     if target is None or not target.is_file():
@@ -542,6 +542,8 @@ async def api_preview(
     try:
         if type == "card":
             data = await render_panel_preview(char_id, target)
+        elif type == "stamina" and renderer == "rank":
+            data = await render_rank_preview(char_id, target)
         else:
             use_html = renderer != "pil"
             role_kind = "bg" if type == "bg" else "stamina"
@@ -565,7 +567,7 @@ async def api_preview_tmp(
 ):
     """裁剪/上传过程中, 用 tmp 图渲染预览。"""
     check_preview_rate(request)
-    from .preview import render_panel_preview, render_mr_preview
+    from .preview import render_panel_preview, render_mr_preview, render_rank_preview
 
     if not st.is_valid_type(type):
         raise HTTPException(400, "invalid type")
@@ -579,6 +581,8 @@ async def api_preview_tmp(
     try:
         if type == "card":
             data = await render_panel_preview(char_id, current)
+        elif type == "stamina" and renderer == "rank":
+            data = await render_rank_preview(char_id, current)
         else:
             use_html = renderer != "pil"
             role_kind = "bg" if type == "bg" else "stamina"

@@ -142,6 +142,54 @@ async def render_panel_preview(char_id: str, image_path: Path) -> Optional[bytes
     return None
 
 
+async def render_rank_preview(char_id: str, image_path: Path) -> Optional[bytes]:
+    """渲染角色排行 title 区域的立绘合成预览 (1050x500)."""
+    from PIL import ImageDraw
+    from ...utils.image import (
+        SPECIAL_GOLD,
+        GREY,
+        get_custom_waves_bg,
+        get_role_pile_default,
+    )
+    from ...utils.fonts.waves_fonts import (
+        waves_font_16,
+        waves_font_20,
+        waves_font_30,
+        waves_font_44,
+    )
+    from ...wutheringwaves_rank.darw_rank_card import TITLE_I, char_mask, logo_img
+    from ...utils.resource.constant import SPECIAL_CHAR_NAME
+
+    char_name = easy_id_to_name(char_id, "漂泊者")
+    if char_id in SPECIAL_CHAR_NAME:
+        char_name = SPECIAL_CHAR_NAME[char_id]
+
+    token = _force_pile_path.set(image_path)
+    try:
+        pile, _ = await get_role_pile_default(char_id, custom=True)
+    finally:
+        _force_pile_path.reset(token)
+
+    card_img = get_custom_waves_bg(1050, 540, "bg3")
+    title = TITLE_I.copy()
+    title_draw = ImageDraw.Draw(title)
+
+    title.alpha_composite(logo_img.copy(), dest=(50, 65))
+    title.paste(pile, (450, -120), pile)
+    title_draw.text((200, 335), "12345", "white", waves_font_44, "mm")
+    title_draw.text((200, 375), "平均声骸分数", SPECIAL_GOLD, waves_font_20, "mm")
+    title_draw.text((390, 335), "678,910", "white", waves_font_44, "mm")
+    title_draw.text((390, 375), "平均伤害", SPECIAL_GOLD, waves_font_20, "mm")
+    title_draw.text((140, 265), f"{char_name}伤害群排行", "black", waves_font_30, "lm")
+    title_draw.text((20, 420), "入榜条件", SPECIAL_GOLD, waves_font_16, "lm")
+    title_draw.text((90, 420), "（预览, 实际数据按群内查询）", GREY, waves_font_16, "lm")
+
+    img_temp = Image.new("RGBA", char_mask.size)
+    img_temp.paste(title, (0, 0), char_mask.copy())
+    card_img.alpha_composite(img_temp, (0, 0))
+    return _pil_to_jpeg_bytes(card_img)
+
+
 async def render_mr_preview(
     char_id: str,
     image_path: Path,

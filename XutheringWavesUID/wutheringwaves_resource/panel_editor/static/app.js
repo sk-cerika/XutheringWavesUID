@@ -494,6 +494,12 @@ function renderTile(img, isLandscape) {
         "aria-label": "下载原图",
         onClick: e => e.stopPropagation(),
       }, "⤓"),
+      el("button", {
+        class: "tile-act",
+        title: "复制原图到剪贴板",
+        "aria-label": "复制原图到剪贴板",
+        onClick: e => { e.stopPropagation(); copyImage(img); },
+      }, "⎘"),
       !isGuest() && el("button", {
         class: "tile-act",
         title: "编辑裁切",
@@ -520,6 +526,32 @@ function selectImage(img) {
   // re-render only what changed
   renderCenterBody();
   renderPreview();
+}
+
+async function copyImage(img) {
+  if (!navigator.clipboard || !window.ClipboardItem) {
+    toast("浏览器不支持剪贴板写入", "err");
+    return;
+  }
+  try {
+    const url = `${API}/image?type=${state.type}&char_id=${encodeURIComponent(state.selectedCharId)}&name=${encodeURIComponent(img.name)}&v=${img.mtime ?? 0}-${img.size ?? 0}`;
+    const resp = await fetch(url, { credentials: "include" });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    let blob = await resp.blob();
+    // 浏览器剪贴板对 image 多数仅认 image/png; 非 png 走 canvas 转一遍
+    if (blob.type !== "image/png") {
+      const bitmap = await createImageBitmap(blob);
+      const canvas = document.createElement("canvas");
+      canvas.width = bitmap.width;
+      canvas.height = bitmap.height;
+      canvas.getContext("2d").drawImage(bitmap, 0, 0);
+      blob = await new Promise(res => canvas.toBlob(res, "image/png"));
+    }
+    await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+    toast("已复制原图", "ok");
+  } catch (e) {
+    toast(`复制失败: ${e.message}`, "err");
+  }
 }
 
 async function deleteImage(img) {
@@ -1511,7 +1543,10 @@ function buildPreviewAutoToggle() {
 
 function buildRendererToggle() {
   const seg = el("div", { class: "seg", role: "tablist", "aria-label": "渲染器" });
-  for (const r of ["html", "pil"]) {
+  const options = state.type === "stamina" ? ["html", "pil", "rank"] : ["html", "pil"];
+  if (!options.includes(state.renderer)) state.renderer = "html";
+  const LABEL = { html: "HTML", pil: "PIL", rank: "角色排行" };
+  for (const r of options) {
     seg.append(el("button", {
       class: state.renderer === r ? "is-active" : "",
       role: "tab",
@@ -1521,7 +1556,7 @@ function buildRendererToggle() {
         state.renderer = r;
         renderPreview();
       },
-    }, r.toUpperCase()));
+    }, LABEL[r]));
   }
   return seg;
 }
