@@ -26,7 +26,7 @@ def read_sonata_json_files(directory):
                 file_name = file.name.split(".")[0]
                 sonata_id_data[file_name] = data
         except Exception as e:
-            logger.exception(f"read_char_json_files load fail decoding {file}", e)
+            logger.exception(f"[鸣潮·合鸣] read_char_json_files load fail decoding {file}", e)
 
 
 def load_sonata_name_mapping():
@@ -39,9 +39,9 @@ def load_sonata_name_mapping():
                 # 反向映射：名称 -> ID
                 sonata_name_to_id = {v: k for k, v in id_to_name.items()}
         else:
-            logger.warning(f"sonata_id.json not found at {SONATA_ID_MAP_PATH}")
+            logger.warning(f"[鸣潮·合鸣] sonata_id.json not found at {SONATA_ID_MAP_PATH}")
     except Exception as e:
-        logger.exception("Failed to load sonata_id.json mapping", e)
+        logger.exception("[鸣潮·合鸣] Failed to load sonata_id.json mapping", e)
 
 
 def ensure_data_loaded(force: bool = False):
@@ -81,7 +81,7 @@ def get_sonata_detail(sonata_name: Optional[str]) -> WavesSonataResult:
     ensure_data_loaded()
     result = WavesSonataResult()
     if sonata_name is None:
-        logger.exception(f"get_sonata_detail sonata_name: {sonata_name} not found")
+        logger.exception(f"[鸣潮·合鸣] get_sonata_detail sonata_name: {sonata_name} not found")
         return result
 
     sonata_key = str(sonata_name)
@@ -91,7 +91,7 @@ def get_sonata_detail(sonata_name: Optional[str]) -> WavesSonataResult:
         sonata_key = sonata_name_to_id[sonata_key]
 
     if sonata_key not in sonata_id_data:
-        logger.exception(f"get_sonata_detail sonata_name: {sonata_name} (converted to {sonata_key}) not found")
+        logger.exception(f"[鸣潮·合鸣] get_sonata_detail sonata_name: {sonata_name} (converted to {sonata_key}) not found")
         return result
 
     return WavesSonataResult(**sonata_id_data[sonata_key])

@@ -64,7 +64,7 @@ def _clean_text(text: str) -> str:
     """清理文本中的HTML标签"""
     text = re.sub(r"<color[^>]*>", "", text)
     text = re.sub(r"</color>", "", text)
-    return text.replace("\n", " ")
+    return text
 
 
 async def _process_floor_data(floor_data: Dict[str, Any]) -> Dict[str, Any]:

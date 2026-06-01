@@ -468,7 +468,10 @@ async def get_role_pile_default(
 
 
 def get_square_avatar_path(resource_id: Union[int, str]) -> Path:
-    return AVATAR_PATH / f"role_head_{resource_id}.png"
+    path = AVATAR_PATH / f"role_head_{resource_id}.png"
+    if not path.exists():
+        path = AVATAR_PATH / "role_head_1503.png"
+    return path
 
 
 async def get_square_avatar(resource_id: Union[int, str]) -> Image.Image:
@@ -515,7 +518,10 @@ async def get_attribute(name: str = "", is_simple: bool = False) -> Image.Image:
         name = f"attribute/attr_simple_{name}.png"
     else:
         name = f"attribute/attr_{name}.png"
-    return Image.open(TEXT_PATH / name).convert("RGBA")
+    path = TEXT_PATH / name
+    if not path.exists():
+        return Image.new("RGBA", (100, 100), (0, 0, 0, 0))
+    return Image.open(path).convert("RGBA")
 
 
 async def get_attribute_prop(name: str = "") -> Image.Image:
@@ -524,14 +530,27 @@ async def get_attribute_prop(name: str = "") -> Image.Image:
     else:
         return Image.open(TEXT_PATH / "attribute_prop" / "attr_prop_攻击.png").convert("RGBA")
 
-async def get_attribute_skill(name: str = "") -> Image.Image:
+async def get_attribute_skill(name: str = "", locale: Optional[str] = None) -> Image.Image:
     if not name:
         return Image.new("RGBA", (100, 100), (0, 0, 0, 0))
     cache_dir = CACHE_PATH / "attribute_skill"
     cache_path = cache_dir / f"{name}.png"
     if cache_path.exists():
         return Image.open(cache_path).convert("RGBA")
-    return Image.new("RGBA", (100, 100), (0, 0, 0, 0))
+    from .fonts.waves_fonts import waves_font_20, waves_font_24
+    from .localization import t
+
+    img = Image.new("RGBA", (100, 100), (0, 0, 0, 0))
+    translated = t(name, locale) if locale else name
+    for sep in ("·", " - "):
+        if sep in translated:
+            translated = translated.split(sep)[-1].strip()
+            break
+    short = translated[:10]
+    font = waves_font_20 if len(short) > 6 else waves_font_24
+    draw = ImageDraw.Draw(img)
+    draw.text((50, 50), short, fill="white", font=font, anchor="mm")
+    return img
 
 async def get_attribute_effect(name: str = "") -> Image.Image:
     if (TEXT_PATH / "attribute_effect" / f"attr_{name}.png").exists():
@@ -541,7 +560,10 @@ async def get_attribute_effect(name: str = "") -> Image.Image:
 
 
 async def get_weapon_type(name: str = "") -> Image.Image:  # 出新武器改这里
-    return Image.open(TEXT_PATH / f"weapon_type/weapon_type_{name}.png").convert("RGBA")
+    path = TEXT_PATH / f"weapon_type/weapon_type_{name}.png"
+    if not path.exists():
+        return Image.new("RGBA", (100, 100), (0, 0, 0, 0))
+    return Image.open(path).convert("RGBA")
 
 
 def get_waves_bg(w: int = 0, h: int = 0, bg: str = "bg", crop: bool = True) -> Image.Image:
@@ -735,12 +757,12 @@ def compress_to_webp(image_path: Path, quality: int = 80, delete_original: bool 
 
         # 确保文件存在
         if not image_path.exists():
-            logger.warning(f"图片不存在: {image_path}")
+            logger.warning(f"[鸣潮·图像] 图片不存在: {image_path}")
             return False, image_path
 
         # 检查文件是否已经是webp格式
         if image_path.suffix.lower() == ".webp":
-            logger.info(f"图片已经是webp格式: {image_path}")
+            logger.info(f"[鸣潮·图像] 图片已经是webp格式: {image_path}")
             return False, image_path
 
         # 创建webp文件路径
@@ -758,17 +780,17 @@ def compress_to_webp(image_path: Path, quality: int = 80, delete_original: bool 
         # 计算压缩率
         webp_size = webp_path.stat().st_size
         compression_ratio = (1 - webp_size / orig_size) * 100 if orig_size > 0 else 0
-        logger.info(f"图片 {image_path.name} 压缩为webp格式, 压缩率: {compression_ratio:.2f}%")
+        logger.info(f"[鸣潮·图像] 图片 {image_path.name} 压缩为webp格式, 压缩率: {compression_ratio:.2f}%")
 
         # 删除原图片（如果需要）
         if delete_original:
             image_path.unlink()
-            logger.info(f"原图片已删除: {image_path}")
+            logger.info(f"[鸣潮·图像] 原图片已删除: {image_path}")
 
         return True, webp_path
 
     except Exception as e:
-        logger.error(f"压缩图片为webp格式失败: {e}")
+        logger.error(f"[鸣潮·图像] 压缩图片为webp格式失败: {e}")
         return False, image_path
 
 
@@ -819,16 +841,16 @@ async def pic_download_from_url(
     try:
         img = Image.open(_path).convert("RGBA")
     except Exception as e:
-        logger.warning(f"[鸣潮] 打开图片失败: {_path}, {e}")
+        logger.warning(f"[鸣潮·图像] 打开图片失败: {_path}, {e}")
         raise
 
     if _path != webp_path:
         try:
             img.save(webp_path, "WEBP", quality=85)
             _path.unlink(missing_ok=True)
-            logger.debug(f"[鸣潮] 已将图片转为webp: {webp_path.name}")
+            logger.debug(f"[鸣潮·图像] 已将图片转为webp: {webp_path.name}")
         except Exception as e:
-            logger.warning(f"[鸣潮] 转换webp失败: {e}")
+            logger.warning(f"[鸣潮·图像] 转换webp失败: {e}")
 
     return img
 

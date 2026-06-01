@@ -2,7 +2,7 @@ from gsuid_core.sv import SV
 from gsuid_core.bot import Bot
 from gsuid_core.models import Event
 
-from .darw_rank_card import draw_rank_img
+from .draw_rank_card import draw_rank_img
 from .draw_all_rank_card import draw_all_rank_card
 from .draw_rank_list_card import draw_rank_list
 from .draw_total_rank_card import draw_total_rank

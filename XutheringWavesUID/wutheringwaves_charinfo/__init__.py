@@ -82,6 +82,23 @@ def _append_advice(ev, payload):
         payload = MessageSegment.image(payload)
     return [payload, advice]
 
+
+async def _resolve_self_uid(bot: Bot, ev: Event):
+    """面板查询入口共享: 取 user_id(ruser_id) + 绑定 uid + 国际服拦截。
+
+    返回 (uid, user_id); 已发完错误响应时返回 None, 调用方直接 return 即可。
+    PK 路径需对"发起者本人"用 ev.user_id 的场景不适用, 仍走原模板。
+    """
+    user_id = ruser_id(ev)
+    uid = await WavesBind.get_uid_by_game(user_id, ev.bot_id)
+    if not uid:
+        await bot.send(error_reply(WAVES_CODE_103))
+        return None
+    if is_intl_uid(uid):
+        await bot.send(intl_unavailable_msg(uid))
+        return None
+    return uid, user_id
+
 waves_upload_char = SV("waves上传面板图", priority=3, pm=1)
 waves_char_card_single = SV("waves查看面板图", priority=3)
 waves_char_card_list = SV("waves面板图列表", priority=3, pm=1)
@@ -102,11 +119,13 @@ _repeated_card_lock = asyncio.Lock()
 SCORE_EXPLAIN_IMG = Path(__file__).parent / "综合评分说明.png"
 
 
+# 类型别名 → 内部分类 (card/bg/stamina)。所有正则的 type 别名都从这里派生。
 TYPE_MAP = {
     "面板": "card",
     "面版": "card",
     "面包": "card",
     "🍞": "card",
+    "card": "card",
     "背景": "bg",
     "bg": "bg",
     "mr": "stamina",
@@ -114,9 +133,13 @@ TYPE_MAP = {
     "体力": "stamina",
 }
 
+# 正则用的别名 alternation; 与 TYPE_MAP 的 key 保持一致 (长别名优先, 避免 "面" 前缀冲突)。
+_CARD_TYPES = "面板|面版|面包|🍞|card|体力|每日|mr|背景|bg"
+_CARD_VERBS = "查看|提取|获取"
+
 
 @waves_upload_char.on_regex(
-    rf"^(?P<force>强制)?上传(?P<char>{PATTERN})(?P<type>面板|面包|🍞|card|体力|每日|mr|背景|bg)图$",
+    rf"^(?P<force>强制)?上传(?P<char>{PATTERN})(?P<type>{_CARD_TYPES})图$",
     block=True,
 )
 async def upload_char_img(bot: Bot, ev: Event):
@@ -133,7 +156,7 @@ async def upload_char_img(bot: Bot, ev: Event):
     )
     
 
-@waves_char_card_list.on_regex(rf"^(?P<char>{PATTERN})(?P<type>面板|面包|🍞|card|体力|每日|mr|背景|bg)图列表$", block=True)
+@waves_char_card_list.on_regex(rf"^(?P<char>{PATTERN})(?P<type>{_CARD_TYPES})图列表$", block=True)
 async def get_char_card_list(bot: Bot, ev: Event):
     char = ev.regex_dict.get("char")
     if not char:
@@ -142,7 +165,7 @@ async def get_char_card_list(bot: Bot, ev: Event):
 
 
 @waves_delete_char_card.on_regex(
-    rf"^删除(?P<char>{PATTERN})(?P<type>面板|面包|🍞|体力|每日|mr|背景|bg)图\s*(?P<hash_id>[a-zA-Z0-9,，]+)$", block=True
+    rf"^删除(?P<char>{PATTERN})(?P<type>{_CARD_TYPES})图\s*(?P<hash_id>[a-zA-Z0-9,，]+)$", block=True
 )
 async def delete_char_card(bot: Bot, ev: Event):
     char = ev.regex_dict.get("char")
@@ -152,7 +175,7 @@ async def delete_char_card(bot: Bot, ev: Event):
     await delete_custom_card(bot, ev, char, hash_id, target_type=TYPE_MAP.get(ev.regex_dict.get("type"), "card"))
 
 
-@waves_delete_all_card.on_regex(rf"^删除全部(?P<char>{PATTERN})(?P<type>面板|面包|🍞|card|体力|每日|mr|背景|bg)图$", block=True)
+@waves_delete_all_card.on_regex(rf"^删除全部(?P<char>{PATTERN})(?P<type>{_CARD_TYPES})图$", block=True)
 async def delete_all_char_card(bot: Bot, ev: Event):
     char = ev.regex_dict.get("char")
     if not char:
@@ -160,7 +183,8 @@ async def delete_all_char_card(bot: Bot, ev: Event):
     await delete_all_custom_card(bot, ev, char, target_type=TYPE_MAP.get(ev.regex_dict.get("type"), "card"))
 
 
-@waves_compress_card.on_fullmatch(("压缩面板图", "压缩面包图", "压缩🍞图", "压缩背景图", "压缩体力图", "压缩card图", "压缩bg图", "压缩mr图"), block=True)
+# 任一别名都触发全量压缩 (card/bg/stamina 一锅压), 不按输入区分类型。
+@waves_compress_card.on_fullmatch(("压缩面板图", "压缩面版图", "压缩面包图", "压缩🍞图", "压缩背景图", "压缩体力图", "压缩card图", "压缩bg图", "压缩mr图"), block=True)
 async def compress_char_card(bot: Bot, ev: Event):
     await compress_all_custom_card(bot, ev)
 
@@ -173,8 +197,9 @@ async def recompute_orb_features_handler(bot: Bot, ev: Event):
     await recompute_all_orb_features(bot, ev)
     
     
+# type 仅作触发文案不区分类型, send_repeated_custom_cards 始终遍历全部自定义图目录。
 @waves_repeated_card.on_regex(
-    r"^查看重复(?P<type>面板|面包|🍞|背景|体力|card|bg|mr)图(?P<threshold>\s*\d+(?:\.\d+)?)?$",
+    rf"^查看重复(?:{_CARD_TYPES})图(?P<threshold>\s*\d+(?:\.\d+)?)?$",
     block=True,
 )
 async def repeated_char_card(bot: Bot, ev: Event):
@@ -203,10 +228,6 @@ async def repeated_char_card(bot: Bot, ev: Event):
             _repeated_card_lock.release()
 
     asyncio.create_task(_run())
-
-
-_CARD_TYPES = "面板|面包|🍞|card|体力|每日|mr|背景|bg"
-_CARD_VERBS = "查看|提取|获取"
 
 
 async def _send_char_card_single(bot: Bot, ev: Event, char, hash_id, card_type):
@@ -300,7 +321,7 @@ async def _forward_upload_to_master(bot: Bot, ev: Event):
 
     images = await get_image(ev)
     if not images:
-        return await bot.send("[鸣潮] 请同时发送要上传的图片")
+        return await bot.send("[鸣潮] 请同时发送要上传的图片。注意上传的图片应可用于体力背景/面板左上的角色图。")
 
     target_type = TYPE_MAP.get(ev.regex_dict.get("type"), "card")
     type_label = CUSTOM_PATH_NAME_MAP.get(target_type, "面板") + "图"
@@ -402,7 +423,7 @@ async def _forward_upload_to_master(bot: Bot, ev: Event):
         if subs and fail == len(subs):
             return await bot.send("[鸣潮] 转发审核失败，请稍后再试或联系主人")
         tail = f"\n已剔除疑似重复: {'；'.join(block_msgs)}" if block_msgs else ""
-        await bot.send(f"[鸣潮] 上传申请已提交给主人审核，请等待处理{tail}")
+        await bot.send(f"[鸣潮] 上传申请已提交给主人审核，请等待处理{tail}。注意上传的图片应可用于体力背景/面板左上的角色图。")
     finally:
         for p in new_images:
             try:
@@ -448,13 +469,10 @@ Args:
 """,
 )
 async def send_card_info(bot: Bot, ev: Event):
-    user_id = ruser_id(ev)
-
-    uid = await WavesBind.get_uid_by_game(user_id, ev.bot_id)
-    if not uid:
-        return await bot.send(error_reply(WAVES_CODE_103))
-    if is_intl_uid(uid):
-        return await bot.send(intl_unavailable_msg(uid))
+    _ru = await _resolve_self_uid(bot, ev)
+    if _ru is None:
+        return
+    uid, user_id = _ru
 
     from .draw_refresh_char_card import draw_refresh_char_detail_img
 
@@ -492,7 +510,7 @@ async def send_card_info(bot: Bot, ev: Event):
     block=True,
 )
 async def send_one_char_detail_msg(bot: Bot, ev: Event):
-    logger.debug(f"[鸣潮] [角色面板] RAW_TEXT: {ev.raw_text}")
+    logger.debug(f"[鸣潮·角色面板] RAW_TEXT: {ev.raw_text}")
     if ev.regex_dict.get("lead_space") or ev.regex_dict.get("mid_space"):
         return await bot.send(_space_hint())
     res = resolve_char(ev.regex_dict.get("char"))
@@ -505,12 +523,10 @@ async def send_one_char_detail_msg(bot: Bot, ev: Event):
     tip = res.tip_text(f"{PREFIX}刷新{char}面板")
     refresh_type = SPECIAL_CHAR.copy()[char_id] if char_id in SPECIAL_CHAR else [char_id]
 
-    user_id = ruser_id(ev)
-    uid = await WavesBind.get_uid_by_game(user_id, ev.bot_id)
-    if not uid:
-        return await bot.send(error_reply(WAVES_CODE_103))
-    if is_intl_uid(uid):
-        return await bot.send(intl_unavailable_msg(uid))
+    _ru = await _resolve_self_uid(bot, ev)
+    if _ru is None:
+        return
+    uid, user_id = _ru
 
     from .draw_refresh_char_card import draw_refresh_char_detail_img
 
@@ -563,22 +579,22 @@ async def send_one_char_detail_msg(bot: Bot, ev: Event):
 当用户问「<角色>面板 / 角色面板 / 查询<角色>」时调用，是 XW 最核心的查询。
 text 是角色名（已自动去掉前缀「角色面板」或「查询」）。需绑定 cookie。
 
+注: 命令字为「查询」时不展示综合评分; 「角色面板」及其他面板入口照常显示。
+
 Args:
     text: 角色名。例: "长离" / "椿" / "凌阳"。命令字 `角色面板` 或 `查询` 后跟角色名时 text 是角色名本身。
 """,
 )
 async def send_char_detail_msg(bot: Bot, ev: Event):
     char = ev.text.strip(" ")
-    logger.debug(f"[鸣潮] [角色面板] CHAR: {char}")
+    logger.debug(f"[鸣潮·角色面板] CHAR: {char}")
     if not char:
         return
-    user_id = ruser_id(ev)
-    uid = await WavesBind.get_uid_by_game(user_id, ev.bot_id)
-    if not uid:
-        return await bot.send(error_reply(WAVES_CODE_103))
-    if is_intl_uid(uid):
-        return await bot.send(intl_unavailable_msg(uid))
-    logger.debug(f"[鸣潮] [角色面板] UID: {uid}")
+    _ru = await _resolve_self_uid(bot, ev)
+    if _ru is None:
+        return
+    uid, user_id = _ru
+    logger.debug(f"[鸣潮·角色面板] UID: {uid}")
 
     res = resolve_char(char)
     if not res.ok:
@@ -629,12 +645,10 @@ async def send_char_detail_msg2_typo(bot: Bot, ev: Event):
         return await bot.send(res.fail_msg(), True if ev.group_id else False)
     char = res.matched
 
-    user_id = ruser_id(ev)
-    uid = await WavesBind.get_uid_by_game(user_id, ev.bot_id)
-    if not uid:
-        return await bot.send(error_reply(WAVES_CODE_103))
-    if is_intl_uid(uid):
-        return await bot.send(intl_unavailable_msg(uid))
+    _ru = await _resolve_self_uid(bot, ev)
+    if _ru is None:
+        return
+    uid, user_id = _ru
     canonical_cmd = f"{PREFIX}{char}面板"
     im = await draw_char_detail_img(ev, uid, char, user_id, waves_id)
     # typo 路径: 即使精确命中也强制告知用户已按面板查询
@@ -648,7 +662,7 @@ async def send_char_detail_msg2_typo(bot: Bot, ev: Event):
 
 
 @waves_new_char_detail.on_regex(
-    rf"^(?P<lead_space>\s+)?(?P<waves_id>\d{{9}})?(?P<char>{PATTERN})(?P<query_type>面板|面版|面包|🍞|mb|伤害(?P<damage>(\d+)?))(?P<is_pk>pk|对比|PK|比|比较)?(\s*)?(?P<change_list>((换[^换]*)*)?)",
+    rf"^(?P<lead_space>\s+)?(?P<waves_id>\d{{9}})?(?P<char>{PATTERN})(?P<query_type>面板|面版|面包|🍞|mb|伤害(?P<damage>(\d+)?))(?P<is_pk>pk|对比|PK|比|比较)?(\s*)?(?P<change_list>((换[^换]*)*)?)\s*$",
     block=True,
 )
 async def send_char_detail_msg2(bot: Bot, ev: Event):
@@ -663,6 +677,8 @@ async def send_char_detail_msg2(bot: Bot, ev: Event):
 
     if waves_id and len(waves_id) != 9:
         return
+    if waves_id and is_intl_uid(waves_id):
+        return await bot.send(intl_unavailable_msg(waves_id))
 
     if isinstance(query_type, str) and "伤害" in query_type and not damage:
         damage = "1"
@@ -687,7 +703,7 @@ async def send_char_detail_msg2(bot: Bot, ev: Event):
     char = matched
     if damage:
         char = f"{char}伤害{damage}"
-    logger.debug(f"[鸣潮] [角色面板] CHAR: {char} {ev.regex_dict}")
+    logger.debug(f"[鸣潮·角色面板] CHAR: {char} {ev.regex_dict}")
 
     if is_limit_query:
         # is_limit_query=True 时 draw_char_detail_img 内部跳过 advice 队列, _append_advice 仍兜底清残留
@@ -727,12 +743,10 @@ async def send_char_detail_msg2(bot: Bot, ev: Event):
             return
 
         try:
-            user_id = ruser_id(ev)
-            uid = await WavesBind.get_uid_by_game(user_id, ev.bot_id)
-            if not uid:
-                return await bot.send(error_reply(WAVES_CODE_103))
-            if is_intl_uid(uid):
-                return await bot.send(intl_unavailable_msg(uid))
+            _ru = await _resolve_self_uid(bot, ev)
+            if _ru is None:
+                return
+            uid, user_id = _ru
             im2 = await draw_char_detail_img(ev, uid, char, user_id, waves_id, need_convert_img=False)
             if isinstance(im2, str):
                 return await bot.send(res.with_tip(im2, canonical_cmd), at_sender)
@@ -748,12 +762,10 @@ async def send_char_detail_msg2(bot: Bot, ev: Event):
             # PK 为对比视图, 不展示单人 advice; 统一丢弃避免 id(ev) 残留串台
             pop_pending_advice(ev)
     else:
-        user_id = ruser_id(ev)
-        uid = await WavesBind.get_uid_by_game(user_id, ev.bot_id)
-        if not uid:
-            return await bot.send(error_reply(WAVES_CODE_103))
-        if is_intl_uid(uid):
-            return await bot.send(intl_unavailable_msg(uid))
+        _ru = await _resolve_self_uid(bot, ev)
+        if _ru is None:
+            return
+        uid, user_id = _ru
         im = await draw_char_detail_img(ev, uid, char, user_id, waves_id, change_list_regex=change_list_regex)
         at_sender = False
         if isinstance(im, str):
@@ -771,6 +783,8 @@ async def send_char_detail_msg2_weight(bot: Bot, ev: Event):
 
     if waves_id and len(waves_id) != 9:
         return
+    if waves_id and is_intl_uid(waves_id):
+        return await bot.send(intl_unavailable_msg(waves_id))
 
     is_limit_query = False
     if isinstance(char, str) and ("极限" in char or "limit" in char):
@@ -796,12 +810,10 @@ async def send_char_detail_msg2_weight(bot: Bot, ev: Event):
             return await bot.send(res.wrap(im, canonical_cmd))
         return
 
-    user_id = ruser_id(ev)
-    uid = await WavesBind.get_uid_by_game(user_id, ev.bot_id)
-    if not uid:
-        return await bot.send(error_reply(WAVES_CODE_103))
-    if is_intl_uid(uid):
-        return await bot.send(intl_unavailable_msg(uid))
+    _ru = await _resolve_self_uid(bot, ev)
+    if _ru is None:
+        return
+    uid, user_id = _ru
 
     im = await draw_char_score_img(ev, uid, char, user_id, waves_id)  # type: ignore
     at_sender = False
@@ -820,6 +832,8 @@ async def send_char_optimize_msg(bot: Bot, ev: Event):
     change_list_regex = ev.regex_dict.get("change_list")
     if waves_id and len(waves_id) != 9:
         return
+    if waves_id and is_intl_uid(waves_id):
+        return await bot.send(intl_unavailable_msg(waves_id))
     if not char:
         return
     res = resolve_char(char)
@@ -828,12 +842,10 @@ async def send_char_optimize_msg(bot: Bot, ev: Event):
     char = res.matched
     canonical_cmd = f"{PREFIX}{char}优化{change_list_regex or ''}"
 
-    user_id = ruser_id(ev)
-    uid = await WavesBind.get_uid_by_game(user_id, ev.bot_id)
-    if not uid:
-        return await bot.send(error_reply(WAVES_CODE_103))
-    if is_intl_uid(uid):
-        return await bot.send(intl_unavailable_msg(uid))
+    _ru = await _resolve_self_uid(bot, ev)
+    if _ru is None:
+        return
+    uid, user_id = _ru
 
     im = await draw_char_optimize_img(ev, uid, char, user_id, waves_id, change_list_regex=change_list_regex)
     at_sender = False

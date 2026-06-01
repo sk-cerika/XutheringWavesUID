@@ -12,6 +12,7 @@ from gsuid_core.utils.image.convert import convert_img
 
 from .period import get_slash_period_number
 from ..utils.hint import error_reply
+from ..utils.at_help import safe_sender_avatar
 from ..utils.util import hide_uid, get_hide_uid_pref
 from ..utils.image import (
     GOLD,
@@ -22,7 +23,6 @@ from ..utils.image import (
     pic_download_from_url,
 )
 from ..utils.api.model import (
-    RoleList,
     SlashDetail,
     RoleDetailData,
     AccountBaseInfo,
@@ -110,20 +110,19 @@ async def draw_slash_img(ev: Event, uid: str, user_id: str) -> Union[bytes, str]
 
     command = ev.command
     text = ev.text.strip()
-    challengeIds = [7, 8, 9, 10, 11, 12] if is_self_ck else [12]
-    if "无尽" in text or "无尽" in command or "wj" in command or "wj" in text:
-        challengeIds = [12]
-    elif "禁忌" in text or "禁忌" in command:
-        challengeIds = [1, 2, 3, 4, 5, 6]
-    elif text.isdigit() and 1 <= int(text) <= 12:
-        challengeIds = [int(text)]
-    else:
-        text = text.replace("层", "")
-        if text.isdigit() and 1 <= int(text) <= 12:
-            challengeIds = [int(text)]
 
     if not is_self_ck:
         challengeIds = [12]
+    else:
+        challengeIds = [7, 8, 9, 10, 11, 12]
+        if "无尽" in text or "无尽" in command or "wj" in command or "wj" in text:
+            challengeIds = [12]
+        elif "禁忌" in text or "禁忌" in command:
+            challengeIds = [1, 2, 3, 4, 5, 6]
+        else:
+            layer = text.replace("层", "").strip()
+            if layer.isdigit() and 1 <= int(layer) <= 12:
+                challengeIds = [int(layer)]
 
     # 冥海数据
     slash_detail: Union[SlashDetail, str] = await get_slash_data(uid, ck, is_self_ck)
@@ -160,13 +159,6 @@ async def draw_slash_img(ev: Event, uid: str, user_id: str) -> Union[bytes, str]
         return f"用户未展示数据, 请尝试【{PREFIX}登录】"
     account_info = AccountBaseInfo.model_validate(account_info.data)
 
-    # 共鸣者信息
-    role_info = await waves_api.get_role_info(uid, ck)
-    if not role_info.success:
-        return role_info.throw_msg()
-
-    role_info = RoleList.model_validate(role_info.data)
-
     # 绘制图片
     footer_h = 50
     card_h = 300
@@ -201,8 +193,7 @@ async def draw_slash_img(ev: Event, uid: str, user_id: str) -> Union[bytes, str]
         card_img.paste(title_bar, (-20, 70), title_bar)
 
     # 根据面板数据获取详细信息
-    role_detail_info_map = await get_all_roleid_detail_info(uid)
-    role_detail_info_map = role_detail_info_map if role_detail_info_map else {}
+    role_detail_info_map = await get_all_roleid_detail_info(uid) or {}
 
     # 绘制挑战信息
     # 倒序
@@ -290,15 +281,21 @@ async def draw_slash_img(ev: Event, uid: str, user_id: str) -> Union[bytes, str]
                 role_hang_bg.alpha_composite(buff_bg, (870, 20))
 
                 for role_index, slash_role in enumerate(slash_half.roleList):
+                    # 本地资源未同步时占位 (新角色发布期), 与深塔/全息一致
                     char_model = get_char_model(slash_role.roleId)
                     if char_model is None:
-                        continue
+                        logger.warning(f"[鸣潮·冥海渲染] 本地未识别 roleId={slash_role.roleId}, 使用占位")
+                        char_name = "未知"
+                        char_star = 5
+                    else:
+                        char_name = char_model.name
+                        char_star = char_model.starLevel
                     avatar = await draw_pic(slash_role.roleId)
-                    char_bg = Image.open(TEXT_PATH / f"char_bg{char_model.starLevel}.png")
+                    char_bg = Image.open(TEXT_PATH / f"char_bg{char_star}.png")
                     char_bg_draw = ImageDraw.Draw(char_bg)
                     char_bg_draw.text(
                         (90, 150),
-                        f"{char_model.name}",
+                        f"{char_name}",
                         "white",
                         waves_font_18,
                         "mm",
@@ -332,15 +329,12 @@ async def draw_slash_img(ev: Event, uid: str, user_id: str) -> Union[bytes, str]
             )
             index += 1
 
-    sender_avatar = (ev.sender or {}).get("avatar") or ""
-    if not (isinstance(sender_avatar, str) and sender_avatar.startswith(("http://", "https://"))):
-        sender_avatar = ""
-
-    await save_slash_record(uid, slash_detail)
-    await upload_slash_record(is_self_ck, uid, slash_detail, sender_avatar)
+    sender_avatar = safe_sender_avatar(ev)
 
     card_img = add_footer(card_img, 600, 20)
     card_img = await convert_img(card_img)
+    await save_slash_record(uid, slash_detail)
+    await upload_slash_record(is_self_ck, uid, slash_detail, sender_avatar)
     return card_img
 
 
@@ -362,7 +356,7 @@ async def save_slash_record(
         async with aiofiles.open(path, "w", encoding="utf-8") as file:
             await file.write(json.dumps(record_payload, ensure_ascii=False))
     except Exception as e:
-        logger.warning(f"[鸣潮·保存无尽数据失败] uid={uid}, error={e}")
+        logger.warning(f"[鸣潮·冥海保存] 失败 uid={uid} error={e}")
 
 
 async def upload_slash_record(
@@ -392,11 +386,11 @@ async def upload_slash_record(
     if not difficulty:
         return
 
-    if not difficulty.challengeList:
-        return
-
-    challenge = difficulty.challengeList[0]
-    if not challenge.halfList:
+    challenge = next(
+        (c for c in difficulty.challengeList if c.challengeId == 12),
+        None,
+    )
+    if not challenge or not challenge.halfList:
         return
 
     if not challenge.get_rank():
@@ -424,5 +418,5 @@ async def upload_slash_record(
             "sender_avatar": sender_avatar,
         }
     )
-    # logger.info(f"上传冥海记录: {slash_item.model_dump()}")
+    # logger.info(f"[鸣潮·冥海保存] 上传冥海记录: {slash_item.model_dump()}")
     push_item(QUEUE_SLASH_RECORD, slash_item.model_dump())

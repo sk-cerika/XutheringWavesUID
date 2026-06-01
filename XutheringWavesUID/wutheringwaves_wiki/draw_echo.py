@@ -158,7 +158,7 @@ async def draw_wiki_echo(echo_name: str):
         if result:
             return result
     except Exception as e:
-        logger.warning(f"[鸣潮] 声骸图鉴HTML渲染失败，回退到PIL: {e}")
+        logger.warning(f"[鸣潮·百科声骸] 声骸图鉴HTML渲染失败，回退到PIL: {e}")
 
     # 回退到PIL绘制
     return await _draw_wiki_echo_pil(echo_name)

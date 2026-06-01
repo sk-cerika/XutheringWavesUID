@@ -15,10 +15,8 @@ from gsuid_core.models import Event
 from .model import WWUIDGacha
 from ..version import XutheringWavesUID_version
 from ..utils.api.model import GachaLog
-from ..utils.constants import WAVES_GAME_ID
 from ..utils.util import get_hide_uid_pref, hide_uid
 from ..utils.waves_api import waves_api
-from ..utils.database.models import WavesUser
 from .model_for_waves_plugin import WavesPluginGacha
 from ..utils.resource.RESOURCE_PATH import GACHA_BACKUP_PATH, PLAYER_PATH
 
@@ -80,12 +78,21 @@ def find_longest_common_subarray_indices(
     return (a_end - length + 1, a_end), (b_end - length + 1, b_end)
 
 
-# 根据最长公共子串递归合并两个GachaLog列表，不去重，按time排序
+# 根据最长公共子串递归合并两个GachaLog列表，按time排序
 def merge_gacha_logs_by_common_subarray(a: List[GachaLog], b: List[GachaLog]) -> List[GachaLog]:
     common_indices = find_longest_common_subarray_indices(a, b)
     if not common_indices:
+        # 无公共子串：a/b 两侧均无 match_key 相等的元素，但任一侧自身可能含重复，按 match_key 保序去重
+        seen = set()
+        merged = []
+        for log in a + b:
+            key = log.match_key()
+            if key in seen:
+                continue
+            seen.add(key)
+            merged.append(log)
         return sorted(
-            a + b,
+            merged,
             key=lambda log: datetime.strptime(log.time, "%Y-%m-%d %H:%M:%S"),
             reverse=True,
         )
@@ -145,7 +152,7 @@ async def get_new_gachalog_for_file(
     if str(full_data) == str(import_data):
         for gacha_name, logs in full_data.items():
             new[gacha_name] = list(logs)
-            new_count[gacha_name] = len(logs)
+            new_count[gacha_name] = 0
         return None, new, new_count
 
     for cardPoolType, item in import_data.items():
@@ -279,10 +286,8 @@ async def save_gachalogs(
     if isinstance(code, str) or not gachalogs_new:
         return code or ERROR_MSG_INVALID_LINK
 
-    if record_id:
-        await save_record_id(ev.user_id, ev.bot_id, uid, record_id)
-        if link_source_data:
-            await save_link_source_gachalogs(uid, record_id, link_source_data)
+    if record_id and link_source_data:
+        await save_link_source_gachalogs(uid, record_id, link_source_data)
 
     # 获取当前时间
     current_time = datetime.now().strftime("%Y-%m-%d %H-%M-%S")
@@ -298,7 +303,7 @@ async def save_gachalogs(
 
                 # 如果第 i-1 个的时间小于第 i 个，说明顺序不对，舍弃 i-1 及之前的所有记录
                 if time_prev < time_current:
-                    logger.warning(f"[{gacha_name}] 发现时间顺序异常，舍弃索引 {i - 1} 及之前的 {i} 条记录")
+                    logger.warning(f"[鸣潮·抽卡导入] 卡池[{gacha_name}] 发现时间顺序异常，舍弃索引 {i - 1} 及之前的 {i} 条记录")
                     gachalogs_new[gacha_name] = logs[i:]
                     break
 
@@ -317,6 +322,9 @@ async def save_gachalogs(
     vo = msgspec.to_builtins(result)
     async with aiofiles.open(gachalogs_path, "w", encoding="UTF-8") as file:
         await file.write(json.dumps(vo, ensure_ascii=False))
+
+    # 失效 stats 缓存：下次抽卡记录/抽卡排行查询时 lazy 重建
+    (path / "gachaStats.json").unlink(missing_ok=True)
 
     # 计算数据
     all_add = sum(gachalogs_count_add.values())
@@ -339,22 +347,6 @@ async def save_gachalogs(
     return im
 
 
-async def save_record_id(user_id, bot_id, uid, record_id):
-    user = await WavesUser.get_user_by_attr(user_id, bot_id, "uid", uid, game_id=WAVES_GAME_ID)
-    if user:
-        if user.record_id == record_id:
-            return
-        await WavesUser.update_data_by_data(
-            select_data={
-                "user_id": user_id,
-                "bot_id": bot_id,
-                "uid": uid,
-                "game_id": WAVES_GAME_ID,
-            },
-            update_data={"record_id": record_id},
-        )
-    else:
-        await WavesUser.insert_data(user_id, bot_id, record_id=record_id, uid=uid, game_id=WAVES_GAME_ID)
 
 
 async def import_gachalogs(ev: Event, history_url: str, type: str, uid: str, force_overwrite=False) -> str:

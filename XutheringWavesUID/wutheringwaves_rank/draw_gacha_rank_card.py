@@ -12,6 +12,7 @@ from gsuid_core.utils.image.convert import convert_img
 
 from .rank_avatar import get_avatar
 from .rank_badge import draw_rank_badge
+from ._permissions import get_rank_token_condition, filter_active_group_users
 from ..utils.image import (
     RED,
     GREY,
@@ -98,85 +99,16 @@ async def get_all_gacha_rank_info(
 
                 rankInfoList.append(rankInfo)
             except Exception as e:
-                logger.debug(f"获取用户{uid}抽卡排行数据失败: {e}")
+                logger.debug(f"[鸣潮·唤取排行] 获取 uid={uid} 数据失败: {e}")
                 continue
 
     return rankInfoList
 
 
-async def get_gacha_rank_token_condition(ev) -> Tuple[bool, Dict[Tuple[str, str], str]]:
-    """检查抽卡排行的权限配置，并返回登录用户映射"""
-    tokenLimitFlag = False
-    wavesTokenUsersMap: Dict[Tuple[str, str], str] = {}
-
-    # 群组 不限制token
-    WavesRankNoLimitGroup = WutheringWavesConfig.get_config("WavesRankNoLimitGroup").data
-    if ev.group_id and WavesRankNoLimitGroup and ev.group_id in WavesRankNoLimitGroup:
-        return tokenLimitFlag, wavesTokenUsersMap
-
-    # 群组 自定义的 + 全局 主人定义的
-    WavesRankUseTokenGroup = WutheringWavesConfig.get_config("WavesRankUseTokenGroup").data
-    RankUseToken = WutheringWavesConfig.get_config("RankUseToken").data
-    if (ev.group_id and WavesRankUseTokenGroup and ev.group_id in WavesRankUseTokenGroup) or RankUseToken:
-        wavesTokenUsers = await WavesUser.get_waves_all_user()
-        wavesTokenUsersMap = {(w.user_id, w.uid): w.cookie for w in wavesTokenUsers}
-        tokenLimitFlag = True
-
-    return tokenLimitFlag, wavesTokenUsersMap
-
-
-async def filter_active_group_users(
-    users: List[WavesBind],
-    bot_id: str,
-    bot_self_id: Optional[str] = None,
-) -> List[WavesBind]:
-    active_days = WutheringWavesConfig.get_config("ActiveUserDays").data
-    if not users or not active_days:
-        return users
-
-    fallback_platform = bot_id
-    fallback_bot_self_id = bot_self_id or ""
-    user_pairs = {
-        (user.user_id, user.bot_id or fallback_platform, fallback_bot_self_id)
-        for user in users
-        if user.user_id
-    }
-    if not user_pairs:
-        return []
-
-    semaphore = asyncio.Semaphore(50)
-
-    async def check(user_id: str, platform: str, check_bot_self_id: str):
-        async with semaphore:
-            try:
-                import time
-
-                last_active_time = await WavesUserActivity.get_user_last_active_time(
-                    user_id, platform, check_bot_self_id
-                )
-                current_time = int(time.time())
-                threshold_time = current_time - (active_days * 24 * 60 * 60)
-                if last_active_time is None:
-                    is_active = False
-                elif last_active_time < threshold_time:
-                    is_active = False
-                else:
-                    is_active = True
-            except Exception:
-                is_active = False
-            return user_id, is_active
-
-    results = await asyncio.gather(
-        *(check(user_id, platform, check_bot_self_id) for user_id, platform, check_bot_self_id in user_pairs)
-    )
-    active_user_ids = {user_id for user_id, is_active in results if is_active}
-    return [user for user in users if user.user_id in active_user_ids]
-
-
 async def draw_gacha_rank_card(bot, ev: Event) -> Union[str, bytes]:
     """绘制抽卡排行"""
     # 检查权限配置
-    tokenLimitFlag, wavesTokenUsersMap = await get_gacha_rank_token_condition(ev)
+    tokenLimitFlag, wavesTokenUsersMap = await get_rank_token_condition(ev)
 
     # 获取配置的最小抽数阈值
     from ..wutheringwaves_config.gacha_config import get_group_gacha_min
@@ -254,13 +186,19 @@ async def draw_gacha_rank_card(bot, ev: Event) -> Union[str, bytes]:
     results = await asyncio.gather(*tasks)
 
     active_filter = WutheringWavesConfig.get_config("RankActiveFilterGroup").data
-    card_img = await _compose_gacha_rank(rankInfoList_display, results, self_uid, min_pull, active_filter)
+    if sort_gacha_num:
+        mode_label = "·抽数"
+    elif sort_reverse:
+        mode_label = "·非"
+    else:
+        mode_label = "·欧"
+    card_img = await _compose_gacha_rank(rankInfoList_display, results, self_uid, min_pull, active_filter, mode_label)
     card_img = await convert_img(card_img)
     return card_img
 
 
 @to_thread
-def _compose_gacha_rank(rankInfoList_display, results, self_uid, min_pull, active_filter):
+def _compose_gacha_rank(rankInfoList_display, results, self_uid, min_pull, active_filter, mode_label: str = ""):
     width = 1000
     text_bar_height = 130
     item_spacing = 120
@@ -300,7 +238,7 @@ def _compose_gacha_rank(rankInfoList_display, results, self_uid, min_pull, activ
     icon = icon.resize((128, 128))
     title_bg.paste(icon, (60, 240), icon)
 
-    title_text = "#抽卡群排行"
+    title_text = f"#抽卡群排行{mode_label}"
     title_bg_draw = ImageDraw.Draw(title_bg)
     title_bg_draw.text((220, 290), title_text, "white", waves_font_58, "lm")
     time_str = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())

@@ -3,7 +3,7 @@ import random
 import string
 import asyncio
 import inspect
-from typing import Any, Dict, List, Union, Literal, Mapping, Optional
+from typing import Any, Dict, List, Tuple, Union, Literal, Mapping, Optional
 
 import aiohttp
 from gsuid_core.logger import logger
@@ -99,7 +99,7 @@ class WavesApi:
     def __init__(self):
         self.captcha_solver = get_solver()
         if self.captcha_solver:
-            logger.success(f"使用过码器: {self.captcha_solver.get_name()}")
+            logger.success(f"[鸣潮·API] 使用过码器: {self.captcha_solver.get_name()}")
 
     async def get_session(self, proxy: Optional[str] = None) -> aiohttp.ClientSession:
         key = f"{proxy or 'no_proxy'}"
@@ -134,7 +134,7 @@ class WavesApi:
     async def refresh_bat_token(self, waves_user: WavesUser):
         success, access_token = await self.get_request_token(waves_user.uid, waves_user.cookie, waves_user.did)
         if not success:
-            return waves_user
+            return None  # bat refresh 失败, caller 据此区分成功/失败
 
         waves_user.bat = access_token
         await WavesUser.update_data_by_data(
@@ -184,6 +184,51 @@ class WavesApi:
             # 兜底
             return False, generate_random_jwt_token()
 
+    async def check_self_login(
+        self, uid: str, user_id: str, bot_id: str
+    ) -> Tuple[Optional[str], Optional[str]]:
+        """检查 self CK 并透传错误。
+
+        Returns: (cookie, error_msg)
+          (cookie, None)    成功 (含维护中静默继续用旧 ck)
+          (None, error)     ck 失效 / 网络异常 / 异常, 上层透传 error 给用户
+          (None, None)      未绑定 cookie, 上层报 WAVES_CODE_102
+        """
+        try:
+            waves_user = await WavesUser.select_waves_user(uid, user_id, bot_id, game_id=WAVES_GAME_ID)
+            if not waves_user or not waves_user.cookie:
+                return None, None
+            if self.is_net(uid):
+                return None, None  # 国际服走 launcher SDK 链路, 不走 self ck
+            if waves_user.status == "无效":
+                return None, "登录已过期，请重新登录"
+
+            data = await self.login_log(uid, waves_user.cookie)
+            if not data.success:
+                await data.mark_cookie_invalid(uid, waves_user.cookie)
+                return None, data.throw_msg() or "登录已过期"
+
+            data = await self.refresh_data(uid, waves_user.cookie)
+            if not data.success:
+                if data.is_server_maintenance:
+                    logger.warning(f"[鸣潮·API] 维护中 uid={uid}")
+                    return None, data.throw_msg() or "服务器维护中，请稍后再试"
+                if data.is_bat_token_invalid:
+                    refreshed = await self.refresh_bat_token(waves_user)
+                    if refreshed:
+                        await WavesUser.update_last_used_time(uid, user_id, bot_id, game_id=WAVES_GAME_ID)
+                        return refreshed.cookie, None
+                    # bat 失效且 refresh 也失败: 原 cookie 可能仍有效, 不 mark_invalid
+                    return None, "登录态过期，请重新登录"
+                await data.mark_cookie_invalid(uid, waves_user.cookie)
+                return None, data.throw_msg() or "登录已过期"
+
+            await WavesUser.update_last_used_time(uid, user_id, bot_id, game_id=WAVES_GAME_ID)
+            return waves_user.cookie, None
+        except Exception as e:
+            logger.exception(f"[鸣潮·登录检查] uid={uid}: {e}")
+            return None, "网络异常，请稍后重试"
+
     async def get_self_waves_ck(self, uid: str, user_id: str, bot_id: str) -> Optional[str]:
         # 返回空串 表示绑定已失效
         waves_user = await WavesUser.select_waves_user(uid, user_id, bot_id, game_id=WAVES_GAME_ID)
@@ -207,7 +252,7 @@ class WavesApi:
         data = await self.refresh_data(uid, waves_user.cookie)
         if not data.success:
             if data.is_server_maintenance:
-                logger.warning(f"[鸣潮] 官方系统维护中，跳过刷新，UID: {uid}")
+                logger.warning(f"[鸣潮·API] 官方系统维护中，跳过刷新，UID: {uid}")
                 await WavesUser.update_last_used_time(uid, user_id, bot_id, game_id=WAVES_GAME_ID)
                 return waves_user.cookie
             if data.is_bat_token_invalid:
@@ -336,7 +381,7 @@ class WavesApi:
                 with open(base_info_path / f"{roleId}.json", "w", encoding="utf-8") as f:
                     f.write(json.dumps(info.model_dump(), ensure_ascii=False, indent=4))
             except Exception as e:
-                logger.error(f"获取基础信息失败，返回缓存数据 {e}")
+                logger.error(f"[鸣潮·API] 获取基础信息失败，返回缓存数据 {e}")
                 with open(CACHE_PATH / "base_info" / f"{roleId}.json", "r", encoding="utf-8") as f:
                     info = json.load(f)
                 info = KuroApiResp(**info)
@@ -386,7 +431,7 @@ class WavesApi:
                 with open(role_info_path / f"{roleId}.json", "w", encoding="utf-8") as f:
                     f.write(json.dumps(role_info.model_dump(), ensure_ascii=False, indent=4))
             except Exception as e:
-                logger.error(f"获取基础信息失败，返回缓存数据 {e}")
+                logger.error(f"[鸣潮·API] 获取基础信息失败，返回缓存数据 {e}")
                 with open(CACHE_PATH / "role_info" / f"{roleId}.json", "r", encoding="utf-8") as f:
                     role_info = json.load(f)
                 role_info = KuroApiResp(**role_info)
@@ -427,7 +472,7 @@ class WavesApi:
                 with open(role_detail_path / f"{roleId}_{charId}.json", "w", encoding="utf-8") as f:
                     f.write(json.dumps(role_detail.model_dump(), ensure_ascii=False, indent=4))
             except Exception as e:
-                logger.error(f"获取角色详情失败，返回缓存数据 {e}")
+                logger.error(f"[鸣潮·API] 获取角色详情失败，返回缓存数据 {e}")
                 with open(CACHE_PATH / "role_detail" / f"{roleId}_{charId}.json", "r", encoding="utf-8") as f:
                     role_detail = json.load(f)
                 role_detail = KuroApiResp(**role_detail)
@@ -454,7 +499,7 @@ class WavesApi:
                 with open(calabash_data_path / f"{roleId}.json", "w", encoding="utf-8") as f:
                     f.write(json.dumps(calabash_data.model_dump(), ensure_ascii=False, indent=4))
             except Exception as e:
-                logger.error(f"获取数据坞失败，返回缓存数据 {e}")
+                logger.error(f"[鸣潮·API] 获取数据坞失败，返回缓存数据 {e}")
                 with open(CACHE_PATH / "calabash_data" / f"{roleId}.json", "r", encoding="utf-8") as f:
                     calabash_data = json.load(f)
                 calabash_data = KuroApiResp(**calabash_data)
@@ -488,7 +533,7 @@ class WavesApi:
                 with open(explore_data_path / f"{roleId}.json", "w", encoding="utf-8") as f:
                     f.write(json.dumps(explore_data.model_dump(), ensure_ascii=False, indent=4))
             except Exception as e:
-                logger.error(f"获取探索度失败，返回缓存数据 {e}")
+                logger.error(f"[鸣潮·API] 获取探索度失败，返回缓存数据 {e}")
                 with open(CACHE_PATH / "explore_data" / f"{roleId}.json", "r", encoding="utf-8") as f:
                     explore_data = json.load(f)
                 explore_data = KuroApiResp(**explore_data)
@@ -515,7 +560,7 @@ class WavesApi:
                 with open(challenge_data_path / f"{roleId}.json", "w", encoding="utf-8") as f:
                     f.write(json.dumps(challenge_data.model_dump(), ensure_ascii=False, indent=4))
             except Exception as e:
-                logger.error(f"获取全息数据失败，返回缓存数据 {e}")
+                logger.error(f"[鸣潮·API] 获取全息数据失败，返回缓存数据 {e}")
                 with open(CACHE_PATH / "challenge_data" / f"{roleId}.json", "r", encoding="utf-8") as f:
                     challenge_data = json.load(f)
                 challenge_data = KuroApiResp(**challenge_data)
@@ -541,7 +586,7 @@ class WavesApi:
                 with open(abyss_data_path / f"{roleId}.json", "w", encoding="utf-8") as f:
                     f.write(json.dumps(abyss_data.model_dump(), ensure_ascii=False, indent=4))
             except Exception as e:
-                logger.error(f"获取深渊数据失败，返回缓存数据 {e}")
+                logger.error(f"[鸣潮·API] 获取深渊数据失败，返回缓存数据 {e}")
                 with open(CACHE_PATH / "abyss_data" / f"{roleId}.json", "r", encoding="utf-8") as f:
                     abyss_data = json.load(f)
                 abyss_data = KuroApiResp(**abyss_data)
@@ -568,7 +613,7 @@ class WavesApi:
                 with open(abyss_index_path / f"{roleId}.json", "w", encoding="utf-8") as f:
                     f.write(json.dumps(abyss_index.model_dump(), ensure_ascii=False, indent=4))
             except Exception as e:
-                logger.error(f"获取深渊索引失败，返回缓存数据 {e}")
+                logger.error(f"[鸣潮·API] 获取深渊索引失败，返回缓存数据 {e}")
                 with open(CACHE_PATH / "abyss_index" / f"{roleId}.json", "r", encoding="utf-8") as f:
                     abyss_index = json.load(f)
                 abyss_index = KuroApiResp(**abyss_index)
@@ -595,7 +640,7 @@ class WavesApi:
                 with open(slash_index_path / f"{roleId}.json", "w", encoding="utf-8") as f:
                     f.write(json.dumps(slash_index.model_dump(), ensure_ascii=False, indent=4))
             except Exception as e:
-                logger.error(f"获取冥海索引失败，返回缓存数据 {e}")
+                logger.error(f"[鸣潮·API] 获取冥海索引失败，返回缓存数据 {e}")
                 with open(CACHE_PATH / "slash_index" / f"{roleId}.json", "r", encoding="utf-8") as f:
                     slash_index = json.load(f)
                 slash_index = KuroApiResp(**slash_index)
@@ -622,7 +667,7 @@ class WavesApi:
                 with open(slash_detail_path / f"{roleId}.json", "w", encoding="utf-8") as f:
                     f.write(json.dumps(slash_detail.model_dump(), ensure_ascii=False, indent=4))
             except Exception as e:
-                logger.error(f"获取冥海详情失败，返回缓存数据 {e}")
+                logger.error(f"[鸣潮·API] 获取冥海详情失败，返回缓存数据 {e}")
                 with open(CACHE_PATH / "slash_detail" / f"{roleId}.json", "r", encoding="utf-8") as f:
                     slash_detail = json.load(f)
                 slash_detail = KuroApiResp(**slash_detail)
@@ -649,7 +694,7 @@ class WavesApi:
                 with open(matrix_index_path / f"{roleId}.json", "w", encoding="utf-8") as f:
                     f.write(json.dumps(matrix_index.model_dump(), ensure_ascii=False, indent=4))
             except Exception as e:
-                logger.error(f"获取矩阵索引失败，返回缓存数据 {e}")
+                logger.error(f"[鸣潮·API] 获取矩阵索引失败，返回缓存数据 {e}")
                 with open(CACHE_PATH / "matrix_index" / f"{roleId}.json", "r", encoding="utf-8") as f:
                     matrix_index = json.load(f)
                 matrix_index = KuroApiResp(**matrix_index)
@@ -676,7 +721,7 @@ class WavesApi:
                 with open(matrix_detail_path / f"{roleId}.json", "w", encoding="utf-8") as f:
                     f.write(json.dumps(matrix_detail.model_dump(), ensure_ascii=False, indent=4))
             except Exception as e:
-                logger.error(f"获取矩阵详情失败，返回缓存数据 {e}")
+                logger.error(f"[鸣潮·API] 获取矩阵详情失败，返回缓存数据 {e}")
                 with open(CACHE_PATH / "matrix_detail" / f"{roleId}.json", "r", encoding="utf-8") as f:
                     matrix_detail = json.load(f)
                 matrix_detail = KuroApiResp(**matrix_detail)
@@ -739,6 +784,7 @@ class WavesApi:
     @timed_async_cache(
         86400,
         lambda x: x.success and isinstance(x.data, (dict, list)),
+        key=lambda self, token: "online_list_role",
     )
     async def get_online_list_role(self, token: str):
         """所有的角色列表"""
@@ -750,6 +796,7 @@ class WavesApi:
     @timed_async_cache(
         86400,
         lambda x: x.success and isinstance(x.data, (dict, list)),
+        key=lambda self, token: "online_list_weapon",
     )
     async def get_online_list_weapon(self, token: str):
         """所有的武器列表"""
@@ -761,6 +808,7 @@ class WavesApi:
     @timed_async_cache(
         86400,
         lambda x: x.success and isinstance(x.data, (dict, list)),
+        key=lambda self, token: "online_list_phantom",
     )
     async def get_online_list_phantom(self, token: str):
         """所有的声骸列表"""
@@ -1053,7 +1101,7 @@ class WavesApi:
                     except Exception:
                         pass
 
-                logger.debug(f"url:[{url}] params:[{params}] headers:[{header}] data:[{req_data}] raw_data:{raw_data}")
+                logger.debug(f"[鸣潮·API] url:[{url}] params:[{params}] headers:[{header}] data:[{req_data}] raw_data:{raw_data}")
                 # 统一解析为 KuroApiResp
                 return KuroApiResp[Any].model_validate(raw_data)
 
@@ -1064,7 +1112,7 @@ class WavesApi:
                 try:
                     return await self.captcha_solver.solve()
                 except CaptchaError as e:
-                    logger.error(f"url:[{url}] 验证码破解失败: {e}")
+                    logger.error(f"[鸣潮·API] url:[{url}] 验证码破解失败: {e}")
 
             return {"code": WAVES_CODE_999, "data": "验证码破解失败"}
 
@@ -1072,7 +1120,7 @@ class WavesApi:
             try:
                 client = await self.get_session(proxy=proxy_url)
                 if not client:
-                    logger.warning(f"url:[{url}] 获取session失败")
+                    logger.warning(f"[鸣潮·API] url:[{url}] 获取session失败")
                     continue
 
                 response = await do_request(data, client)
@@ -1091,18 +1139,18 @@ class WavesApi:
                     retry_data["geeTestData"] = seccode_data
                     return await do_request(retry_data, client)
                 elif isinstance(res_data, dict) and res_data.get("geeTest") is True:
-                    logger.warning(f"url:[{url}] 触发验证码！")
+                    logger.warning(f"[鸣潮·API] url:[{url}] 触发验证码！")
                     return KuroApiResp(code=WAVES_CODE_104, msg=WAVES_ERROR_CODE[WAVES_CODE_104], data=res_data)
                     #return {"code": WAVES_CODE_999, "msg": "验证码破解失败"}
 
                 return response
 
             except aiohttp.ClientError as e:
-                logger.warning(f"url:[{url}] 网络请求失败, 尝试次数 {attempt + 1}", e)
+                logger.warning(f"[鸣潮·API] url:[{url}] 网络请求失败, 尝试次数 {attempt + 1}", e)
                 if attempt < max_retries - 1:
                     await asyncio.sleep(retry_delay)
             except Exception as e:
-                logger.warning(f"url:[{url}] 发生未知错误, 尝试次数 {attempt + 1}", e)
+                logger.warning(f"[鸣潮·API] url:[{url}] 发生未知错误, 尝试次数 {attempt + 1}", e)
                 if attempt < max_retries - 1:
                     await asyncio.sleep(retry_delay)
 

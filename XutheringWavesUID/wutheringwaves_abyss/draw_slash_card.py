@@ -9,12 +9,12 @@ from gsuid_core.models import Event
 
 from .period import get_slash_period_number
 from ..utils.hint import error_reply
+from ..utils.at_help import safe_sender_avatar
 from ..utils.util import hide_uid, get_hide_uid_pref
 from ..utils.waves_api import waves_api
 from ..utils.error_reply import WAVES_CODE_102
 from ..utils.api.model import (
     SlashDetail,
-    RoleDetailData,
     AccountBaseInfo,
     RoleList,
 )
@@ -35,7 +35,7 @@ from ..utils.image import (
     CHAIN_COLOR,
 )
 from ..utils.ascension.char import get_char_model
-from ..utils.char_info_utils import get_all_roleid_detail_info
+from ..utils.char_info_utils import get_all_roleid_detail_info, lookup_chain
 from .draw_slash_card_pil import (
     draw_slash_img as draw_slash_img_pil,
     get_slash_data,
@@ -47,12 +47,13 @@ from .draw_slash_card_pil import (
 )
 
 
+TEXT_PATH = Path(__file__).parent / "texture2d"
+
+
 async def draw_slash_img(ev: Event, uid: str, user_id: str) -> Union[bytes, str]:
     use_html_render = WutheringWavesConfig.get_config("UseHtmlRender").data
     if not PLAYWRIGHT_AVAILABLE or not use_html_render:
         return await draw_slash_img_pil(ev, uid, user_id)
-
-    TEXT_PATH = Path(__file__).parent / "texture2d"
 
     try:
         is_self_ck, ck = await waves_api.get_ck_result(uid, user_id, ev.bot_id)
@@ -62,20 +63,19 @@ async def draw_slash_img(ev: Event, uid: str, user_id: str) -> Union[bytes, str]
 
         command = ev.command
         text = ev.text.strip()
-        challengeIds = [7, 8, 9, 10, 11, 12] if is_self_ck else [12]
-        if "无尽" in text or "无尽" in command or "wj" in command or "wj" in text:
-            challengeIds = [12]
-        elif "禁忌" in text or "禁忌" in command:
-            challengeIds = [1, 2, 3, 4, 5, 6]
-        elif text.isdigit() and 1 <= int(text) <= 12:
-            challengeIds = [int(text)]
-        else:
-            text = text.replace("层", "")
-            if text.isdigit() and 1 <= int(text) <= 12:
-                challengeIds = [int(text)]
 
         if not is_self_ck:
             challengeIds = [12]
+        else:
+            challengeIds = [7, 8, 9, 10, 11, 12]
+            if "无尽" in text or "无尽" in command or "wj" in command or "wj" in text:
+                challengeIds = [12]
+            elif "禁忌" in text or "禁忌" in command:
+                challengeIds = [1, 2, 3, 4, 5, 6]
+            else:
+                layer = text.replace("层", "").strip()
+                if layer.isdigit() and 1 <= int(layer) <= 12:
+                    challengeIds = [int(layer)]
 
         # 冥海数据
         slash_detail: Union[SlashDetail, str] = await get_slash_data(uid, ck, is_self_ck)
@@ -117,8 +117,7 @@ async def draw_slash_img(ev: Event, uid: str, user_id: str) -> Union[bytes, str]
         avatar_url = pil_to_b64(avatar, quality=75)
 
         # 根据面板数据获取详细信息
-        role_detail_info_map = await get_all_roleid_detail_info(uid)
-        role_detail_info_map = role_detail_info_map if role_detail_info_map else {}
+        role_detail_info_map = await get_all_roleid_detail_info(uid) or {}
 
         # 获取角色信息列表（用于获取角色等级）
         role_info_res = await waves_api.get_role_info(uid, ck)
@@ -166,9 +165,15 @@ async def draw_slash_img(ev: Event, uid: str, user_id: str) -> Union[bytes, str]
                     # 角色数据
                     roles_data = []
                     for slash_role in slash_half.roleList:
+                        # 本地资源未同步时占位 (新角色发布期), 与深塔/全息一致
                         char_model = get_char_model(slash_role.roleId)
                         if char_model is None:
-                            continue
+                            logger.warning(f"[鸣潮·冥海渲染] 本地未识别 roleId={slash_role.roleId}, 使用占位")
+                            char_name = "未知"
+                            char_star = 5
+                        else:
+                            char_name = char_model.name
+                            char_star = char_model.starLevel
 
                         # 获取角色等级
                         role_level = 90
@@ -179,20 +184,15 @@ async def draw_slash_img(ev: Event, uid: str, user_id: str) -> Union[bytes, str]
                         if role:
                             role_level = role.level
 
-                        chain_num = 0
-                        chain_name = ""
-                        if role_detail_info_map and str(slash_role.roleId) in role_detail_info_map:
-                            temp: RoleDetailData = role_detail_info_map[str(slash_role.roleId)]
-                            chain_num = temp.get_chain_num()
-                            chain_name = temp.get_chain_name()
+                        chain_num, chain_name = lookup_chain(role_detail_info_map, slash_role.roleId)
 
                         # 使用本地头像（和PIL版本一致）
                         role_icon_b64 = img_to_b64(get_square_avatar_path(slash_role.roleId), quality=75, bake=True, cover_size=(128, 128))
 
                         roles_data.append({
                             "id": slash_role.roleId,
-                            "name": char_model.name,
-                            "star": char_model.starLevel,
+                            "name": char_name,
+                            "star": char_star,
                             "level": role_level,
                             "chain": chain_num,
                             "chain_name": chain_name,
@@ -253,23 +253,19 @@ async def draw_slash_img(ev: Event, uid: str, user_id: str) -> Union[bytes, str]
             "chain_colors": chain_colors,
         }
 
-        sender_avatar = (ev.sender or {}).get("avatar") or ""
-        if not (isinstance(sender_avatar, str) and sender_avatar.startswith(("http://", "https://"))):
-            sender_avatar = ""
+        sender_avatar = safe_sender_avatar(ev)
 
-        # 保存和上传记录
-        await save_slash_record(uid, slash_detail)
-        await upload_slash_record(is_self_ck, uid, slash_detail, sender_avatar)
-
-        logger.debug("[鸣潮] 准备通过HTML渲染冥海卡片")
+        logger.debug("[鸣潮·冥海渲染] 准备 HTML 渲染")
         img_bytes = await render_html(waves_templates, "abyss/slash_card.html", context)
         if img_bytes:
+            await save_slash_record(uid, slash_detail)
+            await upload_slash_record(is_self_ck, uid, slash_detail, sender_avatar)
             return img_bytes
         else:
-            logger.warning("[鸣潮] Playwright 渲染返回空, 正在回退到 PIL 渲染")
+            logger.warning("[鸣潮·冥海渲染] Playwright 返回空, 回退到 PIL")
             return await draw_slash_img_pil(ev, uid, user_id)
 
     except Exception as e:
-        logger.exception(f"[鸣潮] HTML渲染失败: {e}")
+        logger.exception(f"[鸣潮·冥海渲染] HTML 失败: {e}")
         return await draw_slash_img_pil(ev, uid, user_id)
 

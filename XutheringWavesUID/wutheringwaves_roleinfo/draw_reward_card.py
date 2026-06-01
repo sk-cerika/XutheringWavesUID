@@ -32,7 +32,6 @@ from gsuid_core.data_store import get_res_path
 from .draw_reward_card_pil import draw_reward_img_pil
 
 SCORE_IMAGE_PATH = get_res_path("XutheringWavesUID") / "other" / "reward"
-SCORE_IMAGE_PATH.mkdir(parents=True, exist_ok=True)
 
 
 def _format_reward_text(display_uid: str, score_data: Dict) -> str:
@@ -54,7 +53,7 @@ async def _draw_reward_pil_fallback(
     try:
         return await draw_reward_img_pil(score_data, ev)
     except Exception as e:
-        logger.exception(f"[鸣潮] 积分PIL渲染失败: {e}")
+        logger.exception(f"[鸣潮·奖励卡片] 积分PIL渲染失败: {e}")
         return _format_reward_text(display_uid, score_data)
 
 
@@ -253,7 +252,7 @@ async def draw_reward_img(uid: str, ck: str, ev: Event):
         "total_score": score_data["total_score"],
     }
 
-    logger.debug("[鸣潮] 准备通过HTML渲染积分卡片")
+    logger.debug("[鸣潮·奖励卡片] 准备通过HTML渲染积分卡片")
     try:
         img_bytes = await render_html(
             waves_templates,
@@ -261,13 +260,13 @@ async def draw_reward_img(uid: str, ck: str, ev: Event):
             context,
         )
     except Exception as e:
-        logger.exception(f"[鸣潮] 积分HTML渲染失败: {e}")
+        logger.exception(f"[鸣潮·奖励卡片] 积分HTML渲染失败: {e}")
         img_bytes = None
 
     if img_bytes:
         return img_bytes
     else:
-        logger.warning("[鸣潮] 积分HTML渲染失败，回退到PIL")
+        logger.warning("[鸣潮·奖励卡片] 积分HTML渲染失败，回退到PIL")
         return await _draw_reward_pil_fallback(
             score_data,
             ev,

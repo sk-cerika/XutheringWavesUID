@@ -1,10 +1,14 @@
 import json
+import os
 import re
+import threading
 from typing import Dict, List
 
 from gsuid_core.logger import logger
 
 from ..utils.resource.RESOURCE_PATH import GUIDE_CONFIG_PATH
+
+_GUIDE_LOCK = threading.Lock()
 
 
 def load_guide_config() -> Dict:
@@ -18,17 +22,20 @@ def load_guide_config() -> Dict:
                 return {}
             return json.loads(content)
     except Exception as e:
-        logger.exception(f"加载攻略配置失败: {e}")
+        logger.exception(f"[鸣潮·配置] 加载攻略配置失败: {e}")
         return {}
 
 
 def save_guide_config(config: Dict) -> bool:
     try:
-        with open(GUIDE_CONFIG_PATH, "w", encoding="utf-8") as f:
-            json.dump(config, f, ensure_ascii=False, indent=2)
+        with _GUIDE_LOCK:
+            tmp = GUIDE_CONFIG_PATH.with_suffix(GUIDE_CONFIG_PATH.suffix + ".tmp")
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(config, f, ensure_ascii=False, indent=2)
+            os.replace(tmp, GUIDE_CONFIG_PATH)
         return True
     except Exception as e:
-        logger.exception(f"保存攻略配置失败: {e}")
+        logger.exception(f"[鸣潮·配置] 保存攻略配置失败: {e}")
         return False
 
 
@@ -38,7 +45,9 @@ def parse_provider_names(names: str) -> List[str]:
     return [p.strip() for p in parts if p.strip()]
 
 
-def get_excluded_providers(group_id: str) -> List[str]:
+def get_excluded_providers(group_id) -> List[str]:
+    if not group_id:
+        return []
     config = load_guide_config()
-    providers = config.get(group_id, [])
+    providers = config.get(str(group_id), [])
     return [p.strip() for p in providers if p and p.strip()]

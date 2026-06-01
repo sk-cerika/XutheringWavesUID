@@ -70,7 +70,7 @@ def build() -> None:
                     bucket[h] = p
                     _by_hash.setdefault(h, []).append((t, char_id, p))
                     total += 1
-    logger.info(f"[鸣潮] 自定义图 hash 索引已构建: {total} 张")
+    logger.info(f"[鸣潮·卡片索引] 自定义图 hash 索引已构建: {total} 张")
 
 
 def add(t: str, char_id: str, path: Path) -> None:
@@ -221,7 +221,16 @@ def lookup_in_pair(t: str, char_id: str, hash_id: str) -> Optional[Path]:
 
 
 def list_dir(t: str, char_id: str) -> Dict[str, Path]:
-    """返回 (类型, 角色) 下 hash → Path 的快照副本。"""
-    with _lock:
-        bucket = _by_dir.get((t, char_id))
-        return dict(bucket) if bucket else {}
+    """返回 (类型, 角色) 下 hash → Path 的快照副本; 与 find/lookup_in 一样空时自愈重建并核盘。"""
+    def _snapshot() -> Dict[str, Path]:
+        with _lock:
+            bucket = _by_dir.get((t, char_id))
+            return dict(bucket) if bucket else {}
+
+    snapshot = _snapshot()
+    alive = {h: p for h, p in snapshot.items() if p.exists()}
+    if alive:
+        return alive
+    _ensure_fresh_for_miss((t, char_id, "_list"), lambda: bool(_by_dir.get((t, char_id))))
+    snapshot = _snapshot()
+    return {h: p for h, p in snapshot.items() if p.exists()}

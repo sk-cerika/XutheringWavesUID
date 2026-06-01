@@ -33,7 +33,7 @@ from .model import WWUIDGacha, WWUIDGachaInfo, WWUIDGachaItem
 turn_kuro_gacha_type = {
     "角色活动唤取": "角色精准调谐",
     "武器活动唤取": "武器精准调谐",
-    "角色常驻换取": "角色调谐（常驻池）",
+    "角色常驻唤取": "角色调谐（常驻池）",
     "武器常驻唤取": "武器调谐（常驻池）",
 }
 

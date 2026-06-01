@@ -1,6 +1,30 @@
+import re
 import time
 from typing import List, Union
 from datetime import datetime
+
+
+_DANGEROUS_TAG_RE = re.compile(
+    r"<(script|iframe|object|embed|link|meta|form)[^>]*>.*?</\1>"
+    r"|<(script|iframe|object|embed|link|meta|form|input|button)[^>]*/?>",
+    re.IGNORECASE | re.DOTALL,
+)
+_ON_ATTR_RE = re.compile(r"\son[a-z]+\s*=\s*(\".*?\"|'.*?'|[^\s>]+)", re.IGNORECASE)
+_JS_PROTO_RE = re.compile(r"(href|src|action|formaction)\s*=\s*([\"'])\s*javascript:[^\"']*\2", re.IGNORECASE)
+
+
+def _sanitize_ann_html(html: str) -> str:
+    """剔除公告 HTML 中常见的危险标签/事件属性/javascript: 协议。
+
+    库洛公告是可信源, 但 ann_card.html 用 `safe` 注入, 保留一层 belt-and-suspenders
+    防御以避免 author 字段或上游 CMS 异常时被注入。
+    """
+    if not html:
+        return html
+    cleaned = _DANGEROUS_TAG_RE.sub("", html)
+    cleaned = _ON_ATTR_RE.sub("", cleaned)
+    cleaned = _JS_PROTO_RE.sub(r'\1=\2#\2', cleaned)
+    return cleaned
 
 from gsuid_core.logger import logger
 from ..utils.waves_api import waves_api
@@ -26,11 +50,11 @@ async def ann_list_card(user_id: str = None) -> bytes:
         return await ann_list_card_pil(user_id)
 
     try:
-        logger.debug("[鸣潮] 正在获取公告列表...")
+        logger.debug("[鸣潮·公告] 正在获取公告列表...")
 
         user_info = None
         if user_id:
-            logger.debug(f"[鸣潮] 正在获取用户 {user_id} 的公告列表...")
+            logger.debug(f"[鸣潮·公告] 正在获取用户 {user_id} 的公告列表...")
             ann_list = []
             res = await waves_api.get_bbs_list(user_id, pageIndex=1, pageSize=9)
             if res.success:
@@ -163,16 +187,16 @@ async def ann_list_card(user_id: str = None) -> bytes:
             "user_ip_region": user_ip_region
         }
 
-        logger.debug(f"[鸣潮] 准备通过HTML渲染列表, sections: {len(sections)}")
+        logger.debug(f"[鸣潮·公告] 准备通过HTML渲染列表, sections: {len(sections)}")
         img_bytes = await render_html(waves_templates, "ann_card.html", context)
         if img_bytes:
             return img_bytes
         else:
-            logger.warning("[鸣潮] Playwright 渲染返回空, 正在回退到 PIL 渲染")
+            logger.warning("[鸣潮·公告] Playwright 渲染返回空, 正在回退到 PIL 渲染")
             return await ann_list_card_pil(user_id)
 
     except Exception as e:
-        logger.exception(f"[鸣潮] HTML渲染失败: {e}")
+        logger.exception(f"[鸣潮·公告] HTML渲染失败: {e}")
         return await ann_list_card_pil(user_id)
 
 
@@ -182,7 +206,7 @@ async def ann_detail_card(ann_id: Union[int, str], is_check_time=False) -> Union
         return await ann_detail_card_pil(ann_id, is_check_time)
 
     try:
-        logger.debug(f"[鸣潮] 正在获取公告详情: {ann_id}")
+        logger.debug(f"[鸣潮·公告] 正在获取公告详情: {ann_id}")
         ann_list = await waves_api.get_ann_list(True)
         if not ann_list:
             raise Exception("获取游戏公告失败,请检查接口是否正常")
@@ -232,20 +256,20 @@ async def ann_detail_card(ann_id: Union[int, str], is_check_time=False) -> Union
             from ..utils.image import pic_download_from_url
             from gsuid_core.utils.image.convert import convert_img
 
-            logger.info(f"[鸣潮] 检测到 {len(long_image_urls)} 张超长图片，将单独发送")
+            logger.info(f"[鸣潮·公告] 检测到 {len(long_image_urls)} 张超长图片，将单独发送")
             for img_url in long_image_urls:
                 try:
                     img = await pic_download_from_url(ANN_CARD_PATH, img_url)
                     img_bytes = await convert_img(img)
                     result_images.append(img_bytes)
                 except Exception as e:
-                    logger.warning(f"[鸣潮] 下载超长图片失败: {img_url}, {e}")
+                    logger.warning(f"[鸣潮·公告] 下载超长图片失败: {img_url}, {e}")
 
             post_content = [
                 item for item in post_content
                 if not (item.get("contentType") == 2 and item.get("url") in long_image_urls)
             ]
-            logger.info(f"[鸣潮] 过滤后剩余 {len(post_content)} 个内容项")
+            logger.info(f"[鸣潮·公告] 过滤后剩余 {len(post_content)} 个内容项")
 
         processed_content = []
         for item in post_content:
@@ -253,7 +277,7 @@ async def ann_detail_card(ann_id: Union[int, str], is_check_time=False) -> Union
             if ctype == 1:
                 processed_content.append({
                     "contentType": 1,
-                    "content": item.get("content", "")
+                    "content": _sanitize_ann_html(item.get("content", "")),
                 })
             elif ctype == 2 and "url" in item:
                 img_url = item["url"]
@@ -291,20 +315,20 @@ async def ann_detail_card(ann_id: Union[int, str], is_check_time=False) -> Union
             "footer_b64": get_footer_b64()
         }
 
-        logger.debug(f"[鸣潮] 准备通过HTML渲染详情, content items: {len(processed_content)}")
+        logger.debug(f"[鸣潮·公告] 准备通过HTML渲染详情, content items: {len(processed_content)}")
         img_bytes = await render_html(waves_templates, "ann_card.html", context)
         if img_bytes:
             if result_images:
                 result_images = [img_bytes] + result_images
-                logger.info(f"[鸣潮] 返回 {len(result_images)} 张图片（包含 {len(long_image_urls)} 张超长图和1张公告卡片）")
+                logger.info(f"[鸣潮·公告] 返回 {len(result_images)} 张图片（包含 {len(long_image_urls)} 张超长图和1张公告卡片）")
                 return result_images
             return img_bytes
         else:
-            logger.warning("[鸣潮] Playwright 渲染返回空, 正在回退到 PIL 渲染")
+            logger.warning("[鸣潮·公告] Playwright 渲染返回空, 正在回退到 PIL 渲染")
             return await ann_detail_card_pil(ann_id, is_check_time)
 
     except Exception as e:
-        logger.exception(f"[鸣潮] HTML渲染失败: {e}")
+        logger.exception(f"[鸣潮·公告] HTML渲染失败: {e}")
         return await ann_detail_card_pil(ann_id, is_check_time)
 
 

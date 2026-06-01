@@ -231,11 +231,16 @@ async def api_image(
 # ------------------------- 临时上传 / 裁剪 -------------------------
 
 
+_MAX_UPLOAD_BYTES = 100 * 1024 * 1024  # 100 MB 防手滑
+
+
 async def _stage_upload(file: UploadFile) -> Optional[dict]:
-    """读 + 校验 + 落盘一份 tmp; 失败返回 None。"""
+    """读 + 校验 + 落盘一份 tmp; 失败返回 None；超大抛 413。"""
     raw = await file.read()
     if not raw:
         return None
+    if len(raw) > _MAX_UPLOAD_BYTES:
+        raise HTTPException(413, f"file too large (>{_MAX_UPLOAD_BYTES // 1024 // 1024}MB)")
     try:
         with Image.open(BytesIO(raw)) as im:
             im.load()
@@ -376,6 +381,56 @@ async def api_tmp_restore(payload: dict, _: None = Depends(require_auth)):
     return {"token": token, "width": w, "height": h, "size": current.stat().st_size}
 
 
+def _save_resized(p: Path, im: Image.Image) -> None:
+    out = BytesIO()
+    suffix = p.suffix.lower()
+    if suffix in (".jpg", ".jpeg"):
+        im.convert("RGB").save(out, "JPEG", quality=92)
+    elif suffix == ".webp":
+        im.save(out, "WEBP", quality=90)
+    else:
+        im.save(out, "PNG")
+    p.write_bytes(out.getvalue())
+
+
+@app.post("/waves/panel-edit/api/tmp/resize")
+async def api_tmp_resize(payload: dict, _: None = Depends(require_auth)):
+    """按 scale 倍率等比缩放 tmp 图; current 与 original 同步缩放。"""
+    token = payload.get("token")
+    if not st.is_safe_token(token):
+        raise HTTPException(400, "invalid token")
+    try:
+        scale = float(payload.get("scale"))
+    except (TypeError, ValueError):
+        raise HTTPException(400, "scale required")
+    if not (0.05 <= scale <= 8.0):
+        raise HTTPException(400, "scale out of range (0.05 - 8.0)")
+
+    current, original = st.find_tmp_files(token)
+    if current is None or original is None:
+        raise HTTPException(404, "tmp not found")
+
+    def _scale(p: Path):
+        with Image.open(p) as im:
+            im.load()
+            nw = max(1, int(round(im.width * scale)))
+            nh = max(1, int(round(im.height * scale)))
+            if max(nw, nh) > _MAX_CROP_DIM or nw * nh > _MAX_CROP_PIXELS:
+                raise HTTPException(400, "resize result too large")
+            resized = im.resize((nw, nh), Image.Resampling.LANCZOS)
+        _save_resized(p, resized)
+        return nw, nh
+
+    ow, oh = _scale(original)
+    cw, ch = _scale(current)
+    return {
+        "token": token,
+        "width": cw, "height": ch,
+        "source_width": ow, "source_height": oh,
+        "size": current.stat().st_size,
+    }
+
+
 @app.post("/waves/panel-edit/api/tmp/discard")
 async def api_tmp_discard(payload: dict, _: None = Depends(require_auth)):
     token = payload.get("token")
@@ -483,7 +538,7 @@ async def api_preview(
     访客不渲染 (走 require_auth), 避免占用 Playwright/CPU 资源。
     """
     check_preview_rate(request)
-    from .preview import render_panel_preview, render_mr_preview
+    from .preview import render_panel_preview, render_mr_preview, render_rank_preview
 
     target = st.safe_target_image(type, char_id, name)
     if target is None or not target.is_file():
@@ -492,6 +547,8 @@ async def api_preview(
     try:
         if type == "card":
             data = await render_panel_preview(char_id, target)
+        elif type == "stamina" and renderer == "rank":
+            data = await render_rank_preview(char_id, target)
         else:
             use_html = renderer != "pil"
             role_kind = "bg" if type == "bg" else "stamina"
@@ -515,7 +572,7 @@ async def api_preview_tmp(
 ):
     """裁剪/上传过程中, 用 tmp 图渲染预览。"""
     check_preview_rate(request)
-    from .preview import render_panel_preview, render_mr_preview
+    from .preview import render_panel_preview, render_mr_preview, render_rank_preview
 
     if not st.is_valid_type(type):
         raise HTTPException(400, "invalid type")
@@ -529,6 +586,8 @@ async def api_preview_tmp(
     try:
         if type == "card":
             data = await render_panel_preview(char_id, current)
+        elif type == "stamina" and renderer == "rank":
+            data = await render_rank_preview(char_id, current)
         else:
             use_html = renderer != "pil"
             role_kind = "bg" if type == "bg" else "stamina"

@@ -1,5 +1,15 @@
+import sys
+import types
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Literal, Optional, Tuple, Union
+
+# 锚定类对象: 重 exec 时复用首次定义的类, 保持身份一致
+_STATE_KEY = "__waves_score_state__"
+_state = sys.modules.get(_STATE_KEY)
+if _state is None:
+    _state = types.SimpleNamespace(classes={})
+    sys.modules[_STATE_KEY] = _state  # type: ignore[assignment]
+_SHARED_CLASSES = _state.classes
 
 ApplyBuffsFunc = Callable[[Dict[str, Any], Any], None]
 
@@ -153,3 +163,10 @@ def get_panel_score_grade(score: float) -> str:
         if score >= threshold:
             return label
     return "c"
+
+
+for _cls_name in ("EchoSlotConfig", "ScoreHyperParams", "OptimalSlot", "ScoreReport", "HyperparamsLike"):
+    if _cls_name in _SHARED_CLASSES:
+        globals()[_cls_name] = _SHARED_CLASSES[_cls_name]
+    else:
+        _SHARED_CLASSES[_cls_name] = globals()[_cls_name]

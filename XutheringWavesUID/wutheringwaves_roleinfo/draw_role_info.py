@@ -93,7 +93,7 @@ async def draw_role_img(uid: str, ck: str, ev: Event):
                 {"key": "中型信标", "value": f"{account_info.bigCount}", "highlight": True},
             ]
 
-            for bid, b in enumerate(account_info.treasureBoxList):
+            for bid, b in enumerate(account_info.treasureBoxList or []):
                 base_info_list.append({"key": b.name, "value": f"{b.num}", "highlight": bid % 2})
 
         # 获取详细角色信息
@@ -106,16 +106,12 @@ async def draw_role_img(uid: str, ck: str, ev: Event):
             attribute_img = await get_attribute(role.attributeName)
             attribute_b64 = pil_to_b64(attribute_img) if attribute_img else ""
 
-            role_avatar = None
-            if role.roleSkin and role.roleSkin.quality and role.roleSkin.quality > 3:
-                skin_icon_url = role.roleSkin.skinIcon
-                if skin_icon_url:
-                    role_avatar_b64 = await get_image_b64_with_cache(skin_icon_url, SKIN_IMAGE_PATH, quality=75, cover_size=(128, 128))
-                    if not role_avatar_b64:
-                        role_avatar_b64 = img_to_b64(get_square_avatar_path(role.roleId), quality=75, bake=True, cover_size=(128, 128))
-            else:
-                # 使用默认头像
-                role_avatar_b64 = img_to_b64(get_square_avatar_path(role.roleId), quality=75, bake=True, cover_size=(128, 128))
+            # 默认头像兜底, 高品质皮肤成功时再覆盖
+            role_avatar_b64 = img_to_b64(get_square_avatar_path(role.roleId), quality=75, bake=True, cover_size=(128, 128))
+            if role.roleSkin and role.roleSkin.quality and role.roleSkin.quality > 3 and role.roleSkin.skinIcon:
+                skin_b64 = await get_image_b64_with_cache(role.roleSkin.skinIcon, SKIN_IMAGE_PATH, quality=75, cover_size=(128, 128))
+                if skin_b64:
+                    role_avatar_b64 = skin_b64
 
             # 查找角色详细信息
             if role.roleId in SPECIAL_CHAR_INT:
@@ -182,14 +178,14 @@ async def draw_role_img(uid: str, ck: str, ev: Event):
             "chain_border_colors": chain_border_colors,
         }
 
-        logger.debug("[鸣潮] 准备通过HTML渲染角色卡片")
+        logger.debug("[鸣潮·角色信息] 准备通过HTML渲染角色卡片")
         img_bytes = await render_html(waves_templates, "roleinfo/role_card.html", context)
         if img_bytes:
             return img_bytes
         else:
-            logger.warning("[鸣潮] Playwright 渲染返回空, 正在回退到 PIL 渲染")
+            logger.warning("[鸣潮·角色信息] Playwright 渲染返回空, 正在回退到 PIL 渲染")
             return await draw_role_img_pil(uid, ck, ev)
 
     except Exception as e:
-        logger.exception(f"[鸣潮] HTML渲染失败: {e}")
+        logger.exception(f"[鸣潮·角色信息] HTML渲染失败: {e}")
         return await draw_role_img_pil(uid, ck, ev)

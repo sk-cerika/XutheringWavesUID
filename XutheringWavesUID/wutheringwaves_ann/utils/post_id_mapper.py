@@ -50,7 +50,7 @@ class PostIdMapper:
         self.post_to_id[post_id] = short_id
         self.save()
 
-        logger.debug(f"[PostIdMapper] 创建映射: {short_id} -> {post_id}")
+        logger.debug(f"[鸣潮·公告ID映射] 创建映射: {short_id} -> {post_id}")
         return short_id
 
     def get_post_id(self, short_id: str) -> Optional[str]:
@@ -67,9 +67,9 @@ class PostIdMapper:
                 data = json.load(f)
                 self.id_to_post = data.get("id_to_post", {})
                 self.post_to_id = data.get("post_to_id", {})
-            logger.debug(f"[PostIdMapper] 加载映射: {len(self.id_to_post)} 条")
+            logger.debug(f"[鸣潮·公告ID映射] 加载映射: {len(self.id_to_post)} 条")
         except Exception as e:
-            logger.warning(f"[PostIdMapper] 加载映射失败: {e}")
+            logger.warning(f"[鸣潮·公告ID映射] 加载映射失败: {e}")
 
     def save(self):
         """保存映射到文件"""
@@ -81,7 +81,7 @@ class PostIdMapper:
                     "post_to_id": self.post_to_id,
                 }, f, ensure_ascii=False, indent=2)
         except Exception as e:
-            logger.error(f"[PostIdMapper] 保存映射失败: {e}")
+            logger.error(f"[鸣潮·公告ID映射] 保存映射失败: {e}")
 
 
 _mapper = PostIdMapper()

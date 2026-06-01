@@ -136,9 +136,9 @@ def _build_usage_hint(period_list: PeriodList) -> str:
 
 async def process_uid(uid, ev, period_param: Optional[Union[int, str]]) -> Optional[Union[Dict[str, Any], str]]:
     user_id = ruser_id(ev)
-    ck = await waves_api.get_self_waves_ck(uid, user_id, ev.bot_id)
+    ck, err = await waves_api.check_self_login(uid, user_id, ev.bot_id)
     if not ck:
-        return None
+        return err  # 失效/维护 → 透传, 未绑定 → None 由上层报 102
 
     period_list = await waves_api.get_period_list(uid, ck)
     if not period_list.success or not period_list.data:
@@ -192,8 +192,6 @@ async def process_uid(uid, ev, period_param: Optional[Union[int, str]]) -> Optio
     account_info = await waves_api.get_base_info(uid, ck)
     if not account_info.success or not account_info.data:
         return None
-    if not account_info.data:
-        return f"用户未展示数据, 请尝试【{PREFIX}登录】"
     account_info = AccountBaseInfo.model_validate(account_info.data)
 
     return {
@@ -206,7 +204,7 @@ async def process_uid(uid, ev, period_param: Optional[Union[int, str]]) -> Optio
 
 async def draw_period_img(bot: Bot, ev: Event):
     period_param = ev.text.strip() if ev.text else None
-    logger.info(f"[鸣潮][资源简报]绘图开始: {period_param}")
+    logger.info(f"[鸣潮·资源简报] 绘图开始: {period_param}")
     try:
         uid_list = await WavesBind.get_uid_list_by_game(ruser_id(ev), ev.bot_id)
 
@@ -240,7 +238,7 @@ async def draw_period_img(bot: Bot, ev: Event):
         final_img = await asyncio.to_thread(_compose_period_final_img, images, total_height)
         res = await convert_img(final_img)
     except TypeError:
-        logger.exception("[鸣潮][资源简报]绘图失败!")
+        logger.exception("[鸣潮·资源简报] 绘图失败!")
         res = "你绑定过的UID中可能存在过期CK~请重新绑定一下噢~"
 
     return res
@@ -531,43 +529,6 @@ def get_resource_total(
     return 0
 
 
-def fit_row_tabs(
-    tabs: list[Image.Image],
-    available_width: int,
-    gap: int
-) -> list[Image.Image]:
-    total_width = sum(tab.width for tab in tabs)
-    if total_width == 0:
-        return tabs
-    scale = min(1.0, (available_width - gap * (len(tabs) - 1)) / total_width)
-    if scale >= 0.999:
-        return tabs
-    resized = []
-    for tab in tabs:
-        new_w = max(1, int(tab.width * scale))
-        new_h = max(1, int(tab.height * scale))
-        resized.append(tab.resize((new_w, new_h)))
-    return resized
-
-
-def scale_tabs_to_height(
-    tabs: list[Image.Image],
-    target_height: int
-) -> list[Image.Image]:
-    max_height = max((tab.height for tab in tabs), default=0)
-    if max_height == 0:
-        return tabs
-    scale = min(1.0, target_height / max_height)
-    if scale >= 0.999:
-        return tabs
-    resized = []
-    for tab in tabs:
-        new_w = max(1, int(tab.width * scale))
-        new_h = max(1, int(tab.height * scale))
-        resized.append(tab.resize((new_w, new_h)))
-    return resized
-
-
 def render_resource_tab(bg: Image.Image, name: str, total: int) -> Image.Image:
     draw = ImageDraw.Draw(bg)
     name_x = int(bg.width * 0.36)
@@ -577,24 +538,6 @@ def render_resource_tab(bg: Image.Image, name: str, total: int) -> Image.Image:
     draw.text((name_x, value_y), f"{total}", "black", waves_font_30, "lm")
     return bg
 
-
-def shorten_copywriting(text: str, max_chars: int = 12) -> str:
-    text = text.strip()
-    if len(text) <= max_chars:
-        return text
-    return text[: max_chars - 3] + "..."
-
-
-def draw_tab_copywriting(
-    home_bg: Image.Image,
-    items: list[tuple[int, str]],
-    y: int
-):
-    draw = ImageDraw.Draw(home_bg)
-    for center_x, text in items:
-        if not text:
-            continue
-        draw.text((center_x, y), text, (80, 80, 80), waves_font_20, "mm")
 
 def draw_legend_on_home_bg(
     home_bg: Image.Image,

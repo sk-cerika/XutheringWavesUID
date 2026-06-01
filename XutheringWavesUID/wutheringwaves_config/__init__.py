@@ -170,10 +170,11 @@ async def send_config_ev(bot: Bot, ev: Event):
 
         guide_config = load_guide_config()
 
+        gid = str(ev.group_id)
         if not provider_text:
             # 清空当前群的排除设置
-            if ev.group_id in guide_config:
-                del guide_config[ev.group_id]
+            if gid in guide_config:
+                del guide_config[gid]
                 save_guide_config(guide_config)
             return await _say(bot, at_sender, f"[鸣潮] 群【{ev.group_id}】已清空排除攻略设置")
 
@@ -183,7 +184,7 @@ async def send_config_ev(bot: Bot, ev: Event):
             return await _say(bot, at_sender, "[鸣潮] 未识别到有效的攻略提供方名称")
 
         # 保存配置
-        guide_config[ev.group_id] = providers
+        guide_config[gid] = providers
         save_guide_config(guide_config)
 
         return await _say(

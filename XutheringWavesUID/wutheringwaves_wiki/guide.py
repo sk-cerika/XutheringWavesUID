@@ -34,7 +34,7 @@ async def get_guide(bot: Bot, ev: Event, char_name: str):
         msg = f"[鸣潮] 未找到指定角色, 请检查输入是否正确！"
         return await bot.send(msg)
     
-    logger.info(f"[鸣潮] 开始获取{char_name}图鉴")
+    logger.info(f"[鸣潮·百科攻略] 开始获取{char_name}图鉴")
 
     config = WutheringWavesConfig.get_config("WavesGuide").data
 
@@ -99,11 +99,11 @@ async def get_guide(bot: Bot, ev: Event, char_name: str):
 async def get_guide_pic(guide_path: Path, pattern: re.Pattern, guide_author: str):
     imgs = []
     if not guide_path.is_dir():
-        logger.warning(f"[鸣潮] 攻略路径错误 {guide_path}")
+        logger.warning(f"[鸣潮·百科攻略] 攻略路径错误 {guide_path}")
         return imgs
 
     if not guide_path.exists():
-        logger.warning(f"[鸣潮] 攻略路径不存在 {guide_path}")
+        logger.warning(f"[鸣潮·百科攻略] 攻略路径不存在 {guide_path}")
         return imgs
 
     for file in guide_path.iterdir():
@@ -131,7 +131,7 @@ def resize_for_jpg(img: Image.Image) -> Image.Image:
     scale = min(JPG_MAX_DIMENSION / width, JPG_MAX_DIMENSION / height)
     new_width = int(width * scale)
     new_height = int(height * scale)
-    logger.info(f"[鸣潮] 攻略图尺寸{width}x{height}超过JPG限制，缩放至{new_width}x{new_height}")
+    logger.info(f"[鸣潮·百科攻略] 攻略图尺寸{width}x{height}超过JPG限制，缩放至{new_width}x{new_height}")
     return img.resize((new_width, new_height), Image.Resampling.LANCZOS)
 
 
@@ -158,11 +158,11 @@ def compress_image_to_jpg(img: Image.Image, max_size_mb: int) -> bytes:
         img.save(buffer, format="JPEG", quality=quality)
         result = buffer.getvalue()
         if len(result) <= max_size_bytes:
-            logger.info(f"[鸣潮] 攻略图压缩至quality={quality}, 大小={len(result)/1024/1024:.2f}MB")
+            logger.info(f"[鸣潮·百科攻略] 攻略图压缩至quality={quality}, 大小={len(result)/1024/1024:.2f}MB")
             return result
 
     # 如果降到quality=10仍然超过，返回最后的结果
-    logger.warning(f"[鸣潮] 攻略图压缩至最低质量仍超过{max_size_mb}MB, 当前大小={len(result)/1024/1024:.2f}MB")
+    logger.warning(f"[鸣潮·百科攻略] 攻略图压缩至最低质量仍超过{max_size_mb}MB, 当前大小={len(result)/1024/1024:.2f}MB")
     return result
 
 
@@ -181,7 +181,7 @@ async def process_images_new(_dir: Path):
         img_base64 = f"base64://{b64encode(img_bytes).decode()}"
         imgs.append(img_base64)
     except Exception as e:
-        logger.warning(f"攻略图片读取失败 {_dir}: {e}")
+        logger.warning(f"[鸣潮·百科攻略] 攻略图片读取失败 {_dir}: {e}")
     return imgs
 
 

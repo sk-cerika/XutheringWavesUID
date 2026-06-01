@@ -25,6 +25,21 @@ sv_waves_slash_info = SV("waves查询海墟信息", priority=4)
 sv_waves_matrix_info = SV("waves查询矩阵信息", priority=4)
 
 
+_PERIOD_OFFSETS = {
+    "下一期": 1, "下期": 1, "下下期": 2,
+    "上一期": -1, "上期": -1, "上上期": -2,
+}
+
+
+def resolve_period_offset(period_val: str, current_period: int) -> int:
+    """解析期数描述（数字 / 上一期/下期/上上期/下下期 等）为绝对期数。"""
+    if not period_val:
+        return current_period
+    if period_val.isdigit():
+        return int(period_val)
+    return current_period + _PERIOD_OFFSETS.get(period_val, 0)
+
+
 @sv_waves_guide.on_regex(
     rf"^(?P<wiki_name>{PATTERN})(?P<wiki_type>共鸣链|共鳴鏈|gml|命座|天赋|天賦|技能|jn|图鉴|圖鑑|专武|武器|專武|wiki|介绍|介紹|回路|操作|机制|機制|jz)$",
     block=True,
@@ -87,12 +102,13 @@ async def send_waves_wiki(bot: Bot, ev: Event):
             msg = "[鸣潮] 未找到指定角色, 请先检查输入是否正确！"
         return await bot.send(msg, at_sender)
     else:
+        original_name = wiki_name
         if wiki_type in ("专武", "專武", "武器"):
             wiki_name = wiki_name + "专武"
         img = await draw_wiki_weapon(wiki_name)
         if isinstance(img, str) or not img:
-            echo_name = wiki_name
-            await bot.logger.info(f"[鸣潮] 开始获取{echo_name}wiki")
+            echo_name = original_name
+            await bot.logger.info(f"[鸣潮·百科] 开始获取{echo_name}wiki")
             img = await draw_wiki_echo(echo_name)
 
         if not (isinstance(img, str) or not img):
@@ -195,22 +211,7 @@ Args:
 async def send_tower_challenge_info(bot: Bot, ev: Event):
     """查询深塔挑战信息"""
     period_val = ev.regex_dict.get("period", "") or ev.regex_dict.get("period_force", "") or ev.regex_dict.get("period_pre", "")
-    
-    current_period = get_tower_period_number()
-    target_period = current_period
-    
-    if period_val:
-        if period_val.isdigit():
-            target_period = int(period_val)
-        elif period_val in ("下一期", "下期"):
-            target_period = current_period + 1
-        elif period_val == "下下期":
-            target_period = current_period + 2
-        elif period_val in ("上一期", "上期"):
-            target_period = current_period - 1
-        elif period_val == "上上期":
-            target_period = current_period - 2
-    # If period_val is empty, target_period remains current_period, which is the desired default.
+    target_period = resolve_period_offset(period_val, get_tower_period_number())
 
     im = await draw_tower_challenge_img(ev, target_period)
     if isinstance(im, str):
@@ -234,21 +235,7 @@ Args:
 async def send_slash_challenge_info(bot: Bot, ev: Event):
     """查询海墟挑战信息"""
     period_val = ev.regex_dict.get("period", "") or ev.regex_dict.get("period_force", "") or ev.regex_dict.get("period_pre", "")
-    
-    current_period = get_slash_period_number()
-    target_period = current_period
-    
-    if period_val:
-        if period_val.isdigit():
-            target_period = int(period_val)
-        elif period_val in ("下一期", "下期"):
-            target_period = current_period + 1
-        elif period_val == "下下期":
-            target_period = current_period + 2
-        elif period_val in ("上一期", "上期"):
-            target_period = current_period - 1
-        elif period_val == "上上期":
-            target_period = current_period - 2
+    target_period = resolve_period_offset(period_val, get_slash_period_number())
 
     im = await draw_slash_challenge_img(ev, target_period)
     if isinstance(im, str):
@@ -273,21 +260,7 @@ Args:
 async def send_matrix_challenge_info(bot: Bot, ev: Event):
     """查询矩阵挑战信息"""
     period_val = ev.regex_dict.get("period", "") or ev.regex_dict.get("period_force", "") or ev.regex_dict.get("period_pre", "")
-
-    current_period = get_matrix_period_number()
-    target_period = current_period
-
-    if period_val:
-        if period_val.isdigit():
-            target_period = int(period_val)
-        elif period_val in ("下一期", "下期"):
-            target_period = current_period + 1
-        elif period_val == "下下期":
-            target_period = current_period + 2
-        elif period_val in ("上一期", "上期"):
-            target_period = current_period - 1
-        elif period_val == "上上期":
-            target_period = current_period - 2
+    target_period = resolve_period_offset(period_val, get_matrix_period_number())
 
     im = await draw_matrix_challenge_img(ev, target_period)
     if isinstance(im, str):

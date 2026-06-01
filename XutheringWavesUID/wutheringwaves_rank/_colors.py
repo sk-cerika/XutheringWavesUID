@@ -3,8 +3,8 @@
 按 (功能, 排行类型) 区分命名，**勿混用**——不同玩法 / 不同范围（总/群）阈值不同：
 - 矩阵 总排行 (matrix total)
 - 矩阵 群排行 (matrix local)
-- 深塔 总排行 (slash total)
-- 深塔 群排行 (slash local)
+- 海墟 总排行 (slash total)
+- 海墟 群排行 (slash local)
 
 最高档使用 CRYSTAL_SENTINEL 触发 `draw_crystal_text` 走渐变。
 """

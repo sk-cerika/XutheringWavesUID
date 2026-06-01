@@ -55,6 +55,7 @@ CONFIG_DEFAULT: Dict[str, GSC] = {
         "鸣潮登录url",
         "用于设置XutheringWavesUID登录界面的配置",
         "",
+        secret=True,
     ),
     "WavesLoginUrlSelf": GsBoolConfig(
         "强制【鸣潮登录url】为自己的域名",
@@ -146,6 +147,7 @@ CONFIG_DEFAULT: Dict[str, GSC] = {
         "鸣潮全排行token",
         "鸣潮全排行token，绑定总排行上传获取和伤害计算",
         "",
+        secret=True,
     ),
     "AtCheck": GsBoolConfig(
         "开启可以艾特查询",
@@ -167,6 +169,7 @@ CONFIG_DEFAULT: Dict[str, GSC] = {
         "本地代理地址",
         "本地代理地址",
         "",
+        secret=True,
     ),
     "NeedProxyFunc": GsListStrConfig(
         "需要代理的函数",
@@ -262,6 +265,7 @@ CONFIG_DEFAULT: Dict[str, GSC] = {
         "外置渲染地址",
         "外置渲染服务的API地址，例如：http://127.0.0.1:3000/render",
         "http://127.0.0.1:3000/render",
+        secret=True,
     ),
     "BotColorMap": GsStrConfig(
         "排行榜Bot名称固定颜色",
@@ -277,11 +281,13 @@ CONFIG_DEFAULT: Dict[str, GSC] = {
         "外置渲染字体CSS地址",
         "用于HTML渲染的字体CSS URL，外置渲染时传递，一般保留默认即可，如果在本地，可以填http://127.0.0.1:8765/waves/fonts/fonts.css，如果有自己的登录域名：可以使用 你的登录域名根/waves/fonts/fonts.css",
         "https://fonts.loli.net/css2?family=JetBrains+Mono:wght@500;700&family=Oswald:wght@500;700&family=Noto+Sans+SC:wght@400;700&family=Noto+Sans+JP:wght@400;700&family=Noto+Sans+KR:wght@400;700&family=Noto+Color+Emoji&display=swap",
+        secret=True,
     ),
     "WavesPanelEditPassword": GsStrConfig(
         "面板图编辑面板密码",
         "为空则关闭网页面板图/背景图编辑工具；设置后通过 HTTP Basic Auth 鉴权（用户名固定 admin），地址 /waves/panel-edit/",
         "",
+        secret=True,
     ),
     "WavesPanelEditGuestView": GsBoolConfig(
         "面板图编辑访客只读浏览",

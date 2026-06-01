@@ -23,7 +23,7 @@ def _get_git_logs() -> List[str]:
         )
         stdout, stderr = process.communicate()
         if process.returncode != 0:
-            logger.warning(f"Git log failed: {stderr.decode('utf-8', errors='ignore')}")
+            logger.warning(f"[鸣潮·更新日志] Git log failed: {stderr.decode('utf-8', errors='ignore')}")
             return []
         commits = stdout.decode("utf-8", errors="ignore").split("\n")
 
@@ -38,7 +38,7 @@ def _get_git_logs() -> List[str]:
                         break
         return filtered_commits
     except Exception as e:
-        logger.warning(f"Get logs failed: {e}")
+        logger.warning(f"[鸣潮·更新日志] Get logs failed: {e}")
         return []
 
 

@@ -12,7 +12,8 @@ async def get_user_num():
 
 async def get_add_num():
     datas = await WavesBind.get_all_data()
-    return len(datas)
+    # 仅统计鸣潮绑定行 (uid 非空); 战双 pgr 绑定不计入。
+    return sum(1 for d in datas if getattr(d, "uid", None))
 
 
 async def get_active_user_num():

@@ -120,7 +120,7 @@ def shenhai_node(now: datetime):
 
 async def draw_calendar_img(ev: Event, uid: str):
     wiki_home = await waves_api.get_wiki_home()
-    if wiki_home["code"] != 200:
+    if not isinstance(wiki_home, dict) or wiki_home.get("code") != 200:
         return "获取日历失败"
 
     # 当前时间
@@ -155,10 +155,10 @@ async def draw_calendar_img(ev: Event, uid: str):
 
     content_total_row = 1 + (len(content.content) - 1) // 2 if content else 0
     total_high = title_high + banner_high + temp_high + content_total_row * event_high + bar2_high + footer_high
-    if gacha_char_list:
-        # total_high += (char_bar_high + star_fg_high * 2) * 2
-        # total_high += (char_bar_high + star_fg_high * len(gacha_char_list)) * 2
-        total_high += (char_bar_high + star_fg_high * (len(gacha_char_list) + 4) // 2)
+    # 总高度按角色和武器卡池中行数较多的一栏算 (并排布局), 防武器多于角色时越界裁切 (F3.3)
+    max_gacha_len = max(len(gacha_char_list), len(gacha_weapon_list))
+    if max_gacha_len:
+        total_high += (char_bar_high + star_fg_high * (max_gacha_len + 4) // 2)
         total_high += temp_high
         total_high += bar1_high
 
@@ -272,7 +272,7 @@ def _compose_calendar_img(
 
     img.paste(bar2, (0, _high), bar2)
     _high += bar2_high
-    for i, cont in enumerate(content.content):  # type: ignore
+    for i, cont in enumerate(content.content if content else []):  # type: ignore
         event_bg = Image.open(TEXT_PATH / "event_bg.png")
         event_bg_draw = ImageDraw.Draw(event_bg)
         dateRange = []
@@ -481,7 +481,11 @@ async def get_calendar_bg(w: int, h: int, bg: str = "bg1") -> Image.Image:
 
 def draw_gacha(gacha_list, img, _high, x_shift = 0):
     star_fg_high = 150
-    all_nodes = [gacha["nodes"][0] for gacha in gacha_list[:-1]] + gacha_list[-1]["nodes"]
+    if not gacha_list:
+        return _high
+    all_nodes = [gacha["nodes"][0] for gacha in gacha_list[:-1] if gacha.get("nodes")] + (gacha_list[-1].get("nodes") or [])
+    if not all_nodes:
+        return _high
     gacha_nodes = [all_nodes[i:i+2] for i in range(0, len(all_nodes), 2)]
     # for i, gacha_list in enumerate(gacha_list):
     for i, gacha_list in enumerate(gacha_nodes):

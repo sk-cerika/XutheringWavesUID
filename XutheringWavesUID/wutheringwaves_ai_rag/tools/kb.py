@@ -8,8 +8,6 @@
 等鸣潮内容详细 KP。
 """
 
-from typing import Optional
-
 from pydantic_ai import RunContext
 
 from gsuid_core.logger import logger
@@ -22,7 +20,6 @@ async def search_wuwa_kb(
     ctx: RunContext[ToolContext],
     query: str,
     limit: int = 6,
-    plugin: Optional[str] = "XutheringWavesUID",
     score_threshold: float = 0.45,
 ) -> str:
     """检索鸣潮知识库（XW 插件注册的 KP），用于取「当期深塔/海墟/矩阵详情」、
@@ -36,14 +33,13 @@ async def search_wuwa_kb(
         query: 自然语言查询。例 "鸣潮深塔第N期" / "卡卡罗 角色档案" / "凋亡 武器" /
             "守岸人 攻略" / "签到 命令" 等。
         limit: 最多返回多少条 KP，默认 6。
-        plugin: 限定插件，默认 "XutheringWavesUID"；传 None 则搜全部插件 KB。
         score_threshold: 相似度过滤阈值，低于此值的结果丢弃。默认 0.45。
 
     Returns:
         命中 KP 列表的 str (含 title / content / tags / _score)；没结果时返回提示。
     """
     logger.info(
-        f"🛠️ [search_wuwa_kb] query={query!r} limit={limit} plugin={plugin!r} "
+        f"[鸣潮·知识库搜索] query={query!r} limit={limit} "
         f"score_threshold={score_threshold}"
     )
     try:
@@ -51,7 +47,7 @@ async def search_wuwa_kb(
     except ImportError:
         return "AI 知识库模块不可用（AI 未启用）"
 
-    plugin_filter = [plugin] if plugin else None
+    plugin_filter = ["XutheringWavesUID"]
     try:
         points = await query_knowledge(
             query=query,
@@ -59,7 +55,7 @@ async def search_wuwa_kb(
             plugin_filter=plugin_filter,
         )
     except Exception as e:
-        logger.exception("[search_wuwa_kb] query_knowledge 失败")
+        logger.exception("[鸣潮·知识库搜索] query_knowledge 失败")
         return f"KB 检索失败: {e}"
 
     items = []
@@ -73,7 +69,7 @@ async def search_wuwa_kb(
         items.append(entry)
 
     logger.info(
-        f"🛠️ [search_wuwa_kb] 命中 {len(items)} 条（raw {len(points)} 条，"
+        f"[鸣潮·知识库搜索] 命中 {len(items)} 条（raw {len(points)} 条，"
         f"score_threshold={score_threshold}）"
     )
     if not items:

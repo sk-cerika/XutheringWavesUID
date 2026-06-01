@@ -204,8 +204,7 @@ def _render_char_hold_rate(
         chain_data = char_data["chain_hold_rate"]
         for i in range(7):
             c_key = str(i)
-            c_value = chain_data.get(c_key, 0)
-            c_percent = (c_value / 100) * 100
+            c_percent = chain_data.get(c_key, 0)
 
             chain_text = f"{c_key}链"
 
@@ -289,7 +288,7 @@ async def get_char_hold_rate_data() -> Dict:
             if response.status_code == 200:
                 return response.json().get("data", {})
     except Exception as e:
-        logger.error(f"获取角色持有率数据失败: {e}")
+        logger.error(f"[鸣潮·角色持有率] 获取角色持有率数据失败: {e}")
 
     return {}
 
@@ -309,9 +308,6 @@ async def get_group_char_hold_rate_data(group_id: str) -> Dict:
 
     async def process_uid(uid):
         """处理单个UID的数据"""
-        if uid in uid_fiter:
-            return None
-
         role_details = await get_all_role_detail_info_list(uid)
         if role_details is None:
             return None
@@ -322,15 +318,14 @@ async def get_group_char_hold_rate_data(group_id: str) -> Dict:
 
         return uid, uid_data
 
-    # 提取所有需要处理的UID
-    all_uids = []
+    # 提取所有需要处理的UID,入口去重避免重复并发请求
+    uid_set = set()
     for user in users:
         if not user.uid:
             continue
-        uids = user.uid.split("_")
-        for uid in uids:
-            if uid not in uid_fiter:
-                all_uids.append(uid)
+        for uid in user.uid.split("_"):
+            uid_set.add(uid)
+    all_uids = list(uid_set)
 
     # 使用Semaphore限制并发处理UID
     async def process_with_semaphore(uid):

@@ -99,11 +99,14 @@ async def draw_abyss_img(ev: Event, uid: str, user_id: str) -> Union[bytes, str]
     account_info = AccountBaseInfo.model_validate(account_info.data)
 
     # 共鸣者信息
-    role_info = await waves_api.get_role_info(uid, ck)
-    if not role_info.success:
-        return role_info.throw_msg()
-
-    role_info = RoleList.model_validate(role_info.data)
+    role_info_res = await waves_api.get_role_info(uid, ck)
+    role_info_list = []
+    if role_info_res.success and role_info_res.data:
+        try:
+            role_info = RoleList.model_validate(role_info_res.data)
+            role_info_list = role_info.roleList
+        except Exception:
+            pass
 
     # 深塔
     abyss_data = await get_abyss_data(uid, ck, is_self_ck)
@@ -226,7 +229,7 @@ async def draw_abyss_img(ev: Event, uid: str, user_id: str) -> Union[bytes, str]
                 if floor.roleList:
                     for role_index, _role in enumerate(floor.roleList):
                         role = next(
-                            (role for role in role_info.roleList if role.roleId == _role.roleId),
+                            (role for role in role_info_list if role.roleId == _role.roleId),
                             None,
                         )
                         if not role:
@@ -263,13 +266,11 @@ async def draw_abyss_img(ev: Event, uid: str, user_id: str) -> Union[bytes, str]
             return ABYSS_ERROR_MESSAGE_LOGIN
         return ABYSS_ERROR_MESSAGE_NO_DATA
 
-    # 上传深塔记录
-    await upload_abyss_record(is_self_ck, uid, difficultyName, abyss_data)
-
     card_img.paste(frame, (0, 210), frame)
 
     card_img = add_footer(card_img, 600, 20)
     card_img = await convert_img(card_img)
+    await upload_abyss_record(is_self_ck, uid, difficultyName, abyss_data)
     return card_img
 
 
@@ -324,5 +325,5 @@ async def upload_abyss_record(
             "version": get_version(dynamic=True, waves_id=waves_id, char_info=abyss_record),
         }
     )
-    # logger.info(f"上传深塔记录: {abyss_item.model_dump()}")
+    # logger.info(f"[鸣潮·深塔渲染] 上传深塔记录: {abyss_item.model_dump()}")
     push_item(QUEUE_ABYSS_RECORD, abyss_item.model_dump())

@@ -1,8 +1,8 @@
 """面板/MR 预览渲染。
 
-- 面板预览: 复用 draw_char_detail_img(is_limit_query=True), 失败则回退空面板。
-- MR 预览: 用固定样本 DailyData/AccountBaseInfo 直接调用 stamina 渲染函数。
-- 通过 _force_pile_path / _force_bg_path 上下文变量强制使用选中的图。
+- 面板: 复用 draw_char_detail_img(is_limit_query=True, fallback_to_generic=True)。
+- MR: 用固定样本 DailyData/AccountBaseInfo 直接调用 stamina 渲染函数。
+- _force_pile_path 注入选中图。
 """
 
 from __future__ import annotations
@@ -126,7 +126,8 @@ async def render_panel_preview(char_id: str, image_path: Path) -> Optional[bytes
     token = _force_pile_path.set(image_path)
     try:
         result = await draw_char_detail_img(
-            ev, "1", char_name, PREVIEW_USER_ID, is_limit_query=True
+            ev, "1", char_name, PREVIEW_USER_ID,
+            is_limit_query=True, fallback_to_generic=True,
         )
     finally:
         _force_pile_path.reset(token)
@@ -136,46 +137,57 @@ async def render_panel_preview(char_id: str, image_path: Path) -> Optional[bytes
     if isinstance(result, Image.Image):
         return _pil_to_jpeg_bytes(result)
     if isinstance(result, str):
-        # 极限面板不可用 (角色未适配等), 回退到一张占位预览。
-        logger.info(f"[鸣潮·面板编辑] 极限面板渲染失败, fallback: {result}")
-        return await _render_fallback_panel(char_name, image_path)
+        logger.info(f"[鸣潮·面板编辑] 面板预览失败: {result}")
+        return None
     return None
 
 
-async def _render_fallback_panel(char_name: str, image_path: Path) -> Optional[bytes]:
-    """极限面板不可用时的兜底: 把立绘居中摆好, 标注未适配。"""
-    bg = Image.new("RGBA", (1200, 2000), (24, 28, 36, 255))
-
-    try:
-        pile = Image.open(image_path).convert("RGBA")
-    except Exception as e:
-        logger.warning(f"[鸣潮·面板编辑] 读取立绘失败 {image_path}: {e}")
-        return None
-
-    target_w, target_h = 560, 1000
-    pw, ph = pile.size
-    ratio = max(target_w / pw, target_h / ph)
-    new_size = (int(pw * ratio), int(ph * ratio))
-    pile_resized = pile.resize(new_size, Image.LANCZOS)
-    left = (pile_resized.width - target_w) // 2
-    top = (pile_resized.height - target_h) // 2
-    pile_cropped = pile_resized.crop((left, top, left + target_w, top + target_h))
-    bg.paste(pile_cropped, (40, 200), pile_cropped)
-
-    from ...utils.fonts.waves_fonts import waves_font_36, draw_text_with_fallback
+async def render_rank_preview(char_id: str, image_path: Path) -> Optional[bytes]:
+    """渲染角色排行 title 区域的立绘合成预览 (1050x500)."""
     from PIL import ImageDraw
-
-    draw = ImageDraw.Draw(bg)
-    draw_text_with_fallback(
-        draw, (640, 260), f"【{char_name}】 极限面板未适配", "#cccccc", waves_font_36, "lt"
+    from ...utils.image import (
+        SPECIAL_GOLD,
+        GREY,
+        get_custom_waves_bg,
+        get_role_pile_default,
     )
-    draw_text_with_fallback(
-        draw, (640, 320), "仅展示立绘排版预览", "#888888", waves_font_36, "lt"
+    from ...utils.fonts.waves_fonts import (
+        waves_font_16,
+        waves_font_20,
+        waves_font_30,
+        waves_font_44,
     )
+    from ...wutheringwaves_rank.draw_rank_card import TITLE_I, char_mask, logo_img
+    from ...utils.resource.constant import SPECIAL_CHAR_NAME
 
-    out = BytesIO()
-    bg.convert("RGB").save(out, "JPEG", quality=88)
-    return out.getvalue()
+    char_name = easy_id_to_name(char_id, "漂泊者")
+    if char_id in SPECIAL_CHAR_NAME:
+        char_name = SPECIAL_CHAR_NAME[char_id]
+
+    token = _force_pile_path.set(image_path)
+    try:
+        pile, _ = await get_role_pile_default(char_id, custom=True)
+    finally:
+        _force_pile_path.reset(token)
+
+    card_img = get_custom_waves_bg(1050, 540, "bg3")
+    title = TITLE_I.copy()
+    title_draw = ImageDraw.Draw(title)
+
+    title.alpha_composite(logo_img.copy(), dest=(50, 65))
+    title.paste(pile, (450, -120), pile)
+    title_draw.text((200, 335), "12345", "white", waves_font_44, "mm")
+    title_draw.text((200, 375), "平均声骸分数", SPECIAL_GOLD, waves_font_20, "mm")
+    title_draw.text((390, 335), "678,910", "white", waves_font_44, "mm")
+    title_draw.text((390, 375), "平均伤害", SPECIAL_GOLD, waves_font_20, "mm")
+    title_draw.text((140, 265), f"{char_name}伤害群排行", "black", waves_font_30, "lm")
+    title_draw.text((20, 420), "入榜条件", SPECIAL_GOLD, waves_font_16, "lm")
+    title_draw.text((90, 420), "（预览, 实际数据按群内查询）", GREY, waves_font_16, "lm")
+
+    img_temp = Image.new("RGBA", char_mask.size)
+    img_temp.paste(title, (0, 0), char_mask.copy())
+    card_img.alpha_composite(img_temp, (0, 0))
+    return _pil_to_jpeg_bytes(card_img)
 
 
 async def render_mr_preview(

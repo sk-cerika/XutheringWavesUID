@@ -127,6 +127,13 @@ class ReplaceEnemy:
         self.enemyResistance: str | None = None  # 敌人抗性
 
 
+class ReplaceModal:
+    PREFIX_RE: list[str] = ["模态"]
+
+    def __init__(self):
+        self.modal: str | None = None  # 用户原始输入, 合法性交给 change_role_detail
+
+
 class ReplaceResult:
     def __init__(self):
         self.role: ReplaceRole = ReplaceRole()
@@ -134,6 +141,7 @@ class ReplaceResult:
         self.sonata: ReplaceSonata = ReplaceSonata()
         self.phantom: ReplacePhantom = ReplacePhantom()
         self.enemy: ReplaceEnemy = ReplaceEnemy()
+        self.modal: ReplaceModal = ReplaceModal()
 
 
 def parse_chain(content: str) -> tuple[str, str] | None:
@@ -192,9 +200,10 @@ def parse_three_level(content: str) -> tuple[str, str] | None:
     pattern = r"(?:(等级|级)([1-9][0-9]?[0-9]?)|([1-9][0-9]?[0-9]?)(等级|级))"
     match = re.search(pattern, content)
     if match:
+        # 角色/武器等级上限 90, 超出在 get_breach 没对应突破档会返回 0; 入口处 clamp 兜底
         matched_string = match.group(0)
         level = match.group(2) or match.group(3)
-        return matched_string, level
+        return matched_string, str(min(int(level), 90))
     return None
 
 
@@ -308,7 +317,7 @@ def parse_main(content: str) -> list[tuple[str, list[str], str]]:
     if c3_attrs:
         results.append((f"c3{''.join(c3_attrs)}", c3_attrs, "3"))
     if c1_attrs:
-        results.append((f"c1{''.join(c3_attrs)}", c1_attrs, "1"))
+        results.append((f"c1{''.join(c1_attrs)}", c1_attrs, "1"))
 
     return results
 
@@ -430,6 +439,11 @@ class ChangeParser:
                 cont = cont[len(prefix) :].strip()
                 matched_list.extend(self.parse_enemy(cont))
                 break
+        for prefix in self.rr.modal.PREFIX_RE:
+            if cont.startswith(prefix):
+                cont = cont[len(prefix) :].strip()
+                matched_list.extend(self.parse_modal(cont))
+                break
 
         if matched_list:
             self.matched_segments.append(" ".join(matched_list))
@@ -543,8 +557,48 @@ class ChangeParser:
 
         return matched_list
 
+    def parse_modal(self, cont: str) -> list[str]:
+        cont = cont.strip()
+        if not cont:
+            return []
+        self.rr.modal.modal = cont
+        return [f"换模态{cont}"]
+
     def get_matched_content(self) -> str:
         return ";".join(self.matched_segments)
+
+
+def is_phantom_dirty(change_command: str) -> bool:
+    """change_command 含 '换声骸' / '换合鸣' 即视为改动了声骸/套装/主词条。"""
+    if not change_command:
+        return False
+    return "换声骸" in change_command or "换合鸣" in change_command
+
+
+def ensure_default_modal(role_detail: RoleDetailData) -> None:
+    """有 wiki skillBranches 但未激活任何模态时, 注入默认 (isDefault, 否则首项)。in-place。"""
+    if role_detail.activeBranchId and role_detail.skillBranchList:
+        return
+    from ..utils.ascension.char import get_char_model, ensure_data_loaded
+    from ..utils.api.model.role import SkillBranch
+
+    ensure_data_loaded()
+    char_model = get_char_model(str(role_detail.role.roleId))
+    branches = char_model.skillBranches if char_model else None
+    if not branches:
+        return
+    default_idx = next(
+        (i for i, b in enumerate(branches) if getattr(b, "isDefault", False)),
+        0,
+    )
+    role_detail.skillBranchList = [
+        SkillBranch(
+            activePic="", branchId=i + 1, branchName=b.name,
+            desc=b.desc, pic="", skillIcon="",
+        )
+        for i, b in enumerate(branches)
+    ]
+    role_detail.activeBranchId = default_idx + 1
 
 
 async def change_role_detail(
@@ -604,13 +658,13 @@ async def change_role_detail(
 
     if parserResult.phantom.phantomList:
         for ph_info in parserResult.phantom.phantomList:
-            logger.debug(f"[GsCore] 声骸替换：{ph_info}")
+            logger.debug(f"[鸣潮·GsCore] 声骸替换：{ph_info}")
             err = await change_role_phantom(waves_id, ck, role_detail, ph_info, user_id, bot_id)
             if err:
                 return role_detail, err
 
     logger.debug(
-        f"声骸主词条: c4-{parserResult.phantom.mainc4}， c3-{parserResult.phantom.mainc3}, c1-{parserResult.phantom.mainc1}"
+        f"[鸣潮·声骸解析] 声骸主词条: c4-{parserResult.phantom.mainc4}， c3-{parserResult.phantom.mainc3}, c1-{parserResult.phantom.mainc1}"
     )
     if parserResult.phantom.mainc4:
         index = 0
@@ -691,6 +745,46 @@ async def change_role_detail(
     if parserResult.enemy.enemyLevel:
         enemy_detail.enemy_level = int(parserResult.enemy.enemyLevel)
 
+    # 模态切换: wiki 数据校验; 极限模式 (skillBranchList=None) 用 wiki 构造 mock 注入
+    if parserResult.modal.modal:
+        from ..utils.ascension.char import get_char_model, ensure_data_loaded
+        from ..utils.api.model.role import SkillBranch
+
+        ensure_data_loaded()
+        role_name = role_detail.role.roleName
+        char_model = get_char_model(str(role_detail.role.roleId))
+        wiki_branches = char_model.skillBranches if char_model else None
+        if not wiki_branches:
+            return role_detail, f"[鸣潮] 角色【{role_name}】无可切换的共鸣模态"
+
+        target_idx = next(
+            (i for i, b in enumerate(wiki_branches) if parserResult.modal.modal in b.name),
+            None,
+        )
+        if target_idx is None:
+            available = "、".join(b.name for b in wiki_branches)
+            return role_detail, (
+                f"[鸣潮] 角色【{role_name}】没有【{parserResult.modal.modal}】模态, 可选: {available}"
+            )
+
+        runtime_match = None
+        if role_detail.skillBranchList:
+            runtime_match = next(
+                (b for b in role_detail.skillBranchList if parserResult.modal.modal in b.branchName),
+                None,
+            )
+        if runtime_match:
+            role_detail.activeBranchId = runtime_match.branchId
+        else:
+            role_detail.skillBranchList = [
+                SkillBranch(
+                    activePic="", branchId=i + 1, branchName=b.name,
+                    desc=b.desc, pic="", skillIcon="",
+                )
+                for i, b in enumerate(wiki_branches)
+            ]
+            role_detail.activeBranchId = target_idx + 1
+
     return role_detail, parser.get_matched_content()
 
 
@@ -707,9 +801,11 @@ async def change_role_phantom(
     parserPositions = phantom.positions
     parserToPositions = phantom.toPositions
 
-    logger.debug(f"change_role_phantom {parserWavesUid}{parserCharName}{parserPositions}到{parserToPositions}")
+    logger.debug(f"[鸣潮·声骸解析] change_role_phantom {parserWavesUid}{parserCharName}{parserPositions}到{parserToPositions}")
 
     char_id = char_name_to_char_id(parserCharName) if parserCharName else None
+    if not char_id or len(char_id) != 4 or not char_id.isdigit():
+        return "[鸣潮] 未找到替换目标角色, 请检查输入是否正确！"
     find_char_id = []
     if char_id in SPECIAL_CHAR:
         find_char_id = SPECIAL_CHAR[char_id]
@@ -719,20 +815,20 @@ async def change_role_phantom(
         waves_id = parserWavesUid
 
     if not find_char_id:
-        return f"[鸣潮] 未找到替换目标角色【{parserCharName}】"
+        return "[鸣潮] 未找到替换目标角色, 请检查输入是否正确！"
 
     # 使用与查看他人面板一致的ck获取逻辑
     if parserWavesUid and user_id and bot_id:
         _, ck = await waves_api.get_ck_result(waves_id, user_id, bot_id)
         if not ck:
-            return f"[鸣潮] 替换目标UID【{hide_uid(waves_id)}】的角色【{parserCharName}】数据查询失败"
+            return f"[鸣潮] 替换目标UID【{hide_uid(waves_id)}】的声骸数据查询失败"
 
     remote_role_detail_info = await get_remote_role_detail_info(find_char_id, waves_id, ck)
     if not remote_role_detail_info:
-        return f"[鸣潮] 替换目标UID【{hide_uid(waves_id)}】的角色【{parserCharName}】数据查询失败"
+        return f"[鸣潮] 替换目标UID【{hide_uid(waves_id)}】的声骸数据查询失败"
 
     if not remote_role_detail_info.phantomData or not remote_role_detail_info.phantomData.equipPhantomList:
-        return f"[鸣潮] 替换目标UID【{hide_uid(waves_id)}】的角色【{parserCharName}】没有声骸数据"
+        return f"[鸣潮] 替换目标UID【{hide_uid(waves_id)}】没有声骸数据"
 
     if not parserPositions or not parserToPositions:
         role_detail.phantomData = remote_role_detail_info.phantomData
@@ -767,5 +863,4 @@ async def change_role_phantom(
                 totalCost += eq.cost
 
             if totalCost - oldCost + newCost <= 12:
-                temp[int(parserToPosition) - 1] = new  # type: ignore
                 temp[int(parserToPosition) - 1] = new  # type: ignore

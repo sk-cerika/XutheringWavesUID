@@ -45,7 +45,7 @@ def check_image_dimensions(temp_path: Path, target_type: str, index: int) -> Opt
             if target_type == "bg" and h > w:
                 return f"第{index}张图片尺寸错误，背景图需要横版图片（高 ≤ 宽），可能想上传：面板图"
     except Exception as e:
-        logger.warning(f"[鸣潮] 检查图片尺寸失败: {e}")
+        logger.warning(f"[鸣潮·卡片上传] 检查图片尺寸失败: {e}")
     return None
 
 
@@ -110,7 +110,7 @@ async def upload_custom_card(
                 else:
                     sess = httpx.AsyncClient()
             except Exception as e:
-                logger.exception(f"{httpx.__version__} - {e}")
+                logger.exception(f"[鸣潮·卡片上传] {httpx.__version__} - {e}")
                 sess = None
             code = await download(upload_image, temp_dir, name, tag="[鸣潮]", sess=sess)
             if not isinstance(code, int) or code != 200:
@@ -172,18 +172,14 @@ async def get_custom_card_list(bot: Bot, ev: Event, char: str, target_type: str 
         return await bot.send((" " if at_sender else "") + msg, at_sender)
     type_label = CUSTOM_PATH_NAME_MAP.get(target_type, target_type)
 
-    temp_dir = CUSTOM_PATH_MAP.get(target_type, CUSTOM_CARD_PATH) / f"{char_id}"
-    if not temp_dir.exists():
+    files_map = card_hash_index.list_dir(target_type, char_id)
+    if not files_map:
         msg = f"[鸣潮] 角色【{char}】暂未上传过{type_label}图！"
         return await bot.send((" " if at_sender else "") + msg, at_sender)
 
-    # 获取角色文件夹图片数量, 只要图片
-    files = [f for f in temp_dir.iterdir() if f.is_file() and f.suffix in [".jpg", ".png", ".jpeg", ".webp"]]
-
     imgs = []
-    for _, f in enumerate(files, start=1):
+    for hash_id, f in files_map.items():
         img = await convert_img(f)
-        hash_id = get_hash_id(f.name)
         imgs.append(f"{char}{type_label}图id : {hash_id}")
         imgs.append(img)
 
@@ -229,7 +225,7 @@ async def delete_custom_card(bot: Bot, ev: Event, char: str, hash_id: str, targe
                 card_hash_index.remove(target_type, char_id, target_file)
                 deleted_ids.append(single_hash_id)
             except Exception as e:
-                logger.exception(f"删除文件失败: {target_file} - {e}")
+                logger.exception(f"[鸣潮·卡片上传] 删除文件失败: {target_file} - {e}")
                 not_found_ids.append(single_hash_id)
 
     msg_parts = []
@@ -315,7 +311,7 @@ async def compress_all_custom_card(bot: Bot, ev: Event):
                         update_orb_cache(new_path)
                     rename_count += 1
                 except Exception as e:
-                    logger.error(f"[鸣潮] 重命名失败 {img_path}: {e}")
+                    logger.error(f"[鸣潮·卡片上传] 重命名失败 {img_path}: {e}")
 
     task_list = []
     for PATH in CUSTOM_PATH_MAP.values():
@@ -341,7 +337,7 @@ async def compress_all_custom_card(bot: Bot, ev: Event):
                     update_orb_cache(file_info[0].with_suffix(".webp"))
 
             except Exception as exc:
-                logger.error(f"Error processing {file_info[0]}: {exc}")
+                logger.error(f"[鸣潮·卡片上传] Error processing {file_info[0]}: {exc}")
 
     if rename_count or count:
         card_hash_index.build()
@@ -385,7 +381,7 @@ async def recompute_all_orb_features(bot: Bot, ev: Event):
             n.unlink()
             deleted += 1
         except Exception as e:
-            logger.warning(f"[鸣潮] 删除孤儿ORB缓存失败 {n}: {e}")
+            logger.warning(f"[鸣潮·卡片上传] 删除孤儿ORB缓存失败 {n}: {e}")
 
     if not to_recompute:
         if deleted:
@@ -406,7 +402,7 @@ async def recompute_all_orb_features(bot: Bot, ev: Event):
             else:
                 failed += 1
                 if isinstance(ok, BaseException):
-                    logger.warning(f"[鸣潮] 重算ORB异常: {ok}")
+                    logger.warning(f"[鸣潮·卡片上传] 重算ORB异常: {ok}")
 
     parts = [f"重算 {recomputed} 个"]
     if failed:

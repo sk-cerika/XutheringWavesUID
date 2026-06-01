@@ -11,13 +11,14 @@ from gsuid_core.logger import logger
 from gsuid_core.models import Event
 
 from ..utils.hint import error_reply
+from ..utils.at_help import safe_sender_avatar
 from ..utils.util import hide_uid, get_hide_uid_pref
 from ..utils.waves_api import waves_api
 from ..utils.error_reply import WAVES_CODE_102
-from ..utils.api.model import MatrixDetail, AccountBaseInfo, RoleDetailData
+from ..utils.api.model import MatrixDetail, AccountBaseInfo
 from ..utils.api.wwapi import MatrixDetailRequest, MatrixTeamDetail
 from ..utils.avatar_match import match_role_icons_to_char_ids
-from ..utils.char_info_utils import get_all_roleid_detail_info
+from ..utils.char_info_utils import get_all_roleid_detail_info, lookup_chain
 from ..utils.resource.constant import SPECIAL_CHAR_INT_ALL
 from ..utils.queues.const import QUEUE_MATRIX_RECORD
 from ..utils.queues.queues import push_item
@@ -149,7 +150,7 @@ async def save_matrix_record(
         async with aiofiles.open(path, "w", encoding="utf-8") as file:
             await file.write(json.dumps(record_payload, ensure_ascii=False))
     except Exception as e:
-        logger.warning(f"[鸣潮·保存矩阵数据失败] uid={uid}, error={e}")
+        logger.warning(f"[鸣潮·矩阵保存] 失败 uid={uid} error={e}")
 
 
 async def upload_matrix_record(
@@ -209,23 +210,11 @@ async def upload_matrix_record(
 
 
 def _get_rank_img_b64(rank: int) -> str:
-    """获取 rank-N.png 的 base64"""
-    rank = max(0, min(rank, 7))
-    path = TEXT_PATH / f"rank-{rank}.png"
-    if path.exists():
-        img = Image.open(path)
-        return pil_to_b64(img, quality=75)
-    return ""
+    return _get_texture_b64(f"rank-{max(0, min(rank, 7))}.png")
 
 
 def _get_rank_detail_b64(rank: int) -> str:
-    """获取 rank-detail-N.png 的 base64"""
-    rank = max(0, min(rank, 7))
-    path = TEXT_PATH / f"rank-detail-{rank}.png"
-    if path.exists():
-        img = Image.open(path)
-        return pil_to_b64(img, quality=75)
-    return ""
+    return _get_texture_b64(f"rank-detail-{max(0, min(rank, 7))}.png")
 
 
 def _get_texture_b64(name: str) -> str:
@@ -274,17 +263,11 @@ async def draw_matrix_img(ev: Event, uid: str, user_id: str) -> Union[bytes, str
     if char_ids_map and is_self_ck:
         char_ids_map = await _resolve_special_chars(uid, char_ids_map)
 
-    sender_avatar = (ev.sender or {}).get("avatar") or ""
-    if not (isinstance(sender_avatar, str) and sender_avatar.startswith(("http://", "https://"))):
-        sender_avatar = ""
-
-    # 保存和上传记录
-    await save_matrix_record(uid, matrix_detail, char_ids_map)
-    await upload_matrix_record(is_self_ck, uid, matrix_detail, char_ids_map, sender_avatar)
+    sender_avatar = safe_sender_avatar(ev)
 
     if is_self_ck:
         target_mode_id = _resolve_mode_id(ev)
-        return await _draw_matrix_detail_html(
+        result = await _draw_matrix_detail_html(
             ev,
             uid,
             user_id,
@@ -296,7 +279,12 @@ async def draw_matrix_img(ev: Event, uid: str, user_id: str) -> Union[bytes, str
         )
     else:
         # 未登录: 展示所有模式，不区分稳态/奇点
-        return await _draw_matrix_index_html(ev, uid, user_id, ck, matrix_detail)
+        result = await _draw_matrix_index_html(ev, uid, user_id, ck, matrix_detail)
+
+    if isinstance(result, bytes):
+        await save_matrix_record(uid, matrix_detail, char_ids_map)
+        await upload_matrix_record(is_self_ck, uid, matrix_detail, char_ids_map, sender_avatar)
+    return result
 
 
 async def _get_common_context(ev: Event, uid: str, user_id: str, ck: str) -> Union[dict, str]:
@@ -353,8 +341,8 @@ async def _draw_matrix_index_pil(
             matrix_detail,
         )
     except Exception as e:
-        logger.exception(f"[鸣潮] 矩阵PIL渲染失败(Index): {e}")
-        return _draw_matrix_text_fallback(uid, matrix_detail, user_pref)
+        logger.exception(f"[鸣潮·矩阵渲染] PIL Index 失败: {e}")
+        return "[鸣潮] 矩阵卡片渲染失败, 请稍后重试"
 
 
 async def _draw_matrix_detail_pil(
@@ -384,8 +372,8 @@ async def _draw_matrix_detail_pil(
             char_ids_map,
         )
     except Exception as e:
-        logger.exception(f"[鸣潮] 矩阵PIL渲染失败(Detail): {e}")
-        return _draw_matrix_text_fallback(uid, matrix_detail, user_pref)
+        logger.exception(f"[鸣潮·矩阵渲染] PIL Detail 失败: {e}")
+        return "[鸣潮] 矩阵卡片渲染失败, 请稍后重试"
 
 
 async def _draw_matrix_index_html(
@@ -435,16 +423,16 @@ async def _draw_matrix_index_html(
             "reward_icon_url": reward_icon_url,
         }
 
-        logger.debug("[鸣潮] 准备通过HTML渲染矩阵卡片(Index)")
+        logger.debug("[鸣潮·矩阵渲染] 准备 HTML 渲染 (Index)")
         img_bytes = await render_html(waves_templates, "abyss/matrix_card.html", context)
         if img_bytes:
             return img_bytes
         else:
-            logger.warning("[鸣潮] Playwright 渲染返回空, 正在回退到 PIL 渲染")
+            logger.warning("[鸣潮·矩阵渲染] Playwright 返回空, 回退到 PIL (Index)")
             return await _draw_matrix_index_pil(ev, uid, user_id, ck, matrix_detail)
 
     except Exception as e:
-        logger.exception(f"[鸣潮] 矩阵HTML渲染失败: {e}")
+        logger.exception(f"[鸣潮·矩阵渲染] HTML Index 失败: {e}")
         return await _draw_matrix_index_pil(ev, uid, user_id, ck, matrix_detail)
 
 
@@ -474,6 +462,10 @@ async def _draw_matrix_detail_html(
         # 覆盖通用 bg
         ctx["bg_url"] = bg_url
 
+        # 根据面板数据获取共鸣链详细信息 (与外层 match_all_char_ids 共用一次)
+        role_detail_info_map = await get_all_roleid_detail_info(uid) or {}
+        _char_ids_map = char_ids_map or {}
+
         # 只展示目标模式
         modes_data = []
         for mode in matrix_detail.modeDetails:
@@ -486,11 +478,6 @@ async def _draw_matrix_detail_html(
             boss_count = mode.bossCount or 0
             pass_boss = mode.passBoss or 0
             progress_pct = (pass_boss / boss_count * 100) if boss_count > 0 else 0
-
-            # 根据面板数据获取共鸣链详细信息
-            role_detail_info_map = await get_all_roleid_detail_info(uid)
-            role_detail_info_map = role_detail_info_map if role_detail_info_map else {}
-            _char_ids_map = char_ids_map or {}
 
             # 队伍数据
             teams_data = []
@@ -510,16 +497,9 @@ async def _draw_matrix_detail_html(
                         except Exception:
                             pass
 
-                    # 通过匹配的 char_id 查共鸣链
-                    chain_num = None
-                    chain_name = ""
-                    if role_idx < len(team_char_ids) and team_char_ids[role_idx]:
-                        char_id = team_char_ids[role_idx]
-                        # 特殊角色已在 _resolve_special_chars 中修正
-                        if str(char_id) in role_detail_info_map:
-                            temp: RoleDetailData = role_detail_info_map[str(char_id)]
-                            chain_num = temp.get_chain_num()
-                            chain_name = temp.get_chain_name()
+                    # 通过匹配的 char_id 查共鸣链 (特殊角色已在 _resolve_special_chars 中修正)
+                    char_id = team_char_ids[role_idx] if role_idx < len(team_char_ids) else None
+                    chain_num, chain_name = lookup_chain(role_detail_info_map, char_id)
 
                     roles_data.append({
                         "icon_url": role_b64,
@@ -586,44 +566,20 @@ async def _draw_matrix_detail_html(
             "chain_colors": chain_colors,
         }
 
-        logger.debug("[鸣潮] 准备通过HTML渲染矩阵卡片(Detail)")
+        logger.debug("[鸣潮·矩阵渲染] 准备 HTML 渲染 (Detail)")
         img_bytes = await render_html(waves_templates, "abyss/matrix_detail_card.html", context)
         if img_bytes:
             return img_bytes
         else:
-            logger.warning("[鸣潮] Playwright 渲染返回空, 正在回退到 PIL 渲染")
+            logger.warning("[鸣潮·矩阵渲染] Playwright 返回空, 回退到 PIL (Detail)")
             return await _draw_matrix_detail_pil(
                 ev, uid, user_id, ck, matrix_detail, target_mode_id, char_ids_map
             )
 
     except Exception as e:
-        logger.exception(f"[鸣潮] 矩阵Detail HTML渲染失败: {e}")
+        logger.exception(f"[鸣潮·矩阵渲染] HTML Detail 失败: {e}")
         return await _draw_matrix_detail_pil(
             ev, uid, user_id, ck, matrix_detail, target_mode_id, char_ids_map
         )
 
 
-def _draw_matrix_text_fallback(
-    uid: str,
-    matrix_detail: MatrixDetail,
-    user_pref: str = "",
-) -> str:
-    """文本回退 (无 PIL / HTML 时)"""
-    lines = [f"[终焉矩阵] 特征码: {hide_uid(uid, user_pref=user_pref)}"]
-    for mode in matrix_detail.modeDetails:
-        if not mode.hasRecord:
-            continue
-        mode_name = MODE_NAME_MAP.get(mode.modeId, f"模式{mode.modeId}")
-        lines.append(f"  {mode_name}: 分数 {mode.score}  排名 {mode.rank}")
-        if mode.teams:
-            for idx, team in enumerate(mode.teams, 1):
-                buff_name = team.buffs[0].buffName if team.buffs else "无"
-                lines.append(
-                    f"    队伍{idx}: 分数 {team.score}  "
-                    f"轮次 {team.round}  "
-                    f"击败 {team.passBoss}/{team.bossCount}  "
-                    f"增益 {buff_name}  "
-                    f"角色数 {len(team.roleIcons)}"
-                )
-    lines.append(f"  奖励: {matrix_detail.reward}/{matrix_detail.totalReward}")
-    return "\n".join(lines)

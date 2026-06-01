@@ -4,7 +4,7 @@ from gsuid_core.models import Event
 
 from .draw_period import draw_period_img
 from ..utils.at_help import ruser_id, is_intl_uid, intl_unavailable_msg
-from ..utils.error_reply import ERROR_CODE, WAVES_CODE_103
+from ..utils.error_reply import ERROR_CODE, WAVES_CODE_102
 from ..utils.database.models import WavesBind
 
 sv_period = SV("waves资源简报")
@@ -31,7 +31,8 @@ Args:
 async def send_period(bot: Bot, ev: Event):
     uid = await WavesBind.get_uid_by_game(ruser_id(ev), ev.bot_id)
     if not uid:
-        return await bot.send(ERROR_CODE[WAVES_CODE_103])
+        # 强需要登录的功能, uid 缺失直接报 102 (登录提示), 避免用户绑定 uid 后再被告知"还要登录"
+        return await bot.send(ERROR_CODE[WAVES_CODE_102])
     if is_intl_uid(uid):
         return await bot.send(intl_unavailable_msg(uid))
 

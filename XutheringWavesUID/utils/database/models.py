@@ -26,7 +26,6 @@ exec_list.extend(
     [
         'ALTER TABLE WavesUserActivity ADD COLUMN bot_self_id TEXT DEFAULT ""',
         'ALTER TABLE WavesUser ADD COLUMN pgr_uid TEXT DEFAULT ""',
-        'ALTER TABLE WavesUser ADD COLUMN record_id TEXT DEFAULT ""',
         'ALTER TABLE WavesUser ADD COLUMN platform TEXT DEFAULT ""',
         'ALTER TABLE WavesUser ADD COLUMN stamina_bg_value TEXT DEFAULT ""',
         'ALTER TABLE WavesUser ADD COLUMN hide_uid_self_value TEXT DEFAULT ""',
@@ -167,7 +166,7 @@ class WavesBind(Bind, table=True):
             try:
                 await WavesStaminaRecord.delete_by_uid(user_id, bot_id, uid)
             except Exception:
-                logger.exception("[鸣潮] 删除特征码时清理体力记录失败")
+                logger.exception("[鸣潮·数据库] 删除特征码时清理体力记录失败")
         return res
 
 
@@ -175,7 +174,6 @@ class WavesUser(User, table=True):
     __table_args__: Dict[str, Any] = {"extend_existing": True}
     cookie: str = Field(default="", title="Cookie")
     uid: str = Field(default=None, title="游戏UID")
-    record_id: Optional[str] = Field(default=None, title="鸣潮记录ID")
     platform: str = Field(default="", title="ck平台")
     stamina_bg_value: str = Field(default="", title="体力背景")
     hide_uid_self_value: str = Field(default="", title="隐藏UID")

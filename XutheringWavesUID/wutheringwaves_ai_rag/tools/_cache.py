@@ -30,7 +30,7 @@ def _read_json(p) -> Any:
         with open(p, "r", encoding="utf-8") as f:
             return json.load(f)
     except Exception as e:
-        logger.warning(f"[鸣潮-Tools] read {p}: {e}")
+        logger.warning(f"[鸣潮·AI工具] read {p}: {e}")
         return None
 
 

@@ -16,7 +16,7 @@ from gsuid_core.logger import logger
 from gsuid_core.subscribe import gs_subscribe
 
 
-def timed_async_cache(expiration, condition=lambda x: True):
+def timed_async_cache(expiration, condition=lambda x: True, key=None):
     def decorator(func):
         cache = {}
         locks = {}
@@ -25,9 +25,9 @@ def timed_async_cache(expiration, condition=lambda x: True):
         params = list(sig.parameters.keys())
         is_cls_method = params and params[0] in ["self", "cls"]
 
-        @wraps(func)
-        async def wrapper(*args, **kwargs):
-            current_time = time.time()
+        def _make_key(args, kwargs):
+            if key is not None:
+                return key(*args, **kwargs)
             if is_cls_method and args and hasattr(args[0], "__class__"):
                 base_key = f"{args[0].__class__.__name__}.{func.__name__}"
                 key_args = args[1:]
@@ -35,33 +35,43 @@ def timed_async_cache(expiration, condition=lambda x: True):
                 base_key = func.__name__
                 key_args = args
             try:
-                cache_key = (base_key, key_args, tuple(sorted(kwargs.items())))
-                hash(cache_key)
+                ck = (base_key, key_args, tuple(sorted(kwargs.items())))
+                hash(ck)
             except TypeError:
-                cache_key = (base_key, repr(key_args), repr(sorted(kwargs.items())))
+                ck = (base_key, repr(key_args), repr(sorted(kwargs.items())))
+            return ck
 
-            # 为每个缓存键创建一个锁
+        @wraps(func)
+        async def wrapper(*args, **kwargs):
+            current_time = time.time()
+            cache_key = _make_key(args, kwargs)
+
             if cache_key not in locks:
                 locks[cache_key] = asyncio.Lock()
 
-            # 检查缓存，如果有效则直接返回
             if cache_key in cache:
                 value, timestamp = cache[cache_key]
                 if current_time - timestamp < expiration:
                     return value
 
-            # 获取锁以确保并发安全
             async with locks[cache_key]:
-                # 双重检查，避免等待锁期间其他协程已经更新了缓存
                 if cache_key in cache:
                     value, timestamp = cache[cache_key]
                     if current_time - timestamp < expiration:
                         return value
 
-                # 执行原始函数
                 value = await func(*args, **kwargs)
                 if condition(value):
                     cache[cache_key] = (value, current_time)
+
+                for stale in [
+                    k for k, (_, ts) in cache.items()
+                    if k != cache_key and current_time - ts >= expiration
+                ]:
+                    cache.pop(stale, None)
+                    stale_lock = locks.get(stale)
+                    if stale_lock is not None and not stale_lock.locked():
+                        locks.pop(stale, None)
                 return value
 
         return wrapper
@@ -235,7 +245,7 @@ def load_json_file(json_path: Path) -> Optional[Dict[str, Any]]:
         with open(json_path, "r", encoding="utf-8") as f:
             return json.load(f)
     except Exception as e:
-        logger.error(f"Failed to load json {json_path}: {e}")
+        logger.error(f"[鸣潮·工具] Failed to load json {json_path}: {e}")
         return None
 
 

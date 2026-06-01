@@ -40,7 +40,7 @@ async def anniv_report(
         async with httpx.AsyncClient(timeout=180, verify=True) as c:
             r = await c.post(url, headers=headers, json=body)
     except Exception as e:
-        logger.exception(f"[鸣潮] /2nd_report 网络错误: {e}")
+        logger.exception(f"[鸣潮·周年报告] /2nd_report 网络错误: {e}")
         return f"网络错误: {e}"
 
     ct = r.headers.get("content-type", "")
@@ -72,5 +72,5 @@ async def anniv_report(
             bat_expires_in=bat_expires_in,
         )
     except Exception as e:
-        logger.exception(f"[鸣潮] 周年庆 ZIP 解析失败: {e}")
+        logger.exception(f"[鸣潮·周年报告] 周年庆 ZIP 解析失败: {e}")
         return f"解析返回数据失败: {e}"

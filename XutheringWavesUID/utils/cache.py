@@ -129,6 +129,39 @@ class TimedCache:
             del self.cache[key]
         self._persist_delete(key)
 
+    def delete_where(self, predicate) -> int:
+        """删除所有 value 满足 predicate 的 entry, 返回删除数。
+        用于「同一用户发新登录链接, 撤销旧 token」之类的场景。"""
+        keys = []
+        # 内存
+        for k, (v, _) in self.cache.items():
+            try:
+                if predicate(v):
+                    keys.append(k)
+            except Exception:
+                continue
+        # SQLite 也扫一遍 (磁盘是权威源, 内存可能未同步)
+        if self.persist_path:
+            try:
+                with closing(self._connect()) as conn:
+                    rows = conn.execute(
+                        "SELECT key, value FROM timed_cache WHERE expiry > ?",
+                        (time.time(),),
+                    ).fetchall()
+                for k, value_json in rows:
+                    if k in keys:
+                        continue
+                    try:
+                        if predicate(json.loads(value_json)):
+                            keys.append(k)
+                    except Exception:
+                        continue
+            except Exception:
+                pass
+        for k in keys:
+            self.delete(k)
+        return len(keys)
+
     def _clean_up(self):
         current_time = time.time()
         keys_to_delete = []

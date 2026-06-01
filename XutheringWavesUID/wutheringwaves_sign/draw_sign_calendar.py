@@ -22,9 +22,9 @@ from .draw_sign_calendar_pil import _format_loop_range, render_sign_calendar_pil
 
 async def draw_sign_calendar(uid: str, ev: Event) -> Optional[bytes | str]:
     user_id = ruser_id(ev)
-    ck = await waves_api.get_self_waves_ck(uid, user_id, ev.bot_id)
+    ck, err = await waves_api.check_self_login(uid, user_id, ev.bot_id)
     if not ck:
-        return ERROR_CODE[WAVES_CODE_102]
+        return err or ERROR_CODE[WAVES_CODE_102]
     user_pref = await get_hide_uid_pref(uid, user_id, ev.bot_id)
 
     sign_init_res, surface_res, base_info_res = await asyncio.gather(

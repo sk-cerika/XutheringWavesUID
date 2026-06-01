@@ -16,7 +16,7 @@ def register_endgame_advisor_skill() -> None:
         from gsuid_core.ai_core.resource import SKILLS_PATH
         from gsuid_core.ai_core.skills.operations import _reload_skills
     except ImportError:
-        logger.debug("🧠 [鸣潮-RAG] AI Core skills 模块不可用，跳过 skill 注册")
+        logger.debug("[鸣潮·AI-RAG] AI Core skills 模块不可用，跳过 skill 注册")
         return
 
     if not SKILLS_SRC.exists():
@@ -60,6 +60,6 @@ def register_endgame_advisor_skill() -> None:
     try:
         _reload_skills()
     except Exception:
-        logger.exception("🧠 [鸣潮-RAG] _reload_skills 失败")
+        logger.exception("[鸣潮·AI-RAG] _reload_skills 失败")
         return
-    logger.info(f"🧠 [鸣潮-RAG] 已同步 skill: {', '.join(changed)}")
+    logger.info(f"[鸣潮·AI-RAG] 已同步 skill: {', '.join(changed)}")

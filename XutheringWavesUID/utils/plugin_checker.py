@@ -9,7 +9,7 @@ def is_from_plugin(plugin_name: str = "XutheringWavesUID") -> bool:
     result = current_plugin == plugin_name
 
     if result:
-        logger.debug(f"[XW PluginChecker] 调用来自插件 {plugin_name}")
+        logger.debug(f"[鸣潮·插件检查] 调用来自插件 {plugin_name}")
 
     return result
 
@@ -56,10 +56,10 @@ def get_current_plugin() -> Optional[str]:
     plugin_names = [p for p in all_plugins if not p.startswith("  ->")]
     if plugin_names:
         result = plugin_names[-1]  # 最后一个就是离 hook 调用最近的
-        logger.debug(f"[XW PluginChecker] 找到的插件列表: {plugin_names}, 返回: {result}")
+        logger.debug(f"[鸣潮·插件检查] 找到的插件列表: {plugin_names}, 返回: {result}")
         return result
 
-    logger.debug(f"[XW PluginChecker] 未找到插件来源")
+    logger.debug(f"[鸣潮·插件检查] 未找到插件来源")
     return None
 
 

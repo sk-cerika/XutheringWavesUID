@@ -11,7 +11,7 @@ def calc_percent_expression(*args, **kwargs):
         from ..waves_build.damage import calc_percent_expression as _func
         return _func(*args, **kwargs)
     except ImportError:
-        logger.info("请等待下载完成")
+        logger.info("[鸣潮·伤害计算] 请等待下载完成")
         return 0
 
 def reload_damage_module():
@@ -28,5 +28,5 @@ def check_char_id(*args, **kwargs):
         from ..waves_build.damage import check_char_id as _func
         return _func(*args, **kwargs)
     except ImportError:
-        logger.info("请等待下载完成")
+        logger.info("[鸣潮·伤害计算] 请等待下载完成")
         return False

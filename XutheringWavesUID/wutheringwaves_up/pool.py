@@ -45,7 +45,7 @@ async def get_pool_data() -> Union[List, None]:
             if res.status_code == 200:
                 return res.json().get("data", [])
         except Exception as e:
-            logger.exception(f"获取卡池数据失败: {e}")
+            logger.exception(f"[鸣潮·卡池] 获取卡池数据失败: {e}")
 
 
 async def clean_pool_data():
@@ -284,14 +284,12 @@ def seconds_to_human(seconds: int) -> str:
         else:
             return f"已有 {seconds} 秒未UP"
     else:
-        if seconds <= -86400:
-            days = seconds // 86400
-            return f"当前UP({-days}天后关闭)"
-        elif seconds <= -3600:
-            hours = seconds // 3600
-            return f"当前UP({-hours}小时后关闭)"
-        elif seconds <= -60:
-            minutes = seconds // 60
-            return f"当前UP({-minutes}分钟后关闭)"
+        remain = -seconds
+        if remain >= 86400:
+            return f"当前UP({remain // 86400}天后关闭)"
+        elif remain >= 3600:
+            return f"当前UP({remain // 3600}小时后关闭)"
+        elif remain >= 60:
+            return f"当前UP({remain // 60}分钟后关闭)"
         else:
-            return f"当前UP({-seconds}秒后关闭)"
+            return f"当前UP({remain}秒后关闭)"

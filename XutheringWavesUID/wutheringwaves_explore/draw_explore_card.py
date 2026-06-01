@@ -184,14 +184,14 @@ async def draw_explore_img(ev: Event, uid: str, user_id: str):
             "bg_url": bg_url,
         }
 
-        logger.debug("[鸣潮] 准备通过HTML渲染探索卡片")
+        logger.debug("[鸣潮·探索卡片] 准备通过HTML渲染探索卡片")
         img_bytes = await render_html(waves_templates, "explore_card.html", context)
         if img_bytes:
             return img_bytes
         else:
-            logger.warning("[鸣潮] Playwright 渲染返回空, 正在回退到 PIL 渲染")
+            logger.warning("[鸣潮·探索卡片] Playwright 渲染返回空, 正在回退到 PIL 渲染")
             return await draw_explore_img_pil(ev, uid, user_id)
 
     except Exception as e:
-        logger.exception(f"[鸣潮] HTML渲染失败: {e}")
+        logger.exception(f"[鸣潮·探索卡片] HTML渲染失败: {e}")
         return await draw_explore_img_pil(ev, uid, user_id)

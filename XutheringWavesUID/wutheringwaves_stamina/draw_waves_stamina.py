@@ -87,19 +87,22 @@ async def process_uid(uid, ev):
     if waves_api.is_net(uid):
         return await _process_uid_launcher(uid, ev)
 
-    ck = await waves_api.get_self_waves_ck(uid, ruser_id(ev), ev.bot_id)
+    ck, err = await waves_api.check_self_login(uid, ruser_id(ev), ev.bot_id)
     if not ck:
-        try:
-            await WavesStaminaRecord.update_ck_valid(
-                user_id=ruser_id(ev),
-                bot_id=ev.bot_id,
-                bot_self_id=ev.bot_self_id or "",
-                uid=uid,
-                is_ck_valid=False,
-            )
-        except Exception:
-            logger.exception("[鸣潮][每日信息]体力记录CK有效状态更新失败")
-        return None
+        # 仅未绑定 cookie (err=None) 时同步 stamina 推送状态;
+        # 维护/网络异常不能断言 ck 失效; cookie 真失效已由 check_self_login 内部 mark
+        if err is None:
+            try:
+                await WavesStaminaRecord.update_ck_valid(
+                    user_id=ruser_id(ev),
+                    bot_id=ev.bot_id,
+                    bot_self_id=ev.bot_self_id or "",
+                    uid=uid,
+                    is_ck_valid=False,
+                )
+            except Exception:
+                logger.exception("[鸣潮·每日信息] 体力记录CK有效状态更新失败")
+        return err  # 失效/维护/网络 → 透传; 未绑定 → None 由上层报 102
 
     # 并行请求所有相关 API
     results = await asyncio.gather(
@@ -109,11 +112,17 @@ async def process_uid(uid, ev):
     )
 
     (daily_info_res, account_info_res) = results
-    if not isinstance(daily_info_res, KuroApiResp) or not daily_info_res.success:
-        return None
+    if isinstance(daily_info_res, BaseException):
+        logger.error(f"[鸣潮·每日信息] get_daily_info 异常 uid={uid}", exc_info=daily_info_res)
+        return "获取每日信息失败：网络异常"
+    if not daily_info_res.success:
+        return f"获取每日信息失败：{daily_info_res.throw_msg() or '未知错误'}"
 
-    if not isinstance(account_info_res, KuroApiResp) or not account_info_res.success:
-        return None
+    if isinstance(account_info_res, BaseException):
+        logger.error(f"[鸣潮·每日信息] get_base_info 异常 uid={uid}", exc_info=account_info_res)
+        return "获取账户信息失败：网络异常"
+    if not account_info_res.success:
+        return f"获取账户信息失败：{account_info_res.throw_msg() or '未知错误'}"
 
     daily_info = DailyData.model_validate(daily_info_res.data)
     account_info = AccountBaseInfo.model_validate(account_info_res.data)
@@ -130,7 +139,7 @@ async def process_uid(uid, ev):
             is_ck_valid=True,
         )
     except Exception:
-        logger.exception("[鸣潮][每日信息]体力查询记录写入失败")
+        logger.exception("[鸣潮·每日信息] 体力查询记录写入失败")
 
     return {
         "daily_info": daily_info,
@@ -145,7 +154,7 @@ async def _process_uid_launcher(uid, ev):
     panel = await fetch_launcher_panel(user_id, bot_id, uid)
     if panel is None:
         logger.info(
-            f"[鸣潮][每日信息]国际服账号失效，无法拉取面板 uid={uid} user_id={user_id} bot_id={bot_id}"
+            f"[鸣潮·每日信息] 国际服账号失效，无法拉取面板 uid={uid} user_id={user_id} bot_id={bot_id}"
         )
         try:
             await WavesStaminaRecord.update_ck_valid(
@@ -156,7 +165,7 @@ async def _process_uid_launcher(uid, ev):
                 is_ck_valid=False,
             )
         except Exception:
-            logger.exception("[鸣潮][每日信息]launcher CK 状态更新失败")
+            logger.exception("[鸣潮·每日信息] launcher CK 状态更新失败")
         return None
 
     base = panel.base
@@ -184,7 +193,7 @@ async def _process_uid_launcher(uid, ev):
             is_ck_valid=True,
         )
     except Exception:
-        logger.exception("[鸣潮][每日信息]launcher 体力记录写入失败")
+        logger.exception("[鸣潮·每日信息] launcher 体力记录写入失败")
 
     return {
         "daily_info": daily_info,
@@ -196,7 +205,7 @@ async def _process_uid_launcher(uid, ev):
 async def draw_stamina_img(bot: Bot, ev: Event):
     try:
         uid_list = await WavesBind.get_uid_list_by_game(ruser_id(ev), ev.bot_id)
-        logger.info(f"[鸣潮][每日信息]UID: {uid_list}")
+        logger.info(f"[鸣潮·每日信息] UID: {uid_list}")
         if uid_list is None:
             return ERROR_CODE[WAVES_CODE_103]
 
@@ -207,10 +216,13 @@ async def draw_stamina_img(bot: Bot, ev: Event):
         tasks = [process_uid(uid, ev) for uid in uid_list]
         results = await asyncio.gather(*tasks)
 
-        # 过滤掉 None 值
-        valid_daily_list = [res for res in results if res is not None]
+        # dict = 数据成功; str = 错误透传消息; None = 未绑定
+        valid_daily_list = [res for res in results if isinstance(res, dict)]
 
         if len(valid_daily_list) == 0:
+            err_msgs = [res for res in results if isinstance(res, str)]
+            if err_msgs:
+                return "\n".join(err_msgs)
             return ERROR_CODE[WAVES_CODE_102]
 
         # 各 UID 并发渲染各自的 stamina_img, 主流程串行 paste 到画布,
@@ -222,9 +234,9 @@ async def draw_stamina_img(bot: Bot, ev: Event):
             _assemble_stamina_canvas, stamina_imgs, based_w, based_h
         )
         res = await convert_img(img)
-        logger.info("[鸣潮][每日信息]绘图已完成,等待发送!")
+        logger.info("[鸣潮·每日信息] 绘图已完成,等待发送!")
     except TypeError:
-        logger.exception("[鸣潮][每日信息]绘图失败!")
+        logger.exception("[鸣潮·每日信息] 绘图失败!")
         res = "你绑定过的UID中可能存在过期CK~请重新绑定一下噢~"
 
     return res
@@ -279,7 +291,7 @@ async def _draw_stamina_img(ev: Event, valid: Dict, locale: str = "") -> Image.I
     pinned_type: Optional[str] = None
 
     if user and user.stamina_bg_value:
-        logger.debug(f"[鸣潮][每日信息]使用自定义体力背景设置: {user.stamina_bg_value}")
+        logger.debug(f"[鸣潮·每日信息] 使用自定义体力背景设置: {user.stamina_bg_value}")
         force_use_bg = "背景" in user.stamina_bg_value
         force_not_use_bg = "立绘" in user.stamina_bg_value
         force_not_use_custom = "官方" in user.stamina_bg_value
@@ -308,7 +320,7 @@ async def _draw_stamina_img(ev: Event, valid: Dict, locale: str = "") -> Image.I
             force_not_use_bg = pinned_type == "stamina"
             # hash 指向自定义图; 与 '官方' 矛盾, 后者会让 fetcher 跳过 custom_dir 而吃不到强制路径
             if force_not_use_custom:
-                logger.debug(f"[鸣潮][每日信息]hash {stamina_bg_value} 与 '官方' 矛盾, 忽略 '官方'")
+                logger.debug(f"[鸣潮·每日信息] hash {stamina_bg_value} 与 '官方' 矛盾, 忽略 '官方'")
             force_not_use_custom = False
         else:
             char_id = char_name_to_char_id(stamina_bg_value)
@@ -339,7 +351,7 @@ async def _draw_stamina_img(ev: Event, valid: Dict, locale: str = "") -> Image.I
             else:
                 pile_id = char_id
 
-    logger.debug(f"[鸣潮][每日信息]使用立绘ID: {pile_id}, 强制使用背景: {force_use_bg}, 强制不使用背景: {force_not_use_bg}")
+    logger.debug(f"[鸣潮·每日信息] 使用立绘ID: {pile_id}, 强制使用背景: {force_use_bg}, 强制不使用背景: {force_not_use_bg}")
 
     # 命中 hash 时短路 fetcher: 找不到对应文件 / 外部已设强制路径就静默回退到默认随机选图。
     # type 与对应 ContextVar 是 1:1 映射, 不再展开成两套 token。
@@ -377,7 +389,7 @@ async def _draw_stamina_img(ev: Event, valid: Dict, locale: str = "") -> Image.I
     use_html_render = WutheringWavesConfig.get_config("UseHtmlRender").data
     user_pref = user.hide_uid_self_value if user else ""
     if not PLAYWRIGHT_AVAILABLE or not use_html_render:
-        mr_use_bg = bool(ShowConfig.get_config("MrUseBG"))
+        mr_use_bg = bool(ShowConfig.get_config("MrUseBG").data)
         return await _render_stamina_card_pil(
             img=img,
             info=info,
@@ -396,6 +408,7 @@ async def _draw_stamina_img(ev: Event, valid: Dict, locale: str = "") -> Image.I
             locale=locale,
             pile_hash=pile_hash,
             user_pref=user_pref,
+            from_sdk=from_sdk,
         )
 
     try:
@@ -421,10 +434,10 @@ async def _draw_stamina_img(ev: Event, valid: Dict, locale: str = "") -> Image.I
         if html_res:
             return html_res
     except Exception:
-        logger.exception("[鸣潮][每日信息]HTML渲染失败, 回退到PIL绘制")
+        logger.exception("[鸣潮·每日信息] HTML渲染失败, 回退到PIL绘制")
 
     # 调用实际的绘制函数
-    mr_use_bg = bool(ShowConfig.get_config("MrUseBG"))
+    mr_use_bg = bool(ShowConfig.get_config("MrUseBG").data)
     return await _render_stamina_card_pil(
         img=img,
         info=info,
@@ -443,6 +456,7 @@ async def _draw_stamina_img(ev: Event, valid: Dict, locale: str = "") -> Image.I
         locale=locale,
         pile_hash=pile_hash,
         user_pref=user_pref,
+        from_sdk=from_sdk,
     )
 
 
@@ -719,6 +733,7 @@ def _render_stamina_card_pil(
     locale: str = "",
     pile_hash: Optional[str] = None,
     user_pref: str = "",
+    from_sdk: bool = False,
 ) -> Image.Image:
     """实际的绘制逻辑"""
     # 处理背景图片
@@ -757,9 +772,10 @@ def _render_stamina_card_pil(
         )
 
     title_bar_draw.text((630, 125), t("先约电台", locale), GREY, hud_label_font, "mm")
+    bp_level = daily_info.battlePassData[0].cur if daily_info.battlePassData else 0
     title_bar_draw.text(
         (630, 78),
-        f"Lv.{daily_info.battlePassData[0].cur}",
+        f"Lv.{bp_level}",
         "white",
         waves_font_42,
         "mm",
@@ -823,7 +839,7 @@ def _render_stamina_card_pil(
     # 体力
     active_draw.text((350, 115), f"/{daily_info.energyData.total}", GREY, waves_font_30, "lm")
     active_draw.text((348, 115), f"{daily_info.energyData.cur}", GREY, waves_font_30, "rm")
-    radio = daily_info.energyData.cur / daily_info.energyData.total
+    radio = daily_info.energyData.cur / daily_info.energyData.total if daily_info.energyData.total else 0
     color = RED if radio > 0.8 else YELLOW
     active_draw.rectangle((173, 142, int(173 + radio * max_len), 150), color)
 
@@ -846,15 +862,16 @@ def _render_stamina_card_pil(
     radio = daily_info.livenessData.cur / daily_info.livenessData.total if daily_info.livenessData.total != 0 else 0
     active_draw.rectangle((173, 374, int(173 + radio * max_len), 382), YELLOW)
 
-    # 签到状态
-    status_img = Image.new("RGBA", (230, 40), (255, 255, 255, 0))
-    status_img_draw = ImageDraw.Draw(status_img)
-    status_img_draw.rounded_rectangle([0, 0, 230, 40], radius=15, fill=(0, 0, 0, int(0.3 * 255)))
-    status_img.alpha_composite(sign_in_icon, (0, 0))
-    status_img_draw.text((50, 20), f"{sing_in_text}", "white", waves_font_30, "lm")
-    img.alpha_composite(status_img, (70, 80))
-    if mr_use_bg and has_bg:
+    # 签到状态 (国际服走 launcher SDK, 无签到接口, 与 HTML 一致隐藏)
+    if not from_sdk:
+        status_img = Image.new("RGBA", (230, 40), (255, 255, 255, 0))
+        status_img_draw = ImageDraw.Draw(status_img)
+        status_img_draw.rounded_rectangle([0, 0, 230, 40], radius=15, fill=(0, 0, 0, int(0.3 * 255)))
+        status_img.alpha_composite(sign_in_icon, (0, 0))
+        status_img_draw.text((50, 20), f"{sing_in_text}", "white", waves_font_30, "lm")
         img.alpha_composite(status_img, (70, 80))
+        if mr_use_bg and has_bg:
+            img.alpha_composite(status_img, (70, 80))
 
     # 活跃状态
     status_img2 = Image.new("RGBA", (230, 40), (255, 255, 255, 0))

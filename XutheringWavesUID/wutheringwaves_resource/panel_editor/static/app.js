@@ -38,6 +38,7 @@ const state = {
   // preview auto-refresh:
   previewSeq: 0,
   previewAuto: (() => { try { return localStorage.getItem("ww.panelEdit.previewAuto") !== "0"; } catch (_) { return true; } })(),
+  autoCrop: (() => { try { return localStorage.getItem("ww.panelEdit.autoCrop") !== "0"; } catch (_) { return true; } })(),
 
   // edit-existing warning dismissed
   editWarnDismissed: false,
@@ -493,6 +494,12 @@ function renderTile(img, isLandscape) {
         "aria-label": "下载原图",
         onClick: e => e.stopPropagation(),
       }, "⤓"),
+      el("button", {
+        class: "tile-act",
+        title: "复制原图到剪贴板",
+        "aria-label": "复制原图到剪贴板",
+        onClick: e => { e.stopPropagation(); copyImage(img); },
+      }, "⎘"),
       !isGuest() && el("button", {
         class: "tile-act",
         title: "编辑裁切",
@@ -519,6 +526,32 @@ function selectImage(img) {
   // re-render only what changed
   renderCenterBody();
   renderPreview();
+}
+
+async function copyImage(img) {
+  if (!navigator.clipboard || !window.ClipboardItem) {
+    toast("浏览器不支持剪贴板写入", "err");
+    return;
+  }
+  try {
+    const url = `${API}/image?type=${state.type}&char_id=${encodeURIComponent(state.selectedCharId)}&name=${encodeURIComponent(img.name)}&v=${img.mtime ?? 0}-${img.size ?? 0}`;
+    const resp = await fetch(url, { credentials: "include" });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    let blob = await resp.blob();
+    // 浏览器剪贴板对 image 多数仅认 image/png; 非 png 走 canvas 转一遍
+    if (blob.type !== "image/png") {
+      const bitmap = await createImageBitmap(blob);
+      const canvas = document.createElement("canvas");
+      canvas.width = bitmap.width;
+      canvas.height = bitmap.height;
+      canvas.getContext("2d").drawImage(bitmap, 0, 0);
+      blob = await new Promise(res => canvas.toBlob(res, "image/png"));
+    }
+    await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+    toast("已复制原图", "ok");
+  } catch (e) {
+    toast(`复制失败: ${e.message}`, "err");
+  }
 }
 
 async function deleteImage(img) {
@@ -569,6 +602,24 @@ function openSingleUpload() {
     if (files[0]) uploadSingle(files[0]);
   });
 }
+
+// 选中文件夹 + browse 模式下, 粘贴图片 → 单图裁剪。
+function onGlobalPaste(e) {
+  if (isGuest()) return;
+  if (!state.selectedCharId) return;
+  if (state.mode !== "browse") return;
+  const items = e.clipboardData?.items;
+  if (!items) return;
+  for (const it of items) {
+    if (it.kind === "file" && (it.type || "").startsWith("image/")) {
+      const f = it.getAsFile();
+      if (!f) continue;
+      e.preventDefault();
+      uploadSingle(f);
+      return;
+    }
+  }
+}
 function openBatchUpload() {
   if (!state.selectedCharId) return toast("请先选中文件夹", "warn");
   pickFiles(true, files => {
@@ -599,6 +650,7 @@ async function uploadSingle(file) {
       kind: "upload",
     };
     state.mode = "single-crop";
+    closeMobileDrawers();
     renderCenter();
     renderPreview();
   } catch (e) {
@@ -625,6 +677,25 @@ function renderCropper(body) {
       el("b", { id: "cropCurSize", text: `${tmp.current.w}×${tmp.current.h}` })),
     el("span", null, el("span", { class: "k", text: "裁剪 (源像素):" }),
       el("b", { id: "cropRectReadout", text: "—" })),
+    el("label", {
+      class: "crop-auto",
+      title: "关闭后, 拖动控制框不再自动裁剪/刷新预览; 需手动点「应用裁剪」",
+    },
+      el("input", {
+        type: "checkbox",
+        ...(state.autoCrop ? { checked: "checked" } : {}),
+        onChange: (e) => {
+          state.autoCrop = e.target.checked;
+          try { localStorage.setItem("ww.panelEdit.autoCrop", state.autoCrop ? "1" : "0"); } catch (_) {}
+          if (!state.autoCrop) {
+            clearTimeout(_autoCropTimer);
+            _autoCropTimer = null;
+            syncCropConfirm();
+          }
+        },
+      }),
+      el("span", { text: "实时裁剪" }),
+    ),
   );
 
   const bar = el("div", { class: "cropper__bar" },
@@ -632,7 +703,9 @@ function renderCropper(body) {
     el("div", { class: "cropper__actions" },
       el("button", { class: "btn", onClick: applyCrop }, "应用裁剪"),
       el("button", { class: "btn", onClick: restoreCrop }, "还原"),
-      el("button", { class: "btn btn--ghost", onClick: cancelCrop }, "取消"),
+      state.type === "card" && el("button", { class: "btn", onClick: trimExtra,
+        title: "外框收紧到内框大小, 切掉面板可见区外的 padding" }, "裁掉多余"),
+      el("button", { class: "btn", onClick: promptResize }, "缩放"),
       el("button", { id: "cropConfirmBtn", class: "btn btn--primary",
         onClick: tmp.kind === "edit-existing" ? confirmReplace : confirmUpload },
         tmp.kind === "edit-existing" ? "确认覆盖" : "确认上传"),
@@ -680,48 +753,46 @@ function panelVisibleRectInCrop(W, H) {
   const f = (W > H) ? (PANEL_OUT.w / W) : (PANEL_OUT.h / H);
   const pasteX = (PANEL_OUT.w - W * f) / 2;
   const pasteY = (PANEL_OUT.h - H * f) / 2;
-  // 可见窗口映射回框坐标, 并 clamp 到框内(超出部分是居中留白/白色填充, 不算可见内容)
-  const l = Math.max(0, Math.min((PANEL_VIS.l - pasteX) / f, W));
-  const t = Math.max(0, Math.min((PANEL_VIS.t - pasteY) / f, H));
-  const r = Math.max(0, Math.min((PANEL_VIS.r - pasteX) / f, W));
-  const b = Math.max(0, Math.min((PANEL_VIS.b - pasteY) / f, H));
+  const l = (PANEL_VIS.l - pasteX) / f;
+  const t = (PANEL_VIS.t - pasteY) / f;
+  const r = (PANEL_VIS.r - pasteX) / f;
+  const b = (PANEL_VIS.b - pasteY) / f;
   if (r <= l || b <= t) return null;
   return { x: l, y: t, w: r - l, h: b - t };
 }
 
 function initCropRect(img, wrap) {
-  // Initialize crop rect to full image (display coords)
   const w = img.clientWidth;
   const h = img.clientHeight;
   state.cropRect = { x: 0, y: 0, w, h };
-  state.cropClient = { w, h };  // 记录当前显示尺寸, 供窗口缩放时按比例校正
+  state.cropClient = { w, h };
   drawCropRect(wrap);
   updateRectReadout();
 }
 
 function drawCropRect(wrap) {
-  if (!state.cropRect) {
-    wrap.querySelector(".cropper__rect")?.remove();
-    wrap.querySelector(".cropper__visbox")?.remove();
-    return;
+  wrap.querySelector(".cropper__rect")?.remove();
+  wrap.querySelector(".cropper__visbox")?.remove();
+  if (!state.cropRect) return;
+
+  const isCard = state.type === "card";
+
+  const rect = el("div", { class: "cropper__rect" });
+  for (const h_ of ["nw", "n", "ne", "e", "se", "s", "sw", "w"]) {
+    rect.append(el("span", { class: `handle h-${h_}`, "data-h": h_ }));
   }
-  // 仅面板(card)类型显示「查看面板图」实际可见区引导(灰蒙版); 体力/背景类型不显示。
-  if (state.type === "card") {
-    if (!wrap.querySelector(".cropper__visbox")) {
-      wrap.append(el("div", { class: "cropper__visbox" }));
-    }
-  } else {
-    wrap.querySelector(".cropper__visbox")?.remove();
-  }
-  let rect = wrap.querySelector(".cropper__rect");
-  if (!rect) {
-    rect = el("div", { class: "cropper__rect" });
+  rect.addEventListener("pointerdown", ev => startDrag(ev, wrap, rect));
+  wrap.append(rect);
+
+  if (isCard) {
+    const vis = el("div", { class: "cropper__visbox cropper__visbox--active" });
     for (const h_ of ["nw", "n", "ne", "e", "se", "s", "sw", "w"]) {
-      rect.append(el("span", { class: `handle h-${h_}`, "data-h": h_ }));
+      vis.append(el("span", { class: `handle h-${h_}`, "data-h": h_ }));
     }
-    rect.addEventListener("pointerdown", ev => startDrag(ev, wrap, rect));
-    wrap.append(rect);
+    vis.addEventListener("pointerdown", ev => startVisDrag(ev, wrap, vis));
+    wrap.append(vis);
   }
+
   layoutCropper(wrap);
 }
 
@@ -731,12 +802,15 @@ function layoutCropper(wrap) {
   const img = state.cropImgEl;
   if (!wrap || !r || !img) return;
   const iw = img.clientWidth, ih = img.clientHeight;
-  // 框选超出原图时, 对应侧 padding 按超出量动态增大(白色填充预览); 未超出侧保持最小留白。
-  // 用 ceil 保证 padL ≥ -r.x, 框左/上边不会溢出白色填充区(亚像素也不漏)。
-  const padL = Math.max(CROP_FRAME, Math.ceil(-r.x));
-  const padT = Math.max(CROP_FRAME, Math.ceil(-r.y));
-  const padR = Math.max(CROP_FRAME, Math.ceil(r.x + r.w - iw));
-  const padB = Math.max(CROP_FRAME, Math.ceil(r.y + r.h - ih));
+  const v = state.type === "card" ? panelVisibleRectInCrop(r.w, r.h) : null;
+  const vMinX = v ? r.x + v.x : Infinity;
+  const vMinY = v ? r.y + v.y : Infinity;
+  const vMaxX = v ? r.x + v.x + v.w : -Infinity;
+  const vMaxY = v ? r.y + v.y + v.h : -Infinity;
+  const padL = Math.max(CROP_FRAME, Math.ceil(-r.x), Math.ceil(-vMinX));
+  const padT = Math.max(CROP_FRAME, Math.ceil(-r.y), Math.ceil(-vMinY));
+  const padR = Math.max(CROP_FRAME, Math.ceil(r.x + r.w - iw), Math.ceil(vMaxX - iw));
+  const padB = Math.max(CROP_FRAME, Math.ceil(r.y + r.h - ih), Math.ceil(vMaxY - ih));
   wrap.style.padding = `${padT}px ${padR}px ${padB}px ${padL}px`;
 
   // 图片左上角位于 padding 盒内 (padL, padT); 裁剪框用图像坐标系, 叠加该偏移。
@@ -747,10 +821,8 @@ function layoutCropper(wrap) {
     rect.style.width = `${r.w}px`;
     rect.style.height = `${r.h}px`;
   }
-  // 可见区引导: 相对裁剪框计算(框=将来保存的图), 故随裁剪框实时联动; 再叠加框在 wrap 内的位置。
   const vis = wrap.querySelector(".cropper__visbox");
   if (vis) {
-    const v = panelVisibleRectInCrop(r.w, r.h);
     if (v) {
       vis.style.display = "";
       vis.style.left = `${padL + r.x + v.x}px`;
@@ -782,10 +854,8 @@ function onCropperResize() {
 window.addEventListener("resize", onCropperResize);
 
 function startDrag(ev, wrap, rect) {
+  if (isCropBusy()) { ev.preventDefault(); return; }
   ev.preventDefault();
-  // 新一次拖动开始前, 取消 pending 的 auto-crop, 避免半路被服务端替换。
-  clearTimeout(_autoCropTimer);
-  _autoCropTimer = null;
 
   const target = ev.target;
   const isHandle = target.classList.contains("handle");
@@ -794,7 +864,6 @@ function startDrag(ev, wrap, rect) {
   const maxW = state.cropImgEl.clientWidth;
   const maxH = state.cropImgEl.clientHeight;
 
-  // pointer capture: 保证手指/光标移出元素后仍持续收 move 事件。
   try { rect.setPointerCapture(ev.pointerId); } catch (_) {}
 
   let pending = null;
@@ -807,17 +876,14 @@ function startDrag(ev, wrap, rect) {
   const move = e => {
     const dx = e.clientX - start.sx;
     const dy = e.clientY - start.sy;
-    // 允许框选超出原图: 各边最多向外扩展一个图尺寸(即输出 ≤ 3×), 越界部分由后端白色填充
     const MIN = 8;
     const minBX = -maxW, maxBX = 2 * maxW;
     const minBY = -maxH, maxBY = 2 * maxH;
     let { x, y, w, h } = start;
     if (!isHandle) {
-      // 整体拖动: 平移后 clamp 位置, 尺寸不变
       x = Math.min(Math.max(start.x + dx, minBX), maxBX - w);
       y = Math.min(Math.max(start.y + dy, minBY), maxBY - h);
     } else {
-      // 拉伸: 只移动被拖的边, 对边固定(避免触边时把对边一起带动)
       let left = start.x, top = start.y, right = start.x + start.w, bottom = start.y + start.h;
       if (direction.includes("w")) left = Math.min(Math.max(left + dx, minBX), right - MIN);
       if (direction.includes("e")) right = Math.max(Math.min(right + dx, maxBX), left + MIN);
@@ -847,8 +913,119 @@ function startDrag(ev, wrap, rect) {
   rect.addEventListener("pointercancel", cleanup);
 }
 
-// 拖拽结束后应用裁剪并刷新预览; 防止快速连续拖动堆积请求。
-// 静止 IDLE_MS 才真正落库, 期间任何新拖动都会重置计时器, 让连续微调流畅。
+function startVisDrag(ev, wrap, visEl) {
+  if (isCropBusy()) { ev.preventDefault(); return; }
+  ev.preventDefault();
+
+  const target = ev.target;
+  const isHandle = target.classList.contains("handle");
+  const direction = target.dataset.h || "";
+  const tmp = state.cropTmp;
+  if (!tmp || !tmp.source) return;
+
+  const cur = panelVisibleRectInCrop(state.cropRect.w, state.cropRect.h);
+  if (!cur) return;
+  const start = {
+    sx: ev.clientX, sy: ev.clientY,
+    x: state.cropRect.x + cur.x,
+    y: state.cropRect.y + cur.y,
+    w: cur.w, h: cur.h,
+  };
+
+  const VIS_W = PANEL_VIS.r - PANEL_VIS.l;
+  const VIS_H = PANEL_VIS.b - PANEL_VIS.t;
+  const VIS_RATIO = VIS_W / VIS_H;
+  const MIN_VH = 24;
+  const R = state.cropRect.w / state.cropRect.h;
+
+  const applyVis = (vx, vy, vw, vh) => {
+    const f = VIS_H / vh;
+    let W, H, pasteX, pasteY;
+    if (R > 1) {
+      W = PANEL_OUT.w / f;
+      H = W / R;
+      pasteX = 0;
+      pasteY = (PANEL_OUT.h - H * f) / 2;
+    } else {
+      H = PANEL_OUT.h / f;
+      W = H * R;
+      pasteX = (PANEL_OUT.w - W * f) / 2;
+      pasteY = 0;
+    }
+    state.cropRect = {
+      x: vx - (PANEL_VIS.l - pasteX) / f,
+      y: vy - (PANEL_VIS.t - pasteY) / f,
+      w: W,
+      h: H,
+    };
+  };
+
+  try { visEl.setPointerCapture(ev.pointerId); } catch (_) {}
+
+  let pending = null;
+  const flush = () => {
+    pending = null;
+    layoutCropper(wrap);
+    updateRectReadout();
+  };
+
+  const move = e => {
+    const dx = e.clientX - start.sx;
+    const dy = e.clientY - start.sy;
+    if (!isHandle) {
+      applyVis(start.x + dx, start.y + dy, start.w, start.h);
+    } else {
+      let nw, nh;
+      if (direction.length === 2) {
+        const sx = direction.includes("e") ? 1 : -1;
+        const sy = direction.includes("s") ? 1 : -1;
+        const dw = Math.max(sx * dx, sy * dy * VIS_RATIO);
+        nw = start.w + dw;
+        nh = nw / VIS_RATIO;
+      } else if (direction === "w") {
+        nw = start.w - dx;
+        nh = nw / VIS_RATIO;
+      } else if (direction === "e") {
+        nw = start.w + dx;
+        nh = nw / VIS_RATIO;
+      } else if (direction === "n") {
+        nh = start.h - dy;
+        nw = nh * VIS_RATIO;
+      } else {
+        nh = start.h + dy;
+        nw = nh * VIS_RATIO;
+      }
+      nh = Math.max(MIN_VH, nh);
+      nw = nh * VIS_RATIO;
+
+      let nx = start.x, ny = start.y;
+      if (direction.includes("w")) nx = start.x + start.w - nw;
+      else if (!direction.includes("e")) nx = start.x + (start.w - nw) / 2;
+      if (direction.includes("n")) ny = start.y + start.h - nh;
+      else if (!direction.includes("s")) ny = start.y + (start.h - nh) / 2;
+      applyVis(nx, ny, nw, nh);
+    }
+    if (pending == null) pending = requestAnimationFrame(flush);
+  };
+
+  const cleanup = () => {
+    visEl.removeEventListener("pointermove", move);
+    visEl.removeEventListener("pointerup", onUp);
+    visEl.removeEventListener("pointercancel", cleanup);
+    try { visEl.releasePointerCapture(ev.pointerId); } catch (_) {}
+    if (pending != null) {
+      cancelAnimationFrame(pending);
+      flush();
+    }
+  };
+  const onUp = () => { cleanup(); scheduleAutoCrop(); };
+
+  visEl.addEventListener("pointermove", move);
+  visEl.addEventListener("pointerup", onUp);
+  visEl.addEventListener("pointercancel", cleanup);
+}
+
+// 拖拽结束后等待 IDLE_MS 静止再落库, 节流连续微调。
 const _AUTO_CROP_IDLE_MS = 800;
 let _autoCropTimer = null;
 let _cropInflight = false;
@@ -856,11 +1033,19 @@ let _cropInflight = false;
 // 裁剪结果落库前禁用「确认」, 防止保存到旧 tmp 丢失最新一次裁剪。
 function isCropBusy() { return _autoCropTimer != null || _cropInflight; }
 function syncCropConfirm() {
+  const busy = isCropBusy();
   const btn = document.getElementById("cropConfirmBtn");
-  if (btn) btn.disabled = isCropBusy();
+  if (btn) btn.disabled = busy;
+  const rect = document.querySelector(".cropper__rect");
+  if (rect) rect.classList.toggle("is-busy", busy);
+  const vis = document.querySelector(".cropper__visbox");
+  if (vis) vis.classList.toggle("is-busy", busy);
+  const actions = document.querySelector(".cropper__actions");
+  if (actions) actions.classList.toggle("is-busy", busy);
 }
 
 function scheduleAutoCrop() {
+  if (!state.autoCrop) return;
   clearTimeout(_autoCropTimer);
   _autoCropTimer = setTimeout(async () => {
     _autoCropTimer = null;
@@ -898,6 +1083,7 @@ function updateRectReadout() {
 
 async function applyCrop(opts = {}) {
   const { silent = false } = opts;
+  if (_cropInflight) return;
   const tmp = state.cropTmp;
   if (!tmp) return;
   const src = displayToSourceRect(state.cropRect);
@@ -914,6 +1100,7 @@ async function applyCrop(opts = {}) {
     const sizeEl = document.getElementById("cropCurSize");
     if (sizeEl) sizeEl.textContent = `${r.width}×${r.height}`;
     refreshCropImg();
+    await waitCropImgLoad();
     triggerPreview(true);
     if (!silent) toast("已裁剪", "ok", 1800);
   } catch (e) {
@@ -925,6 +1112,7 @@ async function applyCrop(opts = {}) {
 }
 
 async function restoreCrop() {
+  if (_cropInflight) return;
   const tmp = state.cropTmp;
   if (!tmp) return;
   _cropInflight = true;
@@ -935,6 +1123,7 @@ async function restoreCrop() {
     tmp.current = { w: r.width, h: r.height };
     document.getElementById("cropCurSize").textContent = `${r.width}×${r.height}`;
     refreshCropImg();
+    await waitCropImgLoad();
     triggerPreview();
     toast("已还原", "ok", 1800);
   } catch (e) {
@@ -948,6 +1137,87 @@ async function restoreCrop() {
 function refreshCropImg() {
   if (!state.cropImgEl) return;
   state.cropImgEl.src = `${API}/tmp/image?token=${state.cropTmp.token}&_=${Date.now()}`;
+}
+
+function waitCropImgLoad() {
+  return new Promise((resolve) => {
+    const img = state.cropImgEl;
+    if (!img) return resolve();
+    if (img.complete && img.naturalWidth) return resolve();
+    const cleanup = () => {
+      img.removeEventListener("load", onLoad);
+      img.removeEventListener("error", onErr);
+    };
+    const onLoad = () => { cleanup(); resolve(); };
+    const onErr = () => { cleanup(); resolve(); };
+    img.addEventListener("load", onLoad);
+    img.addEventListener("error", onErr);
+  });
+}
+
+async function trimExtra() {
+  if (isCropBusy()) return;
+  if (state.type !== "card") return;
+  const tmp = state.cropTmp;
+  if (!tmp || !state.cropRect) return;
+  const v = panelVisibleRectInCrop(state.cropRect.w, state.cropRect.h);
+  if (!v) return;
+  const vAbs = {
+    x: state.cropRect.x + v.x,
+    y: state.cropRect.y + v.y,
+    w: v.w,
+    h: v.h,
+  };
+  const f = (PANEL_VIS.b - PANEL_VIS.t) / vAbs.h;  // 805 / visbox.h
+  state.cropRect = {
+    x: vAbs.x - PANEL_VIS.l / f,
+    y: vAbs.y - PANEL_VIS.t / f,
+    w: PANEL_OUT.w / f,
+    h: PANEL_OUT.h / f,
+  };
+  const wrap = state.cropImgEl?.parentElement;
+  if (wrap) {
+    layoutCropper(wrap);
+    updateRectReadout();
+  }
+  await applyCrop();
+}
+
+async function promptResize() {
+  if (isCropBusy()) return;
+  const tmp = state.cropTmp;
+  if (!tmp) return;
+  const raw = window.prompt("缩放倍率 (0.05 - 8.0, 例如 0.5 / 1.5)", "1.0");
+  if (raw == null) return;
+  const scale = parseFloat(raw);
+  if (!Number.isFinite(scale) || scale < 0.05 || scale > 8) {
+    toast("倍率超出范围", "warn");
+    return;
+  }
+  if (Math.abs(scale - 1) < 1e-3) return;
+  _cropInflight = true;
+  syncCropConfirm();
+  try {
+    const oldSourceW = tmp.source.w, oldSourceH = tmp.source.h;
+    const r = await apiJson("/tmp/resize", { token: tmp.token, scale });
+    const sx = r.source_width / oldSourceW;
+    const sy = r.source_height / oldSourceH;
+    tmp.current = { w: r.width, h: r.height };
+    tmp.source = { w: r.source_width, h: r.source_height };
+    if (tmp.offset) {
+      tmp.offset = { x: tmp.offset.x * sx, y: tmp.offset.y * sy };
+    }
+    renderCenterBody();
+    syncCropConfirm();
+    await waitCropImgLoad();
+    triggerPreview(true);
+    toast(`已缩放 ${r.width}×${r.height}`, "ok");
+  } catch (e) {
+    toast(`缩放失败: ${e.message}`, "err");
+  } finally {
+    _cropInflight = false;
+    syncCropConfirm();
+  }
 }
 
 function _resetCropState() {
@@ -1040,6 +1310,7 @@ async function editExisting(img) {
     };
     state.editWarnDismissed = false;
     state.mode = "single-crop";
+    closeMobileDrawers();
     renderCenter();
     renderPreview();
   } catch (e) {
@@ -1136,6 +1407,7 @@ async function editBatchItem(it) {
     fromBatch: true,
   };
   state.mode = "single-crop";
+  closeMobileDrawers();
   renderCenter();
   renderPreview();
 }
@@ -1271,7 +1543,10 @@ function buildPreviewAutoToggle() {
 
 function buildRendererToggle() {
   const seg = el("div", { class: "seg", role: "tablist", "aria-label": "渲染器" });
-  for (const r of ["html", "pil"]) {
+  const options = state.type === "stamina" ? ["html", "pil", "rank"] : ["html", "pil"];
+  if (!options.includes(state.renderer)) state.renderer = "html";
+  const LABEL = { html: "HTML", pil: "PIL", rank: "角色排行" };
+  for (const r of options) {
     seg.append(el("button", {
       class: state.renderer === r ? "is-active" : "",
       role: "tab",
@@ -1281,7 +1556,7 @@ function buildRendererToggle() {
         state.renderer = r;
         renderPreview();
       },
-    }, r.toUpperCase()));
+    }, LABEL[r]));
   }
   return seg;
 }
@@ -1482,6 +1757,12 @@ function bindResizer(elNode, varName, dir, min, max) {
   });
 }
 
+function closeMobileDrawers() {
+  $("#sidebar").classList.remove("is-open");
+  $("#previewPane").classList.remove("is-open");
+  $("#scrim").classList.remove("is-on");
+}
+
 function setupLayout() {
   loadLayout();
   bindResizer($("#resizerSide"), "--side-w", +1, 200, 480);
@@ -1491,14 +1772,9 @@ function setupLayout() {
   const sidebar = $("#sidebar");
   const preview = $("#previewPane");
   const scrim = $("#scrim");
-  const closeAll = () => {
-    sidebar.classList.remove("is-open");
-    preview.classList.remove("is-open");
-    scrim.classList.remove("is-on");
-  };
   $("#mobileMenu").addEventListener("click", () => {
     const wasOpen = sidebar.classList.contains("is-open");
-    closeAll();
+    closeMobileDrawers();
     if (!wasOpen) {
       sidebar.classList.add("is-open");
       scrim.classList.add("is-on");
@@ -1506,18 +1782,18 @@ function setupLayout() {
   });
   $("#mobilePreview").addEventListener("click", () => {
     const wasOpen = preview.classList.contains("is-open");
-    closeAll();
+    closeMobileDrawers();
     if (!wasOpen) {
       preview.classList.add("is-open");
       scrim.classList.add("is-on");
     }
   });
-  scrim.addEventListener("click", closeAll);
+  scrim.addEventListener("click", closeMobileDrawers);
   // tap inside sidebar list closes drawer when picking a folder (mobile UX)
   sidebar.addEventListener("click", (e) => {
     if (window.matchMedia("(max-width: 820px)").matches && e.target.closest(".folder")) {
       // 等本次 click 触发完 selectFolder 后再收
-      setTimeout(closeAll, 60);
+      setTimeout(closeMobileDrawers, 60);
     }
   });
 }
@@ -1528,6 +1804,7 @@ function setupLayout() {
 // ============================================================
 async function init() {
   setupLayout();
+  document.addEventListener("paste", onGlobalPaste);
   // type tab tabs render after meta.
   $("#folderFilter").addEventListener("input", debounce(e => {
     state.filterText = e.target.value;

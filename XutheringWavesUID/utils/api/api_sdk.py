@@ -296,7 +296,7 @@ class WavesLauncherApi:
     ) -> KuroApiResp[Any]:
         # debug_body: Any = json_body if json_body is not None else _mask_sensitive(form)
         # logger.debug(
-            # f"[wwsdk] >>> {method} {url} body={debug_body} headers={headers} params={params}"
+            # f"[鸣潮·SDK] >>> {method} {url} body={debug_body} headers={headers} params={params}"
         # )
 
         try:
@@ -314,18 +314,18 @@ class WavesLauncherApi:
                     raw = await resp.json(content_type=None)
                 except Exception:
                     raw_text = await resp.text()
-                    # logger.debug(f"[wwsdk] <<< {url} status={status} non-json body={raw_text!r}")
+                    # logger.debug(f"[鸣潮·SDK] <<< {url} status={status} non-json body={raw_text!r}")
                     raw = {"code": -999, "msg": raw_text}
         except aiohttp.ClientError as e:
-            logger.warning(f"[wwsdk] 请求异常 url={url} err={e}")
+            logger.warning(f"[鸣潮·SDK] 请求异常 url={url} err={e}")
             return KuroApiResp.err(f"网络异常: {e}")
         except Exception as e:
-            logger.warning(f"[wwsdk] 未知异常 url={url} err={e}")
+            logger.warning(f"[鸣潮·SDK] 未知异常 url={url} err={e}")
             return KuroApiResp.err(f"未知异常: {e}")
 
-        # logger.debug(f"[wwsdk] <<< {url} status={status} raw={raw}")
+        # logger.debug(f"[鸣潮·SDK] <<< {url} status={status} raw={raw}")
         normalized = _normalize_resp(raw)
-        # logger.debug(f"[wwsdk] <<< {url} normalized={normalized}")
+        # logger.debug(f"[鸣潮·SDK] <<< {url} normalized={normalized}")
         return KuroApiResp[Any].model_validate(normalized)
 
     async def _retry_launcher(
@@ -344,7 +344,7 @@ class WavesLauncherApi:
         for i in range(attempts):
             resp = await self._do_request(url, json_body=body)
             # logger.debug(
-            #     f"[wwsdk] launcher retry {i + 1}/{attempts} url={url} "
+            #     f"[鸣潮·SDK] launcher retry {i + 1}/{attempts} url={url} "
             #     f"code={resp.code} msg={resp.msg!r} data={resp.data!r}"
             # )
             if resp.code != 1005:
@@ -353,7 +353,7 @@ class WavesLauncherApi:
                 await asyncio.sleep(delay)
                 delay = min(delay * 1.6, 2.0)
         logger.warning(
-            f"[wwsdk] launcher 1005 重试 {attempts} 次仍未就绪 url={url} body={body}"
+            f"[鸣潮·SDK] launcher 1005 重试 {attempts} 次仍未就绪 url={url} body={body}"
         )
         assert resp is not None
         return resp

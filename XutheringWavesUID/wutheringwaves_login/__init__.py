@@ -25,7 +25,7 @@ async def get_login_msg(bot: Bot, ev: Event):
     has_text = bool(text)
     branch = "page" if not text else ("code" if "," in text else ("digit_skip" if text.isdigit() else "invalid"))
     logger.debug(
-        f"[鸣潮登录] get_login_msg user_id={ev.user_id} bot_id={ev.bot_id} "
+        f"[鸣潮·登录] get_login_msg user_id={ev.user_id} bot_id={ev.bot_id} "
         f"group_id={ev.group_id} has_text={has_text} branch={branch}"
     )
     if text == "":
@@ -34,11 +34,15 @@ async def get_login_msg(bot: Bot, ev: Event):
     elif "," in text:
         return await code_login(bot, ev, text)
 
-    elif text.isdigit():
-        return
-
     at_sender = True if ev.group_id else False
-    msg = f"{game_title} 账号登录失败\n请重新输入命令【{PREFIX}登录】进行登录"
+    if text.isdigit():
+        msg = (
+            f"{game_title} 登录命令格式错误\n"
+            f"网页扫码：仅发【{PREFIX}登录】\n"
+            f"短信登录：【{PREFIX}登录 手机号,验证码】"
+        )
+    else:
+        msg = f"{game_title} 账号登录失败\n请重新输入命令【{PREFIX}登录】进行登录"
     return await bot.send(
         (" " if at_sender else "") + msg,
         at_sender=at_sender,
@@ -48,7 +52,7 @@ async def get_login_msg(bot: Bot, ev: Event):
 @sv_email_login.on_fullmatch(("邮箱登录", "国际服登录"), block=True)
 async def get_email_login_msg(bot: Bot, ev: Event):
     logger.debug(
-        f"[鸣潮登录] email_login user_id={ev.user_id} bot_id={ev.bot_id} "
+        f"[鸣潮·登录] email_login user_id={ev.user_id} bot_id={ev.bot_id} "
         f"group_id={ev.group_id}"
     )
     return await email_login_entry(bot, ev)
@@ -70,7 +74,7 @@ async def get_email_login_msg(bot: Bot, ev: Event):
 )
 async def get_cloud_login_msg(bot: Bot, ev: Event):
     logger.debug(
-        f"[鸣潮登录] cloud_login user_id={ev.user_id} bot_id={ev.bot_id} "
+        f"[鸣潮·登录] cloud_login user_id={ev.user_id} bot_id={ev.bot_id} "
         f"group_id={ev.group_id}"
     )
     return await cloud_login_entry(bot, ev)

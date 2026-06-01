@@ -8,7 +8,7 @@ from gsuid_core.models import Event
 from gsuid_core.pool import to_thread
 from gsuid_core.utils.image.convert import convert_img
 
-from ..utils.at_help import is_intl_uid, intl_unavailable_msg
+from ..utils.at_help import ruser_id, is_intl_uid, intl_unavailable_msg
 from ..utils.hint import error_reply
 from ..utils.image import (
     SPECIAL_GOLD,
@@ -115,10 +115,16 @@ async def calc_develop_cost(
 
     Args:
         ev: 事件对象
-        develop_list: 角色列表
+        develop_list: 角色列表(已是 resolve_char 命中后的规范名)
         target_skill_levels: 技能目标等级列表，顺序为[常态攻击, 共鸣技能, 共鸣解放, 变奏技能, 共鸣回路]
                            默认 [10, 10, 10, 10, 10]
+
+    Returns:
+        (payload, ignored_canonical_names): payload 为 str(错误文案) 或 bytes(图片);
+        ignored_canonical_names 为被忽略的规范角色名列表(未上线/识别失败等), 调用方按需展示。
     """
+    ignored_names: List[str] = []
+
     if target_skill_levels is None:
         target_skill_levels = [10, 10, 10, 10, 10]
 
@@ -126,65 +132,68 @@ async def calc_develop_cost(
     if not isinstance(target_skill_levels, list) or len(target_skill_levels) != 5:
         target_skill_levels = [10, 10, 10, 10, 10]
 
-    # 确保所有元素都是整数，无效的替换为10
+    # 确保所有元素都是整数且落在 1-10 区间，无效的替换为10
     target_skill_levels = [
-        int(level) if isinstance(level, (int, str)) and str(level).isdigit() else 10
+        min(max(int(level), 1), 10) if isinstance(level, (int, str)) and str(level).isdigit() else 10
         for level in target_skill_levels
     ]
     target_skill_levels_map = {
         skill_type: target_skill_levels[idx] for idx, skill_type in enumerate(SKILL_ORDER)
     }
-    user_id = ev.user_id
+    user_id = ruser_id(ev)
     uid = await WavesBind.get_uid_by_game(user_id, ev.bot_id)
     if not uid:
-        return error_reply(WAVES_CODE_103)
+        return error_reply(WAVES_CODE_103), ignored_names
     if is_intl_uid(uid):
-        return intl_unavailable_msg(uid)
+        return intl_unavailable_msg(uid), ignored_names
 
     token_result, token = await waves_api.get_ck_result(uid, user_id, ev.bot_id)
     if not token_result or not token:
-        return error_reply(WAVES_CODE_102)
+        return error_reply(WAVES_CODE_102), ignored_names
 
-    alias_char_ids = []
-    for develop in develop_list:
-        char_id = char_name_to_char_id(develop)
+    # 保留 (char_id, canonical_name) 配对, 后续分类回显仅用 canonical_name 防回显用户输入
+    alias_pairs: List[tuple] = []
+    for canonical in develop_list:
+        char_id = char_name_to_char_id(canonical)
         if char_id is None:
+            ignored_names.append(canonical)
             continue
-        alias_char_ids.append(char_id)
+        alias_pairs.append((char_id, canonical))
 
-    if not alias_char_ids:
-        return "未找到养成角色"
+    if not alias_pairs:
+        return "未找到养成角色", ignored_names
 
-    if len(alias_char_ids) > 2:
-        return "暂不支持查询两个以上角色养成"
+    if len(alias_pairs) > 2:
+        return "暂不支持查询两个以上角色养成", ignored_names
 
     refresh_data = await waves_api.calculator_refresh_data(uid, token)
     if not refresh_data.success:
-        return "养成刷新失败"
+        return "养成刷新失败", ignored_names
 
     # 获取所有角色
     online_list_role = await waves_api.get_online_list_role(token)
     if not online_list_role.success or isinstance(online_list_role.data, str):
-        return online_list_role.throw_msg()
+        return online_list_role.throw_msg(), ignored_names
     online_list_role_model = OnlineRoleList.model_validate(online_list_role.data)
     online_role_map = {str(i.roleId): i for i in online_list_role_model}
     # 获取所有武器
     online_list_weapon = await waves_api.get_online_list_weapon(token)
     if not online_list_weapon.success or isinstance(online_list_weapon.data, str):
-        return online_list_weapon.throw_msg()
+        return online_list_weapon.throw_msg(), ignored_names
     online_list_weapon_model = OnlineWeaponList.model_validate(online_list_weapon.data)
     online_weapon_map = {str(i.weaponId): i for i in online_list_weapon_model}
     # 获取拥有的角色
     owned_role = await waves_api.get_owned_role_info(uid, token)
     if not owned_role.success or isinstance(owned_role.data, str):
-        return owned_role.throw_msg()
+        return owned_role.throw_msg(), ignored_names
     owned_char_info = OwnedRoleInfoResponse.model_validate(owned_role.data)
     owned_char_ids = [str(i.roleId) for i in owned_char_info.roleInfoList]
 
     owneds = []
     not_owneds = []
-    for char_id in alias_char_ids:
+    for char_id, canonical in alias_pairs:
         if char_id not in online_role_map:
+            ignored_names.append(canonical)
             continue
         if char_id in SPECIAL_CHAR:
             find_char_ids = SPECIAL_CHAR[char_id]
@@ -201,7 +210,7 @@ async def calc_develop_cost(
     if owneds:
         develop_data = await waves_api.get_develop_role_cultivate_status(uid, token, owneds)
         if not develop_data.success:
-            return develop_data.throw_msg()
+            return develop_data.throw_msg(), ignored_names
         develop_data = RoleCultivateStatusList.model_validate(develop_data.data)
         develop_data_map = {i.roleId: i for i in develop_data}
 
@@ -260,11 +269,11 @@ async def calc_develop_cost(
         content_list.append(template_role)
 
     if not content_list:
-        return "未找到养成角色"
+        return "未找到养成角色", ignored_names
 
     develop_cost = await waves_api.get_batch_role_cost(uid, token, content_list)
     if not develop_cost.success:
-        return develop_cost.throw_msg()
+        return develop_cost.throw_msg(), ignored_names
     content_map = {f"{i['roleId']}": i for i in content_list}
 
     batch_role_cost_res = BatchRoleCostResponse.model_validate(develop_cost.data)
@@ -277,7 +286,7 @@ async def calc_develop_cost(
 
     card_img = await _compose_develop_canvas(all_card)
     card_img = await convert_img(card_img)
-    return card_img
+    return card_img, ignored_names
 
 
 @to_thread
@@ -493,7 +502,9 @@ async def calc_role_need_card(
     online_weapon = None
     square_weapon = None
     if content.get("weaponId", None) and role_cost_detail.weaponId:
-        online_weapon = online_weapon_map[f"{role_cost_detail.weaponId}"]
+        online_weapon = online_weapon_map.get(f"{role_cost_detail.weaponId}")
+        if online_weapon is None:
+            return img_cards
         square_weapon = await get_square_weapon(content["weaponId"])
 
     temp_img = await _compose_role_top_card(

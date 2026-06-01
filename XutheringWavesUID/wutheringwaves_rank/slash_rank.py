@@ -58,6 +58,7 @@ from ..wutheringwaves_abyss.period import (
     SLASH_BASE_TIMESTAMP,
     get_slash_period_number,
     is_slash_record_expired,
+    parse_rank_date,
 )
 from ..utils.resource.RESOURCE_PATH import SLASH_PATH
 from ..wutheringwaves_abyss.draw_slash_card import COLOR_QUALITY
@@ -99,28 +100,6 @@ BOT_COLOR = [
 CHINA_TZ = timezone(timedelta(hours=8))
 
 
-def parse_rank_date(date_str: str) -> Optional[datetime]:
-    if not date_str:
-        return None
-
-    for fmt in ("%Y-%m-%d", "%Y/%m/%d", "%Y-%m-%d %H:%M:%S"):
-        try:
-            dt = datetime.strptime(date_str, fmt)
-            return dt.replace(tzinfo=CHINA_TZ)
-        except ValueError:
-            continue
-
-    try:
-        dt = datetime.fromisoformat(date_str)
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=CHINA_TZ)
-        else:
-            dt = dt.astimezone(CHINA_TZ)
-        return dt
-    except ValueError:
-        return None
-
-
 from ._colors import (
     get_slash_local_rank_color as get_local_score_color,
     get_slash_total_rank_color as get_score_color,
@@ -147,9 +126,9 @@ async def get_rank(item: SlashRankItem) -> Optional[SlashRankRes]:
             if res.status_code == 200:
                 return SlashRankRes.model_validate(res.json())
             else:
-                logger.warning(f"获取排行失败: {res.status_code} - {res.text}")
+                logger.warning(f"[鸣潮·冥海排行] 获取远端排行失败: {res.status_code} - {res.text}")
         except Exception as e:
-            logger.exception(f"获取排行失败: {e}")
+            logger.exception(f"[鸣潮·冥海排行] 获取远端排行失败: {e}")
 
 
 # TODO: PIL 卸到线程池 (loop 内 await get_square_avatar / pic_download_from_url 较多, 需要批量预取重构)
@@ -375,9 +354,12 @@ class SlashRankListInfo:
         if slash_data and slash_data.difficultyList:
             # 获取难度12的分数
             difficulty_12 = next((k for k in slash_data.difficultyList if k.difficulty == 2), None)
-            if difficulty_12 and difficulty_12.challengeList:
-                challenge = difficulty_12.challengeList[0]
-                if challenge.halfList:
+            if difficulty_12:
+                challenge = next(
+                    (c for c in difficulty_12.challengeList if c.challengeId == 12),
+                    None,
+                )
+                if challenge and challenge.halfList:
                     # 计算总分数
                     self.score = sum(half.score for half in challenge.halfList)
 
@@ -420,7 +402,7 @@ async def get_all_slash_rank_info(
                     continue
 
                 if is_slash_record_expired(record_time):
-                    logger.debug(f"用户{uid}无尽数据已过期，跳过")
+                    logger.debug(f"[鸣潮·冥海排行] 用户 uid={uid} 数据已过期, 跳过")
                     continue
 
                 if not slash_data.get("isUnlock", False):
@@ -432,7 +414,7 @@ async def get_all_slash_rank_info(
                 if rankInfo.score > 0:
                     rankInfoList.append(rankInfo)
             except Exception as e:
-                logger.debug(f"获取用户{uid}本地无尽数据失败: {e}")
+                logger.debug(f"[鸣潮·冥海排行] 获取 uid={uid} 本地数据失败: {e}")
                 continue
 
     return rankInfoList
@@ -460,7 +442,7 @@ async def get_role_chain_count(uid: str, role_id: int) -> int:
                     return len(unlocked_chains)
         return -1
     except Exception as e:
-        logger.debug(f"获取角色{role_id}共鸣链失败: {e}")
+        logger.debug(f"[鸣潮·冥海排行] 获取角色 roleId={role_id} 共鸣链失败: {e}")
         return -1
 
 
@@ -490,7 +472,7 @@ async def get_five_star_chain_total(uid: str) -> int:
                         total_gold += len(unlocked_chains) + 1
         return total_gold
     except Exception as e:
-        logger.debug(f"计算五星角色金数失败: {e}")
+        logger.debug(f"[鸣潮·冥海排行] 计算五星角色金数失败: {e}")
         return 0
 
 
@@ -498,7 +480,7 @@ async def get_five_star_chain_total(uid: str) -> int:
 async def draw_slash_rank_list(bot: Bot, ev: Event):
     """绘制无尽排行"""
     start_time = time.time()
-    logger.info(f"[draw_slash_rank_list] start: {start_time}")
+    logger.info(f"[鸣潮·冥海排行] 群排行 start: {start_time}")
 
     # 检查权限配置
     tokenLimitFlag, wavesTokenUsersMap = await get_endless_rank_token_condition(ev)
@@ -618,9 +600,12 @@ async def draw_slash_rank_list(bot: Bot, ev: Event):
         char_gold_total = 0
         if rankInfo.slash_data and rankInfo.slash_data.difficultyList:
             difficulty_12 = next((k for k in rankInfo.slash_data.difficultyList if k.difficulty == 2), None)
-            if difficulty_12 and difficulty_12.challengeList:
-                challenge = difficulty_12.challengeList[0]
-                if challenge.halfList:
+            if difficulty_12:
+                challenge = next(
+                    (c for c in difficulty_12.challengeList if c.challengeId == 12),
+                    None,
+                )
+                if challenge and challenge.halfList:
                     for slash_half in challenge.halfList:
                         for slash_role in slash_half.roleList:
                             role_id = slash_role.roleId
@@ -654,9 +639,12 @@ async def draw_slash_rank_list(bot: Bot, ev: Event):
         if rankInfo.slash_data and rankInfo.slash_data.difficultyList:
             # 获取难度12的数据
             difficulty_12 = next((k for k in rankInfo.slash_data.difficultyList if k.difficulty == 2), None)
-            if difficulty_12 and difficulty_12.challengeList:
-                challenge = difficulty_12.challengeList[0]
-                if challenge.halfList:
+            if difficulty_12:
+                challenge = next(
+                    (c for c in difficulty_12.challengeList if c.challengeId == 12),
+                    None,
+                )
+                if challenge and challenge.halfList:
                     for half_index, slash_half in enumerate(challenge.halfList):
                         # 绘制角色信息
                         for role_index, slash_role in enumerate(slash_half.roleList):
@@ -684,7 +672,7 @@ async def draw_slash_rank_list(bot: Bot, ev: Event):
                                     (350 + half_index * 235 + role_index * 50, 20),
                                 )
                             except Exception as e:
-                                logger.debug(f"绘制角色{slash_role.roleId}失败: {e}")
+                                logger.debug(f"[鸣潮·冥海排行] 绘制角色 roleId={slash_role.roleId} 失败: {e}")
 
                         # 绘制信物
                         try:
@@ -705,7 +693,7 @@ async def draw_slash_rank_list(bot: Bot, ev: Event):
                             buff_bg.paste(buff_pic, (0, 0), buff_pic)
                             role_bg.alpha_composite(buff_bg, (500 + half_index * 235, 15))
                         except Exception as e:
-                            logger.debug(f"绘制信物失败: {e}")
+                            logger.debug(f"[鸣潮·冥海排行] 绘制信物失败: {e}")
 
                         # 显示半分数（在信物和角色下方）
                         role_bg_draw.text(
@@ -721,5 +709,5 @@ async def draw_slash_rank_list(bot: Bot, ev: Event):
     card_img = add_footer(card_img)
     card_img = await convert_img(card_img)
 
-    logger.info(f"[draw_slash_rank_list] end: {time.time() - start_time}")
+    logger.info(f"[鸣潮·冥海排行] 群排行 end: {time.time() - start_time}")
     return card_img

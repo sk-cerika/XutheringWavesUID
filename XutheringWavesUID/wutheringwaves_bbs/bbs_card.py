@@ -41,20 +41,20 @@ async def _kuro_coin_pil_fallback(
             signature,
         )
     except Exception as e:
-        logger.exception(f"[鸣潮] 库洛币PIL渲染失败: {e}")
+        logger.exception(f"[鸣潮·库街区] 库洛币PIL渲染失败: {e}")
         return _format_coin_text(user_name, user_id, gold_num)
 
 
 async def kuro_coin_card(cookie: str) -> Union[bytes, str]:
     """生成库洛币信息卡片"""
     try:
-        logger.debug("[鸣潮] 正在获取库洛币信息...")
+        logger.debug("[鸣潮·库街区] 正在获取库洛币信息...")
 
         res = await waves_api.get_user_mine_v2(cookie)
 
         if not res.success:
             error_msg = f"获取库洛币信息失败: {res.retmsg}"
-            logger.warning(f"[鸣潮] {error_msg}")
+            logger.warning(f"[鸣潮·库街区] {error_msg}")
             return error_msg
 
         data = res.model_dump()
@@ -105,15 +105,15 @@ async def kuro_coin_card(cookie: str) -> Union[bytes, str]:
             "coin_b64": coin_b64,
         }
 
-        logger.debug(f"[鸣潮] 正在渲染库洛币卡片: {user_name}, 库洛币: {gold_num}")
+        logger.debug(f"[鸣潮·库街区] 正在渲染库洛币卡片: {user_name}, 库洛币: {gold_num}")
         try:
             img = await render_html(waves_templates, "bbs_coin.html", context)
         except Exception as e:
-            logger.exception(f"[鸣潮] 库洛币HTML渲染失败: {e}")
+            logger.exception(f"[鸣潮·库街区] 库洛币HTML渲染失败: {e}")
             img = None
 
         if img is None:
-            logger.warning("[鸣潮] 库洛币HTML渲染失败，回退到PIL")
+            logger.warning("[鸣潮·库街区] 库洛币HTML渲染失败，回退到PIL")
             return await _kuro_coin_pil_fallback(
                 user_name,
                 user_id,
@@ -123,9 +123,9 @@ async def kuro_coin_card(cookie: str) -> Union[bytes, str]:
                 signature,
             )
 
-        logger.info(f"[鸣潮] 库洛币卡片生成成功: {user_name}")
+        logger.info(f"[鸣潮·库街区] 库洛币卡片生成成功: {user_name}")
         return img
 
     except Exception as e:
-        logger.exception(f"[鸣潮] 生成库洛币卡片时出错: {e}")
-        return f"生成库洛币卡片失败: {str(e)}"
+        logger.exception(f"[鸣潮·库街区] 生成库洛币卡片时出错: {e}")
+        return "生成库洛币卡片失败，请稍后再试"

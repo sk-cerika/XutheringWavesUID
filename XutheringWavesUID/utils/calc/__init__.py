@@ -20,7 +20,7 @@ def reload_wuwacalc_module():
     try:
         from ..waves_build.wuwacalc import WuWaCalc as w
     except Exception as e:
-        logger.error(f"[鸣潮] reload_wuwacalc_module 失败: {type(e).__name__}: {e}")
+        logger.error(f"[鸣潮·伤害计算] reload_wuwacalc_module 失败: {type(e).__name__}: {e}")
         return False
     WuWaCalc = w
     globals()["WuWaCalc"] = w

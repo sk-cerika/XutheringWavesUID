@@ -87,9 +87,9 @@ async def get_rank(item: TotalRankRequest) -> Optional[TotalRankResponse]:
             if res.status_code == 200:
                 return TotalRankResponse.model_validate(res.json())
             else:
-                logger.warning(f"获取练度排行失败: {res.status_code} - {res.text}")
+                logger.warning(f"[鸣潮·练度排行] 获取远端排行失败: {res.status_code} - {res.text}")
         except Exception as e:
-            logger.exception(f"获取练度排行失败: {e}")
+            logger.exception(f"[鸣潮·练度排行] 获取远端排行失败: {e}")
 
 
 async def draw_total_rank(bot: Bot, ev: Event, pages: int) -> Union[str, bytes]:

@@ -25,7 +25,7 @@ def read_weapon_json_files(directory):
                 file_name = file.name.split(".")[0]
                 weapon_id_data[file_name] = data
         except Exception as e:
-            logger.exception(f"read_weapon_json_files load fail decoding {file}", e)
+            logger.exception(f"[鸣潮·武器升级] read_weapon_json_files load fail decoding {file}", e)
 
 
 def ensure_data_loaded(force: bool = False):

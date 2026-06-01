@@ -44,9 +44,9 @@ async def _post_upload(item: Any, url: str, label: str) -> None:
                 },
                 timeout=httpx.Timeout(10),
             )
-        logger.info(f"上传{label}结果: {res.status_code} - {res.text}")
+        logger.info(f"[鸣潮·队列] 上传{label}结果: {res.status_code} - {res.text}")
     except Exception as e:
-        logger.exception(f"上传{label}失败: {res.text if res else ''} {e}")
+        logger.exception(f"[鸣潮·队列] 上传{label}失败: {res.text if res else ''} {e}")
 
 
 def _make_handler(queue: str, url: str, label: str):

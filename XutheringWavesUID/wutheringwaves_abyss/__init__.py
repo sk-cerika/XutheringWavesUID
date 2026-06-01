@@ -51,7 +51,7 @@ Args:
 """,
 )
 async def send_waves_abyss_info(bot: Bot, ev: Event):
-    await bot.logger.info("开始执行[鸣潮查询深渊信息]")
+    await bot.logger.info("[鸣潮·查询深塔] 开始执行")
 
     user_id = ruser_id(ev)
     uid = await WavesBind.get_uid_by_game(user_id, ev.bot_id)
@@ -59,7 +59,7 @@ async def send_waves_abyss_info(bot: Bot, ev: Event):
         return await bot.send(error_reply(WAVES_CODE_103))
     if is_intl_uid(uid):
         return await bot.send(intl_unavailable_msg(uid))
-    await bot.logger.info(f"[鸣潮查询深渊信息]user_id:{user_id} uid: {uid}")
+    await bot.logger.info(f"[鸣潮·查询深塔] user_id={user_id} uid={uid}")
 
     im = await draw_abyss_img(ev, uid, user_id)
     if isinstance(im, str):
@@ -95,7 +95,7 @@ Args:
 """,
 )
 async def send_waves_challenge_info(bot: Bot, ev: Event):
-    await bot.logger.info("开始执行[鸣潮查询全息战略信息]")
+    await bot.logger.info("[鸣潮·查询全息] 开始执行")
 
     user_id = ruser_id(ev)
     uid = await WavesBind.get_uid_by_game(user_id, ev.bot_id)
@@ -103,7 +103,7 @@ async def send_waves_challenge_info(bot: Bot, ev: Event):
         return await bot.send(error_reply(WAVES_CODE_103))
     if is_intl_uid(uid):
         return await bot.send(intl_unavailable_msg(uid))
-    await bot.logger.info(f"[鸣潮查询全息战略信息]user_id:{user_id} uid: {uid}")
+    await bot.logger.info(f"[鸣潮·查询全息] user_id={user_id} uid={uid}")
 
     im = await draw_challenge_img(ev, uid, user_id)
     at_sender = True if ev.group_id else False

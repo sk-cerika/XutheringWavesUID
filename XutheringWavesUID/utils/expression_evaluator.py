@@ -111,5 +111,5 @@ def find_first_matching_expression(ctx, expressions, default="calc.json"):
             if evaluator.evaluate(expr):
                 return expr["choose"]
         except Exception as e:
-            logger.exception(e)
+            logger.exception(f"[鸣潮·伤害计算] {e}")
     return default

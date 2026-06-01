@@ -8,7 +8,6 @@ from gsuid_core.models import Event
 from gsuid_core.pool import to_thread
 from gsuid_core.utils.image.convert import convert_img
 
-from ..utils import hint
 from ..utils.util import hide_uid, get_hide_uid_pref
 from ..utils.image import (
     GOLD,
@@ -25,13 +24,11 @@ from ..utils.api.model import (
     Props,
     EquipPhantom,
     RoleDetailData,
-    AccountBaseInfo,
 )
 from ..utils.calculate import get_calc_map, get_valid_color, calc_phantom_score
 from ..utils.imagetool import draw_pic_with_ring
-from ..utils.waves_api import waves_api
-from ..utils.error_reply import WAVES_CODE_102
 from ..utils.char_info_utils import get_all_role_detail_info
+from ..wutheringwaves_charinfo import base_info_cache
 from ..wutheringwaves_config import PREFIX
 from ..utils.fonts.waves_fonts import (
     waves_font_24,
@@ -59,17 +56,11 @@ class WavesEchoRank(BaseModel):
 
 async def get_draw_list(ev: Event, uid: str, user_id: str, page: int = 1) -> Union[str, bytes]:
     from ..utils.calc import WuWaCalc
-    _, ck = await waves_api.get_ck_result(uid, user_id, ev.bot_id)
-    if not ck:
-        return hint.error_reply(WAVES_CODE_102)
+    info, _ck, _ = await base_info_cache.load_account_context(uid, user_id, ev.bot_id)
+    if isinstance(info, str):
+        return info
     user_pref = await get_hide_uid_pref(uid, user_id, ev.bot_id)
-        # 账户数据
-    account_info = await waves_api.get_base_info(uid, ck)
-    if not account_info.success:
-        return account_info.throw_msg()
-    if not account_info.data:
-        return f"用户未展示数据, 请尝试【{PREFIX}登录】"
-    account_info = AccountBaseInfo.model_validate(account_info.data)
+    account_info = info
 
     all_role_detail: Optional[Dict[str, RoleDetailData]] = await get_all_role_detail_info(uid)
     if not all_role_detail:

@@ -16,6 +16,16 @@ def is_valid_at(ev: Event) -> bool:
     return ev.user_id != ruser_id(ev)
 
 
+def safe_sender_avatar(ev: Event) -> str:
+    """at 查询返回空，避免上传时覆盖被查者头像；非 http(s) URL 也视为无效"""
+    if is_valid_at(ev):
+        return ""
+    avatar = (ev.sender or {}).get("avatar") or ""
+    if not (isinstance(avatar, str) and avatar.startswith(("http://", "https://"))):
+        return ""
+    return avatar
+
+
 # 国际服 uid 起始段(2/3/9 开头, >= 2e8); 与 utils.api.requests.WavesApi.is_net 对齐。
 def is_intl_uid(uid) -> bool:
     if not uid:

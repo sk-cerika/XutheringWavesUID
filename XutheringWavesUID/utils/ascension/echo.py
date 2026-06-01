@@ -23,7 +23,7 @@ def read_echo_json_files(directory):
                 file_name = file.name.split(".")[0]
                 echo_id_data[file_name] = data
         except Exception as e:
-            logger.exception(f"read_echo_json_files load fail decoding {file}", e)
+            logger.exception(f"[鸣潮·声骸升级] read_echo_json_files load fail decoding {file}", e)
 
 
 def ensure_data_loaded(force: bool = False):

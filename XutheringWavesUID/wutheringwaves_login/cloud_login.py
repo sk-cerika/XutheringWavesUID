@@ -25,7 +25,7 @@ from ..utils.resource.RESOURCE_PATH import (
 )
 from ..utils.util import get_hide_uid_pref, hide_uid
 from ..wutheringwaves_config import PREFIX, ShowConfig
-from .login import cache, get_token, get_url, send_login
+from .login import cache, evict_user_login, get_token, get_url, send_login
 
 GAME_TITLE = "[鸣潮]"
 LOGIN_FLOW = "cloud"
@@ -76,7 +76,7 @@ async def fetch_cloud_record_id(
     if status == "invalid":
         await WavesGachaCloud.mark_invalid(user_id, bot_id, uid)
     else:
-        logger.warning(f"[云鸣潮] recordId 续期临时失败 uid={uid}，保留记录")
+        logger.warning(f"[鸣潮·云登录] recordId 续期临时失败 uid={uid}，保留记录")
     return None
 
 
@@ -125,7 +125,8 @@ async def cloud_login_entry(bot: Bot, ev: Event):
 
 async def _cloud_login_web(bot: Bot, ev: Event, url: str):
     at_sender = True if ev.group_id else False
-    user_token = get_token(ev.user_id)
+    evict_user_login(ev.user_id)  # 撤销同用户旧登录会话, 新链接唯一有效
+    user_token = get_token()
 
     cache.set(
         user_token,
@@ -183,7 +184,7 @@ async def _cloud_login_web(bot: Bot, ev: Event, url: str):
     except asyncio.TimeoutError:
         return await bot.send("登录超时!", at_sender=at_sender)
     except Exception as e:
-        logger.exception(f"[云鸣潮] 异常: {e}")
+        logger.exception(f"[鸣潮·云登录] 异常: {e}")
 
 
 async def _cloud_login_other(bot: Bot, ev: Event, url: str):
@@ -200,17 +201,17 @@ async def _cloud_login_other(bot: Bot, ev: Event, url: str):
             )
             text = r.text
             if not text or text.strip() == "":
-                logger.error(f"[云鸣潮] 取 token 空响应 status={r.status_code}")
+                logger.error(f"[鸣潮·云登录] 取 token 空响应 status={r.status_code}")
                 token = ""
             else:
                 try:
                     token = r.json().get("token", "")
                 except Exception as e:
-                    logger.error(f"[云鸣潮] 取 token 解析失败: {e} | {text[:200]}")
+                    logger.error(f"[鸣潮·云登录] 取 token 解析失败: {e} | {text[:200]}")
                     token = ""
         except Exception as e:
             token = ""
-            logger.error(f"[云鸣潮] 取 token 请求失败: {e}")
+            logger.error(f"[鸣潮·云登录] 取 token 请求失败: {e}")
         if not token:
             return await bot.send("服务请求失败! 请稍后再试\n", at_sender=at_sender)
 
@@ -237,7 +238,7 @@ async def _cloud_login_other(bot: Bot, ev: Event, url: str):
                         data = result.json()
                     except Exception as e:
                         logger.error(
-                            f"[云鸣潮] /waves/c/get 解析失败: {e} | {result.text[:200]}"
+                            f"[鸣潮·云登录] /waves/c/get 解析失败: {e} | {result.text[:200]}"
                         )
                         times -= 1
                         await asyncio.sleep(5)
@@ -267,7 +268,7 @@ async def _cloud_login_other(bot: Bot, ev: Event, url: str):
                             ev.user_id, ev.bot_id, ev.group_id, uid, login_info
                         )
                     except Exception as e:
-                        logger.exception("[云鸣潮] 外置存表/绑定失败")
+                        logger.exception("[鸣潮·云登录] 外置存表/绑定失败")
                         return await bot.send(
                             f"{GAME_TITLE} 绑定失败：{e}", at_sender=at_sender
                         )
@@ -285,7 +286,7 @@ async def _cloud_login_other(bot: Bot, ev: Event, url: str):
         except asyncio.TimeoutError:
             return await bot.send("登录超时!", at_sender=at_sender)
         except Exception as e:
-            logger.exception(f"[云鸣潮] 外置异常: {e}")
+            logger.exception(f"[鸣潮·云登录] 外置异常: {e}")
 
 
 # ===== 网页渲染 ===============================================
@@ -362,7 +363,7 @@ async def waves_cloud_login(data: CloudLoginRequest):
             data.phone, data.code, device_num, did
         )
     except Exception as e:
-        logger.exception("[云鸣潮] 登录链路异常")
+        logger.exception("[鸣潮·云登录] 登录链路异常")
         state["phase"] = "failed"
         state["error_msg"] = f"登录异常：{e}"
         cache.set(data.auth, state)
@@ -386,7 +387,7 @@ async def waves_cloud_login(data: CloudLoginRequest):
             login_info,
         )
     except Exception as e:
-        logger.exception("[云鸣潮] 存表/绑定失败")
+        logger.exception("[鸣潮·云登录] 存表/绑定失败")
         state["phase"] = "failed"
         state["error_msg"] = f"绑定失败：{e}"
         cache.set(data.auth, state)

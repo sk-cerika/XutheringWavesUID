@@ -40,7 +40,7 @@ def build_interprocess_lock(timeout: float = 120.0):
             # 二进制模式: Windows 下 msvcrt.locking 按文件指针锁字节, 避免文本模式位置歧义
             f = open(_get_build_lock_path(), "a+b")
         except OSError as e:
-            logger.warning(f"[鸣潮] 构建锁文件打开失败, 降级继续: {e}")
+            logger.warning(f"[鸣潮·下载工具] 构建锁文件打开失败, 降级继续: {e}")
             yield False
             return
 
@@ -73,7 +73,7 @@ def build_interprocess_lock(timeout: float = 120.0):
 
         if not acquired:
             logger.warning(
-                "[鸣潮] 跨进程构建锁获取超时, 降级继续。出现真实竞争时, "
+                "[鸣潮·下载工具] 跨进程构建锁获取超时, 降级继续。出现真实竞争时, "
                 "请检查自动启动方式是否导致重启时带起了多个相同实例!!! "
                 "(systemd/pm2/docker + 自重启的 kill+自 spawn 会双拉起)"
             )
@@ -130,7 +130,7 @@ def check_file_hash(path: Path) -> bool:
         with open(hash_file, 'r', encoding='utf-8') as f:
             hash_data = json.load(f)
     except Exception as e:
-        logger.error(f"[鸣潮] 读取 hash.json 失败: {e}")
+        logger.error(f"[鸣潮·下载工具] 读取 hash.json 失败: {e}")
         return False
 
     deleted = False
@@ -145,11 +145,11 @@ def check_file_hash(path: Path) -> bool:
                     expected_hash = hash_data[filename]
 
                     if file_hash != expected_hash:
-                        logger.info(f"[鸣潮] 文件 {filename} hash 不匹配，已删除")
+                        logger.info(f"[鸣潮·下载工具] 文件 {filename} hash 不匹配，已删除")
                         file.unlink()
                         deleted = True
                 except Exception as e:
-                    logger.error(f"[鸣潮] 检查文件 {filename} hash 失败: {e}")
+                    logger.error(f"[鸣潮·下载工具] 检查文件 {filename} hash 失败: {e}")
 
     return deleted
 
@@ -175,7 +175,7 @@ def _replace_or_skip(tmp: str, dst_file: Path, src_file: Path) -> bool:
         return True
     except OSError as e:
         # 被占用/竞争(已加载的 .pyd、多进程抢复制): 跳过该文件, 不抛
-        logger.debug(f"[鸣潮] 构建文件替换跳过: {dst_file} ({e})")
+        logger.debug(f"[鸣潮·下载工具] 构建文件替换跳过: {dst_file} ({e})")
         try:
             os.unlink(tmp)
         except OSError:
@@ -247,7 +247,7 @@ def _copy_build_files(soft=False):
 def _copy_if_different(src, dst, name, soft=False):
     """复制并返回是否有更新"""
     if not os.path.exists(src):
-        logger.debug(f"[鸣潮] {name} 源目录不存在")
+        logger.debug(f"[鸣潮·下载工具] {name} 源目录不存在")
         return False
 
     src_path = Path(src)
@@ -275,10 +275,10 @@ def _copy_if_different(src, dst, name, soft=False):
             try:
                 _atomic_copy_tree(src, dst)
             except Exception as e:
-                logger.exception(f"[鸣潮] {name} 更新失败！{e}")
+                logger.exception(f"[鸣潮·下载工具] {name} 更新失败！{e}")
                 return False
-        logger.info(f"[鸣潮] {name} 更新完成！")
+        logger.info(f"[鸣潮·下载工具] {name} 更新完成！")
         return True
     else:
-        logger.debug(f"[鸣潮] {name} 无需更新")
+        logger.debug(f"[鸣潮·下载工具] {name} 无需更新")
         return False

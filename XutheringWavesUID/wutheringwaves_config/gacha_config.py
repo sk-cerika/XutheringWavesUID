@@ -1,10 +1,14 @@
 import json
+import os
 import re
+import threading
 from typing import Dict, Optional
 
 from gsuid_core.logger import logger
 
 from ..utils.resource.RESOURCE_PATH import GACHA_CONFIG_PATH
+
+_GACHA_LOCK = threading.Lock()
 
 
 def load_gacha_config() -> Dict[str, int]:
@@ -18,17 +22,20 @@ def load_gacha_config() -> Dict[str, int]:
                 return {}
             return json.loads(content)
     except Exception as e:
-        logger.exception(f"加载抽卡配置失败: {e}")
+        logger.exception(f"[鸣潮·配置] 加载抽卡配置失败: {e}")
         return {}
 
 
 def save_gacha_config(config: Dict[str, int]) -> bool:
     try:
-        with open(GACHA_CONFIG_PATH, "w", encoding="utf-8") as f:
-            json.dump(config, f, ensure_ascii=False, indent=2)
+        with _GACHA_LOCK:
+            tmp = GACHA_CONFIG_PATH.with_suffix(GACHA_CONFIG_PATH.suffix + ".tmp")
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(config, f, ensure_ascii=False, indent=2)
+            os.replace(tmp, GACHA_CONFIG_PATH)
         return True
     except Exception as e:
-        logger.exception(f"保存抽卡配置失败: {e}")
+        logger.exception(f"[鸣潮·配置] 保存抽卡配置失败: {e}")
         return False
 
 

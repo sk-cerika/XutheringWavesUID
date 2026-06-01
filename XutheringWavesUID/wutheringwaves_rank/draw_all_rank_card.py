@@ -31,7 +31,6 @@ from ..utils.image import (
     add_footer,
     get_attribute,
     crop_center_img,
-    get_square_avatar,
     get_square_weapon,
     get_custom_waves_bg,
     get_attribute_effect,
@@ -62,7 +61,7 @@ from ..utils.fonts.waves_fonts import (
     waves_font_40,
     waves_font_44,
 )
-from ..utils.resource.constant import ATTRIBUTE_ID_MAP, SPECIAL_CHAR_NAME, randomize_special_char_id
+from ..utils.resource.constant import ATTRIBUTE_ID_MAP, SPECIAL_CHAR_NAME
 from ..utils.imagetool import get_weapon_icon_bg
 
 TEXT_PATH = Path(__file__).parent / "texture2d"
@@ -109,9 +108,9 @@ async def get_rank(item: RankItem) -> Optional[RankInfoResponse]:
             if res.status_code == 200:
                 return RankInfoResponse.model_validate(res.json())
             else:
-                logger.warning(f"获取排行失败: {res.status_code} - {res.text}")
+                logger.warning(f"[鸣潮·练度排行] 获取远端排行失败: {res.status_code} - {res.text}")
         except Exception as e:
-            logger.exception(f"获取排行失败: {e}")
+            logger.exception(f"[鸣潮·练度排行] 获取远端排行失败: {e}")
 
 
 # TODO: PIL 卸到线程池 (loop 内 await get_attribute / get_attribute_effect / get_square_weapon 多处, 需要批量预取重构)
@@ -135,7 +134,7 @@ async def draw_all_rank_card(bot: Bot, ev: Event, char: str, rank_type: str, pag
     attribute_name = ATTRIBUTE_ID_MAP[char_model.attributeId]
 
     start_time = time.time()
-    logger.info(f"[get_rank_info_for_user] start: {start_time}")
+    logger.info(f"[鸣潮·练度排行] get_rank_info_for_user start: {start_time}")
 
     rank_type_num = 2 if rank_type == "伤害" else 1
     page_num = 20
@@ -194,13 +193,6 @@ async def draw_all_rank_card(bot: Bot, ev: Event, char: str, rank_type: str, pag
     total_score = 0
     total_damage = 0
 
-    display_char_id = randomize_special_char_id(int(char_id))
-    pic = await get_square_avatar(display_char_id)
-
-    pic_temp = Image.new("RGBA", pic.size)
-    pic_temp.paste(pic.resize((160, 160)), (10, 10))
-    pic_temp = pic_temp.resize((160, 160))
-
     tasks = [
         get_avatar(rank.user_id, getattr(rank, "sender_avatar", ""), char_id=rank.char_id)
         for rank in rankInfoList.data.details
@@ -213,7 +205,8 @@ async def draw_all_rank_card(bot: Bot, ev: Event, char: str, rank_type: str, pag
     )
     avg_num = 0
     damage_name = ""
-    for index, temp in enumerate(zip(rankInfoList.data.details, results)):
+    valid_pairs = [(rank, avatar) for rank, avatar in zip(rankInfoList.data.details, results) if rank.rank > 0]
+    for index, temp in enumerate(valid_pairs):
         rank: RankDetail = temp[0]
         damage_name = rank.expected_name
         role_avatar: Image.Image = temp[1]
@@ -272,7 +265,7 @@ async def draw_all_rank_card(bot: Bot, ev: Event, char: str, rank_type: str, pag
 
         weapon_model = get_weapon_model(rank.weapon_id)
         if not weapon_model:
-            logger.warning(f"武器无法找到, 可能暂未适配, 请先检查输入是否正确！")
+            logger.warning(f"[鸣潮·练度排行] 武器无法找到, 可能暂未适配, 请先检查输入是否正确")
             continue
 
         weapon_icon = await get_square_weapon(rank.weapon_id)
@@ -288,7 +281,7 @@ async def draw_all_rank_card(bot: Bot, ev: Event, char: str, rank_type: str, pag
             waves_font_40,
             "lm",
         )
-        weapon_bg_temp_draw.text((203, 75), f"Lv.{rank.level}/90", "white", waves_font_30, "lm")
+        weapon_bg_temp_draw.text((203, 75), f"Lv.{rank.weapon_level}/90", "white", waves_font_30, "lm")
 
         _x = 220
         _y = 120
@@ -396,7 +389,7 @@ async def draw_all_rank_card(bot: Bot, ev: Event, char: str, rank_type: str, pag
     card_img = add_footer(card_img)
     card_img = await convert_img(card_img)
 
-    logger.info(f"[get_rank_info_for_user] end: {time.time() - start_time}")
+    logger.info(f"[鸣潮·练度排行] get_rank_info_for_user end: {time.time() - start_time}")
     return card_img
 
 

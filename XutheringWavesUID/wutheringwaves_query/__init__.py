@@ -149,8 +149,4 @@ Examples:
 )
 async def handle_matrix_appear_rate(bot: Bot, ev: Event):
     img = await draw_matrix_appear_rate(ev)
-    buttons: List[Any] = [
-        WavesButton("矩阵热门队", "矩阵热门队"),
-        WavesButton("矩阵高分队", "矩阵高分队"),
-    ]
-    await bot.send_option(img, buttons)
+    await bot.send(img)

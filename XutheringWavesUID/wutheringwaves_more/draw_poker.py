@@ -90,6 +90,8 @@ async def draw_poker_img(ev: Event, uid: str, user_id: str):
 
     temp: MoreActivity = MoreActivity.model_validate(moreActivity.data)
     phantomBattle = temp.phantomBattle
+    if phantomBattle is None or not phantomBattle.badgeList:
+        return "暂无牌局数据，可能活动已关闭或接口返回空"
 
     # 账户数据
     account_info = await waves_api.get_base_info(uid, ck)

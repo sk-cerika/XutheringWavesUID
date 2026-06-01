@@ -177,7 +177,7 @@ async def _draw_user_header(
     try:
         avatar_pair = await draw_pic_with_ring(ev)
     except Exception as e:
-        logger.warning(f"[鸣潮] 矩阵PIL头像绘制失败: {e}")
+        logger.warning(f"[鸣潮·矩阵渲染] PIL 头像绘制失败: {e}")
     await asyncio.to_thread(_compose_user_header_sync, card_img, account_info, user_pref, avatar_pair)
 
 
@@ -251,7 +251,7 @@ async def draw_matrix_index_img(
     try:
         avatar_pair = await draw_pic_with_ring(ev)
     except Exception as e:
-        logger.warning(f"[鸣潮] 矩阵PIL头像绘制失败: {e}")
+        logger.warning(f"[鸣潮·矩阵渲染] PIL 头像绘制失败: {e}")
 
     card_img = await _compose_matrix_index_img(
         account_info, user_pref, current_date, matrix_detail, modes, avatar_pair
@@ -430,7 +430,7 @@ async def draw_matrix_detail_img(
                     role_img = await pic_download_from_url(MATRIX_PATH, icon_url)
                     _paste_rounded_image(card_img, role_img, (box_x, box_y), (82, 82), radius=8)
                 except Exception as e:
-                    logger.warning(f"[鸣潮] 矩阵PIL角色头像下载失败: {e}")
+                    logger.warning(f"[鸣潮·矩阵渲染] PIL 角色头像下载失败: {e}")
             else:
                 _draw_text(draw, (box_x + 41, box_y + 34), "模版", (180, 180, 180), waves_font_18, "mm")
                 _draw_text(draw, (box_x + 41, box_y + 58), "角色", (180, 180, 180), waves_font_18, "mm")
@@ -470,7 +470,7 @@ async def draw_matrix_detail_img(
                 buff_img = await pic_download_from_url(MATRIX_PATH, team.buffs[0].buffIcon)
                 _paste_contain_rounded_image(card_img, buff_img, (buff_x, row_y + 33), (56, 56), radius=6)
             except Exception as e:
-                logger.warning(f"[鸣潮] 矩阵PIL增益图标下载失败: {e}")
+                logger.warning(f"[鸣潮·矩阵渲染] PIL 增益图标下载失败: {e}")
 
         round_center_x = 696
         _draw_text(draw, (round_center_x, row_y + 44), f"第{team.round}轮", "white", waves_font_26, "mm")

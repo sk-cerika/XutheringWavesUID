@@ -3,6 +3,7 @@ import re
 from gsuid_core.sv import SV
 from gsuid_core.bot import Bot
 from gsuid_core.models import Event
+from gsuid_core.segment import MessageSegment
 
 from ..utils.hint import error_reply
 from ..utils.at_help import ruser_id, is_intl_uid, intl_unavailable_msg
@@ -28,7 +29,7 @@ Args:
 )
 async def send_char_list_msg_new(bot: Bot, ev: Event):
     match = re.search(
-        r"(?P<waves_id>\d+)?(?P<query_type>练度|ld|练度统计|角色列表|刷新练度|刷新练度统计|刷新角色列表)",
+        r"(?P<waves_id>\d+)?(?P<query_type>练度|ld|练度统计|角色列表|刷新练度|刷新练度统计|刷新角色列表|updld)",
         ev.raw_text,
     )
     if not match:
@@ -69,4 +70,6 @@ async def send_char_list_msg_new(bot: Bot, ev: Event):
         is_peek,
         user_waves_id,
     )
+    if isinstance(im, bytes) and (is_peek or is_refresh):
+        return await bot.send(["[鸣潮] 数据已刷新", MessageSegment.image(im)])
     return await bot.send(im)

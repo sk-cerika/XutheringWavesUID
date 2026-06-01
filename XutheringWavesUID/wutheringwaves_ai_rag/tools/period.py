@@ -85,7 +85,7 @@ async def get_current_period_wuwa(
     ctx: RunContext[ToolContext],
     mode: str = "all",
 ) -> str:
-    logger.info(f"🛠️ [鸣潮-Tools] get_current_period_wuwa 入口 mode={mode!r}")
+    logger.info(f"[鸣潮·AI工具] get_current_period_wuwa 入口 mode={mode!r}")
     """查询鸣潮当期玩法概况：逆境深塔 / 冥歌海墟 / 全息矩阵。
 
     用于回答「当期深塔什么样」「现在矩阵推荐谁」「这期海墟 buff」等。
@@ -160,11 +160,11 @@ async def get_current_period_wuwa(
         lines.append(f"- 完整数据: search_wuwa_kb('鸣潮矩阵第{m}期') → ww_matrix_{m}")
     if not lines:
         result = f"未知 mode='{mode}'，可选: tower / slash / matrix / all"
-        logger.warning(f"🛠️ [鸣潮-Tools] get_current_period_wuwa 出口 (未知 mode): {result}")
+        logger.warning(f"[鸣潮·AI工具] get_current_period_wuwa 出口 (未知 mode): {result}")
         return result
     result = "\n".join(lines)
     logger.info(
-        f"🛠️ [鸣潮-Tools] get_current_period_wuwa 出口 mode={mode!r} len={len(result)} 行={len(lines)}"
+        f"[鸣潮·AI工具] get_current_period_wuwa 出口 mode={mode!r} len={len(result)} 行={len(lines)}"
     )
     return result
 

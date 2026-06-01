@@ -130,7 +130,7 @@ def _fmt_size(n: int) -> str:
 
 
 async def _fetch_avatar_url(target: str) -> Optional[Tuple[bytes, str]]:
-    """从 URL 抓取头像字节。follow_redirects=False 锁死目标域防 SSRF。"""
+    """从 URL 抓取头像字节。target 来自 adapter sender_avatar，未做域名 allowlist，依赖 adapter 可信。follow_redirects=False 只能挡跳板二次跳转，不能挡首跳到内网。"""
     try:
         async with httpx.AsyncClient(timeout=6, follow_redirects=False) as client:
             r = await client.get(target, headers={"Referer": ""})

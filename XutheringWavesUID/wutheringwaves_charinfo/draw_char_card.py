@@ -27,7 +27,6 @@ from ..utils.api.model_other import EnemyDetailData
 from ..utils.damage.utils import comma_separated_number
 from ..utils.ascension.template import get_template_data
 from ..utils.char_info_utils import get_all_roleid_detail_info
-from ..utils.refresh_char_detail import load_base_info_cache, save_base_info_cache
 from . import base_info_cache
 from ..utils.name_convert import alias_to_char_name, char_name_to_char_id
 from ..utils.api.wwapi import ONE_RANK_URL, OneRankRequest, OneRankResponse
@@ -200,11 +199,11 @@ async def get_one_rank(item: OneRankRequest) -> Optional[OneRankResponse]:
                 },
                 timeout=httpx.Timeout(10),
             )
-            logger.debug(f"获取排行: {res.text}")
+            logger.debug(f"[鸣潮·角色面板渲染] 获取排行: {res.text}")
             if res.status_code == 200:
                 return OneRankResponse.model_validate(res.json())
         except Exception as e:
-            logger.exception(f"获取排行失败: {e}")
+            logger.exception(f"[鸣潮·角色面板渲染] 获取排行失败: {e}")
 
 
 def parse_text_and_number(text):
@@ -227,6 +226,7 @@ async def ph_card_draw(
     enemy_detail: Optional[EnemyDetailData] = None,
     is_limit_query=False,
     locale="",
+    phantom_dirty: bool = False,
 ):
     from ..utils.calc import WuWaCalc
     char_name = role_detail.role.roleName
@@ -235,10 +235,12 @@ async def ph_card_draw(
     banner3 = Image.open(TEXT_PATH / "banner3.png")
     phantom_temp.alpha_composite(banner3, dest=(0, 0))
 
+    from .role_info_change import ensure_default_modal
+    ensure_default_modal(role_detail)
+
     ph_0 = Image.open(TEXT_PATH / "ph_0.png")
     ph_1 = Image.open(TEXT_PATH / "ph_1.png")
-    #  phantom_sum_value = {}
-    calc = WuWaCalc(role_detail, enemy_detail, is_limit=is_limit_query or bool(change_command))
+    calc = WuWaCalc(role_detail, enemy_detail, is_limit=is_limit_query or phantom_dirty)
     phantom_score = 0  # 初始化声骸评分
     if role_detail.phantomData and role_detail.phantomData.equipPhantomList:
         equipPhantomList = role_detail.phantomData.equipPhantomList
@@ -411,6 +413,7 @@ async def get_role_need(
     force_resource_id=None,
     is_limit_query=False,
     change_list_regex: Optional[str] = None,
+    fallback_to_generic=False,
 ):
     if waves_id:
         query_list = [char_id]
@@ -456,14 +459,14 @@ async def get_role_need(
                 role_detail: RoleDetailData = all_role_detail[temp_char_id]
                 break
         else:
-            if is_limit_query:
+            if is_limit_query and not fallback_to_generic:
                 return (
                     None,
                     f"[鸣潮] 未找到【{char_name}】角色极限面板信息，请等待适配!",
                 )
 
             # rawData中未找到角色，请求listRole判断角色是否已上线
-            if not change_list_regex:
+            if not change_list_regex and not is_limit_query:
                 if not ck:
                     _, ck = await waves_api.get_ck_result(uid, ev.user_id, ev.bot_id)
                 if ck:
@@ -501,11 +504,14 @@ async def draw_fixed_img(img, avatar, account_info, role_detail, locale="", uid=
 
     base_info_bg = Image.open(TEXT_PATH / "base_info_bg.png")
     base_info_draw = ImageDraw.Draw(base_info_bg)
-    draw_text_with_fallback(base_info_draw, (275, 120), f"{account_info.name[:10]}", "white", waves_font_30, "lm")
-    draw_text_with_fallback(base_info_draw, (226, 173), f"{t('特征码:', locale)}  {hide_uid(account_info.id, user_pref=user_pref)}", GOLD, waves_font_25, "lm")
+    # account_info 缺失时(baseinfo API 失败) 用 uid 兜底
+    _name = account_info.name[:10] if account_info else (uid or "")
+    _id = account_info.id if account_info else (uid or "")
+    draw_text_with_fallback(base_info_draw, (275, 120), f"{_name}", "white", waves_font_30, "lm")
+    draw_text_with_fallback(base_info_draw, (226, 173), f"{t('特征码:', locale)}  {hide_uid(_id, user_pref=user_pref)}", GOLD, waves_font_25, "lm")
     img.paste(base_info_bg, (35, -30), base_info_bg)
 
-    if account_info.is_full:
+    if account_info and account_info.is_full:
         title_bar = Image.open(TEXT_PATH / "title_bar.png")
         title_bar_draw = ImageDraw.Draw(title_bar)
         _level_font = waves_font_20 if locale == 'en' else waves_font_26
@@ -535,7 +541,7 @@ async def draw_fixed_img(img, avatar, account_info, role_detail, locale="", uid=
                 if pinned_path is not None and pinned_path.is_file():
                     _pin_token = _force_pile_path.set(pinned_path)
         except Exception as _e:
-            logger.debug(f"[鸣潮] 应用面板图绑定失败, 回退默认: {_e}")
+            logger.debug(f"[鸣潮·角色面板渲染] 应用面板图绑定失败, 回退默认: {_e}")
     try:
         is_custom, role_pile, role_pile_path = await get_role_pile_with_path(role_detail.role.roleId, True)
     finally:
@@ -595,6 +601,7 @@ async def draw_char_detail_img(
     change_list_regex=None,
     is_limit_query=False,
     show_score=True,
+    fallback_to_generic=False,
 ):
     locale = await WavesLangSettings.get_lang(ev.user_id)
     # waves_id 时是查别人, 用 self uid 取本人偏好
@@ -609,7 +616,7 @@ async def draw_char_detail_img(
 
     damageDetail = DamageDetailRegister.find_class(char_id)
     if damageDetail and not WutheringWavesConfig.get_config("WavesToken").data:
-        logger.info(f"[鸣潮] {char_name} 未接入总服务器, 跳过伤害绘制")
+        logger.info(f"[鸣潮·角色面板渲染] {char_name} 未接入总服务器, 跳过伤害绘制")
         damageDetail = None
     ph_sum_value = 250
     jineng_len = 180
@@ -632,33 +639,22 @@ async def draw_char_detail_img(
             return f"[鸣潮] 角色【{char_name}】暂不支持伤害计算！\n"
 
     ck = ""
-    need_ck = bool(waves_id)  # 查看他人面板时一定需要ck
 
     # 账户数据
     if waves_id:
         uid = waves_id
 
     if not is_limit_query:
-        account_info = base_info_cache.get(uid)
-        if not account_info:
-            account_info = await load_base_info_cache(uid)
-            if account_info:
-                base_info_cache.set(uid, account_info)
-        if not account_info:
-            need_ck = True
-        if need_ck and not ck:
-            _, ck = await waves_api.get_ck_result(uid, user_id, ev.bot_id)
+        info, ck, _ = await base_info_cache.load_account_context(
+            uid, user_id, ev.bot_id, force_ck=bool(waves_id)
+        )
+        if isinstance(info, str):
+            # ck 也失败 → 返错误; ck 有效但 baseinfo 失败 → 降级出图
             if not ck:
-                return hint.error_reply(WAVES_CODE_102)
-        if not account_info:
-            api_result = await waves_api.get_base_info(uid, ck)
-            if not api_result.success:
-                return api_result.throw_msg()
-            if not api_result.data:
-                return f"用户未展示数据, 请尝试【{PREFIX}登录】"
-            account_info = AccountBaseInfo.model_validate(api_result.data)
-            await save_base_info_cache(uid, account_info)
-            base_info_cache.set(uid, account_info)
+                return info
+            account_info = None
+        else:
+            account_info = info
         force_resource_id = None
     else:
         account_info = AccountBaseInfo.model_validate(
@@ -683,6 +679,7 @@ async def draw_char_detail_img(
         force_resource_id,
         is_limit_query,
         change_list_regex,
+        fallback_to_generic=fallback_to_generic,
     )
     if isinstance(role_detail, str):
         return role_detail
@@ -719,12 +716,15 @@ async def draw_char_detail_img(
             if change_command and change_command.startswith("[鸣潮]"):
                 return change_command
         except Exception as e:
-            logger.exception("角色数据转换错误", e)
+            logger.exception("[鸣潮·角色面板渲染] 角色数据转换错误", e)
             role_detail = temp
+
+    from .role_info_change import is_phantom_dirty
 
     # 声骸
     calc, phantom_temp, phantom_score = await ph_card_draw(
-        ph_sum_value, role_detail, isDraw, change_command, enemy_detail, is_limit_query, locale
+        ph_sum_value, role_detail, isDraw, change_command, enemy_detail, is_limit_query, locale,
+        phantom_dirty=is_phantom_dirty(change_command),
     )
     calc.role_card = calc.enhance_summation_card_value(calc.phantom_card)
 
@@ -736,8 +736,8 @@ async def draw_char_detail_img(
         damageAttributeTemp = copy.deepcopy(calc.damageAttribute)
         setattr(damageAttributeTemp, "_log_title", damage_title)
         crit_damage, expected_damage = damage_calc["func"](damageAttributeTemp, role_detail)
-        logger.debug(f"{char_name}-{damage_title} 暴击伤害: {crit_damage}")
-        logger.debug(f"{char_name}-{damage_title} 期望伤害: {expected_damage}")
+        logger.debug(f"[鸣潮·角色面板渲染] {char_name}-{damage_title} 暴击伤害: {crit_damage}")
+        logger.debug(f"[鸣潮·角色面板渲染] {char_name}-{damage_title} 期望伤害: {expected_damage}")
 
         damage_high = 100 + (len(damageAttributeTemp.effect) + 3) * 60
         damage_calc_img = Image.new("RGBA", (1200, damage_high))
@@ -812,7 +812,7 @@ async def draw_char_detail_img(
                     if await record_advice_sent(uid, char_id, advice):
                         queue_pending_advice(ev, advice)
         except Exception as e:
-            logger.warning(f"[鸣潮·state] {char_name} 状态记录失败: {e}")
+            logger.warning(f"[鸣潮·角色状态] {char_name} 状态记录失败: {e}")
 
     score_offset = 115 if score_report else 0
     bar_shift = 25 if score_report else 0
@@ -828,7 +828,7 @@ async def draw_char_detail_img(
                 _, rank_expected_damage_str = rankDetail["func"](calc.damageAttribute, role_detail)
                 rank_expected_damage = comma_separated_number(rank_expected_damage_str)
             except Exception as e:
-                logger.warning(f"获取排行伤害失败: {e}")
+                logger.warning(f"[鸣潮·角色面板渲染] 获取排行伤害失败: {e}")
                 rank_expected_damage = None
 
         oneRank = await get_one_rank(
@@ -925,7 +925,7 @@ async def draw_char_detail_img(
         draw_text_with_fallback(weapon_bg_temp_draw, (115, weapon_bg_y + 257), _ws1_name, "white", waves_font_30, "lm")
         draw_text_with_fallback(weapon_bg_temp_draw, (115 + 300, weapon_bg_y + 207), f"{weapon_detail.stats[0]['value']}", "white", waves_font_30, "rm")
         draw_text_with_fallback(weapon_bg_temp_draw, (115 + 300, weapon_bg_y + 257), f"{weapon_detail.stats[1]['value']}", "white", waves_font_30, "rm")
-        active_skill = await get_attribute_skill(skill_branch.branchName)
+        active_skill = await get_attribute_skill(skill_branch.branchName, locale)
         active_skill = active_skill.resize((100, 100))
         weapon_bg_temp.alpha_composite(active_skill, dest=(500 - 50, weapon_bg_y + 232 - 50))
     else:
@@ -989,8 +989,8 @@ async def draw_char_detail_img(
             damageAttributeTemp = copy.deepcopy(calc.damageAttribute)
             setattr(damageAttributeTemp, "_log_title", damage_title)
             crit_damage, expected_damage = damage_temp["func"](damageAttributeTemp, role_detail)
-            logger.debug(f"{char_name}-{damage_title} 暴击伤害: {crit_damage}")
-            logger.debug(f"{char_name}-{damage_title} 期望伤害: {expected_damage}")
+            logger.debug(f"[鸣潮·角色面板渲染] {char_name}-{damage_title} 暴击伤害: {crit_damage}")
+            logger.debug(f"[鸣潮·角色面板渲染] {char_name}-{damage_title} 期望伤害: {expected_damage}")
 
             damage_bar = damage_bar2.copy() if dindex % 2 == 0 else damage_bar1.copy()
             damage_bar_draw = ImageDraw.Draw(damage_bar)
@@ -1119,7 +1119,7 @@ async def draw_char_detail_img(
         if _skill.skill.type in ["延奏技能", "谐度破坏"]:
             continue
         skill_bg = skill_bg_1.copy()
-        # logger.debug(f"{char_name}-{_skill.skill.name}")
+        # logger.debug(f"[鸣潮·角色面板渲染] {char_name}-{_skill.skill.name}")
         skill_img = await get_skill_img(role_detail.role.roleId, _skill.skill.name, _skill.skill.iconUrl)
         skill_img = skill_img.resize((70, 70))
         skill_bg.paste(skill_img, (57, 65), skill_img)
@@ -1167,33 +1167,22 @@ async def draw_char_score_img(ev: Event, uid: str, char: str, user_id: str, wave
     char_name = alias_to_char_name(char)
 
     ck = ""
-    need_ck = bool(waves_id)  # 查看他人面板时一定需要ck
 
     # 账户数据
     if waves_id:
         uid = waves_id
 
     if not is_limit_query:
-        account_info = base_info_cache.get(uid)
-        if not account_info:
-            account_info = await load_base_info_cache(uid)
-            if account_info:
-                base_info_cache.set(uid, account_info)
-        if not account_info:
-            need_ck = True
-        if need_ck and not ck:
-            _, ck = await waves_api.get_ck_result(uid, user_id, ev.bot_id)
+        info, ck, _ = await base_info_cache.load_account_context(
+            uid, user_id, ev.bot_id, force_ck=bool(waves_id)
+        )
+        if isinstance(info, str):
+            # ck 也失败 → 返错误; ck 有效但 baseinfo 失败 → 降级出图
             if not ck:
-                return hint.error_reply(WAVES_CODE_102)
-        if not account_info:
-            api_result = await waves_api.get_base_info(uid, ck)
-            if not api_result.success:
-                return api_result.throw_msg()
-            if not api_result.data:
-                return f"用户未展示数据, 请尝试【{PREFIX}登录】"
-            account_info = AccountBaseInfo.model_validate(api_result.data)
-            await save_base_info_cache(uid, account_info)
-            base_info_cache.set(uid, account_info)
+                return info
+            account_info = None
+        else:
+            account_info = info
         force_resource_id = None
     else:
         account_info = AccountBaseInfo.model_validate(
@@ -1233,6 +1222,9 @@ async def draw_char_score_img(ev: Event, uid: str, char: str, user_id: str, wave
     phantom_temp = Image.new("RGBA", (1200, 1380))
     right_image_temp = Image.new("RGBA", (600, 1100))
     introduce_temp = Image.new("RGBA", (1500, 880), (0, 0, 0, 0))
+
+    from .role_info_change import ensure_default_modal
+    ensure_default_modal(role_detail)
 
     ph_0 = Image.open(TEXT_PATH / "ph_0.png")
     ph_1 = Image.open(TEXT_PATH / "ph_1.png")
@@ -1755,31 +1747,19 @@ async def draw_char_optimize_img(ev: Event, uid: str, char: str, user_id: str, w
     jineng_len += score_offset + bar_shift
 
     # ── 账户 / CK ────────────────────────────────────────────────────────
-    ck = ""
-    need_ck = bool(waves_id)
     if waves_id:
         uid = waves_id
 
-    account_info = base_info_cache.get(uid)
-    if not account_info:
-        account_info = await load_base_info_cache(uid)
-        if account_info:
-            base_info_cache.set(uid, account_info)
-    if not account_info:
-        need_ck = True
-    if need_ck and not ck:
-        _, ck = await waves_api.get_ck_result(uid, user_id, ev.bot_id)
+    info, ck, _ = await base_info_cache.load_account_context(
+        uid, user_id, ev.bot_id, force_ck=bool(waves_id)
+    )
+    if isinstance(info, str):
+        # ck 也失败 → 返错误; ck 有效但 baseinfo 失败 → 降级出图
         if not ck:
-            return hint.error_reply(WAVES_CODE_102)
-    if not account_info:
-        api_result = await waves_api.get_base_info(uid, ck)
-        if not api_result.success:
-            return api_result.throw_msg()
-        if not api_result.data:
-            return f"用户未展示数据, 请尝试【{PREFIX}登录】"
-        account_info = AccountBaseInfo.model_validate(api_result.data)
-        await save_base_info_cache(uid, account_info)
-        base_info_cache.set(uid, account_info)
+            return info
+        account_info = None
+    else:
+        account_info = info
 
     # ── 获取数据 ─────────────────────────────────────────────────────────
     avatar, role_detail = await get_role_need(
@@ -1802,7 +1782,7 @@ async def draw_char_optimize_img(ev: Event, uid: str, char: str, user_id: str, w
             if change_command and change_command.startswith("[鸣潮]"):
                 return change_command
         except Exception as e:
-            logger.exception("角色数据转换错误", e)
+            logger.exception("[鸣潮·角色面板渲染] 角色数据转换错误", e)
             role_detail = _temp
 
     pd = role_detail.phantomData
@@ -1810,9 +1790,12 @@ async def draw_char_optimize_img(ev: Event, uid: str, char: str, user_id: str, w
     if not eq_list or sum(1 for p in eq_list if p and getattr(p, "phantomProp", None)) < 5:
         return f"[鸣潮] {char_name} 声骸件数不足, 暂无优化建议"
 
-    # ── 声骸计算 (先跑 calc, 再用其数据渲染最优卡; 替换时 change_command 使 is_limit 生效) ──
+    from .role_info_change import is_phantom_dirty
+
+    # ── 声骸计算 (先跑 calc, 再用其数据渲染最优卡) ──
     calc, _phantom_temp_unused, _phantom_score = await ph_card_draw(
-        ph_sum_value, role_detail, False, change_command, enemy_detail, False, locale
+        ph_sum_value, role_detail, False, change_command, enemy_detail, False, locale,
+        phantom_dirty=is_phantom_dirty(change_command),
     )
     calc.role_card = calc.enhance_summation_card_value(calc.phantom_card)
 
@@ -1958,7 +1941,7 @@ async def draw_char_optimize_img(ev: Event, uid: str, char: str, user_id: str, w
         draw_text_with_fallback(weapon_bg_temp_draw, (115, weapon_bg_y + 257), _ws1_name, "white", waves_font_30, "lm")
         draw_text_with_fallback(weapon_bg_temp_draw, (115 + 300, weapon_bg_y + 207), f"{weapon_detail.stats[0]['value']}", "white", waves_font_30, "rm")
         draw_text_with_fallback(weapon_bg_temp_draw, (115 + 300, weapon_bg_y + 257), f"{weapon_detail.stats[1]['value']}", "white", waves_font_30, "rm")
-        active_skill = await get_attribute_skill(skill_branch.branchName)
+        active_skill = await get_attribute_skill(skill_branch.branchName, locale)
         active_skill = active_skill.resize((100, 100))
         weapon_bg_temp.alpha_composite(active_skill, dest=(500 - 50, weapon_bg_y + 232 - 50))
     else:
@@ -2279,10 +2262,17 @@ async def generate_online_role_detail(char_id: str):
 
     char_template_data = copy.deepcopy(await get_template_data())
 
+    def _safe_fmt(tmpl: str, args) -> str:
+        try:
+            return tmpl.format(*args)
+        except (IndexError, KeyError, ValueError) as exc:
+            logger.debug(f"[鸣潮·角色面板渲染] desc.format 失败, 用原文: char_id={char_id} err={exc}")
+            return tmpl
+
     # 命座
     for i, j in zip(char_model.chains.values(), char_template_data["chainList"]):
         j["name"] = i.name
-        j["description"] = i.desc.format(*i.param)
+        j["description"] = _safe_fmt(i.desc, i.param)
         j["iconUrl"] = ""
         j["unlocked"] = False
 
@@ -2302,7 +2292,7 @@ async def generate_online_role_detail(char_id: str):
         skill_detail = char_model.skillTree[skill_map[skill_type]]["skill"]
 
         temp_skill["name"] = skill_detail.name
-        temp_skill["description"] = skill_detail.desc.format(*skill_detail.param)
+        temp_skill["description"] = _safe_fmt(skill_detail.desc, skill_detail.param)
         temp_skill["iconUrl"] = ""
 
     # role
@@ -2319,7 +2309,7 @@ async def generate_online_role_detail(char_id: str):
     # 武器
     char_template_data["weaponData"]["resonLevel"] = 1
     temp_weapon = char_template_data["weaponData"]["weapon"]
-    temp_weapon["weaponEffectName"] = weapon_model.effect.format(*[i[-1] for i in weapon_model.param])
+    temp_weapon["weaponEffectName"] = _safe_fmt(weapon_model.effect, [i[-1] for i in weapon_model.param])
     temp_weapon["weaponIcon"] = ""
     temp_weapon["weaponId"] = weapon_id
     temp_weapon["weaponName"] = weapon_model.name

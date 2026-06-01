@@ -7,6 +7,7 @@ from pathlib import Path
 from msgspec import json as msgjson
 from PIL import Image, ImageDraw
 
+from gsuid_core.logger import logger
 from gsuid_core.pool import to_thread
 from gsuid_core.utils.image.convert import convert_img
 
@@ -115,8 +116,8 @@ async def draw_char_skill(char_id: str):
             res = await draw_char_skill_render(char_id)
             if res:
                 return res
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"[鸣潮·百科·技能] HTML 渲染失败 char_id={char_id}: {type(e).__name__}: {e}")
     return await draw_char_skill_pil(char_id)
 
 
@@ -126,8 +127,8 @@ async def draw_char_chain(char_id: str):
             res = await draw_char_chain_render(char_id)
             if res:
                 return res
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"[鸣潮·百科·共鸣链] HTML 渲染失败 char_id={char_id}: {type(e).__name__}: {e}")
     return await draw_char_chain_pil(char_id)
 
 
@@ -137,8 +138,8 @@ async def draw_char_forte(char_id: str):
             res = await draw_char_forte_render(char_id)
             if res:
                 return res
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"[鸣潮·百科·机制] HTML 渲染失败 char_id={char_id}: {type(e).__name__}: {e}")
     return await draw_char_forte_pil(char_id)
 
 
@@ -502,6 +503,7 @@ async def draw_char_chain_pil(char_id: str):
     char_bg.alpha_composite(char_pic, (0, -100))
     char_bg.alpha_composite(char_stats, (580, 340))
     char_bg.alpha_composite(rarity_pic, (560, 160))
+    await draw_char_materials(char_model, char_bg, 580, 210)
     card_img.paste(char_bg, (0, -5), char_bg)
     card_img.alpha_composite(char_chain, (0, 600))
 

@@ -16,7 +16,7 @@ def _try_import_cv2():
         return cv2
     except Exception:
         logger.warning(
-            "[鸣潮] 未安装opencv-python，矩阵排行将无法解析角色ID。"
+            "[鸣潮·头像匹配] 未安装opencv-python，矩阵排行将无法解析角色ID。"
         )
         return None
 
@@ -86,7 +86,7 @@ def _load_reference_features() -> Dict[str, object]:
         return _ref_feat_cache
 
     if not AVATAR_PATH.exists():
-        logger.warning(f"[鸣潮] 头像目录不存在: {AVATAR_PATH}")
+        logger.warning(f"[鸣潮·头像匹配] 头像目录不存在: {AVATAR_PATH}")
         return {}
 
     for avatar_file in AVATAR_PATH.glob("role_head_*.png"):
@@ -98,9 +98,9 @@ def _load_reference_features() -> Dict[str, object]:
             feat = _compute_block_feature(img)
             _ref_feat_cache[char_id_str] = feat
         except Exception as e:
-            logger.debug(f"[鸣潮] 加载头像失败 {avatar_file}: {e}")
+            logger.debug(f"[鸣潮·头像匹配] 加载头像失败 {avatar_file}: {e}")
 
-    logger.info(f"[鸣潮] 加载了 {len(_ref_feat_cache)} 个参考头像用于矩阵匹配")
+    logger.info(f"[鸣潮·头像匹配] 加载了 {len(_ref_feat_cache)} 个参考头像用于矩阵匹配")
     return _ref_feat_cache
 
 
@@ -132,11 +132,11 @@ def match_avatar_image(pil_img: Image.Image) -> Optional[int]:
         if best_char_id and best_score >= _MATCH_THRESHOLD:
             return int(best_char_id)
 
-        logger.debug(f"[鸣潮] 头像匹配分数过低: {best_score:.3f}")
+        logger.debug(f"[鸣潮·头像匹配] 头像匹配分数过低: {best_score:.3f}")
         return None
 
     except Exception as e:
-        logger.warning(f"[鸣潮] 头像匹配失败: {e}")
+        logger.warning(f"[鸣潮·头像匹配] 头像匹配失败: {e}")
         return None
 
 
@@ -168,6 +168,6 @@ async def match_role_icons_to_char_ids(
             if char_id is not None:
                 char_ids.append(char_id)
         except Exception as e:
-            logger.warning(f"[鸣潮] 下载/匹配角色头像失败: {e}")
+            logger.warning(f"[鸣潮·头像匹配] 下载/匹配角色头像失败: {e}")
 
     return char_ids

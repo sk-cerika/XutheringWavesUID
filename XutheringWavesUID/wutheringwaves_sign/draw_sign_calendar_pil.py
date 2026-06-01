@@ -38,7 +38,10 @@ LOOP_MARK_H = 30
 def _hex(s: Optional[str], default: str = "#FFFFFF") -> Tuple[int, int, int]:
     s = (s or default).lstrip("#")
     if len(s) == 6:
-        return tuple(int(s[i : i + 2], 16) for i in (0, 2, 4))
+        try:
+            return tuple(int(s[i : i + 2], 16) for i in (0, 2, 4))
+        except ValueError:
+            pass
     return (255, 255, 255)
 
 

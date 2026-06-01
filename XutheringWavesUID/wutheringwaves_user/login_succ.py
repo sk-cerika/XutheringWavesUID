@@ -15,7 +15,7 @@ async def _region_suffix(user_id: str, bot_id: str, uid: str) -> str:
     try:
         region = await WavesUserSdk.get_region(user_id, bot_id, uid)
     except Exception as e:
-        logger.debug(f"[login_succ] 区服查询失败 uid={uid}: {e}")
+        logger.debug(f"[鸣潮·登录成功] 区服查询失败 uid={uid}: {e}")
         return ""
     return f"（{region} 服）" if region else ""
 

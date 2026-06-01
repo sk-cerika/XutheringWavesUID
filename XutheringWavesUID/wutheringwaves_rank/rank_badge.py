@@ -18,10 +18,12 @@ _BADGE_CACHE: dict = {}
 
 
 def _load_badge(rank: int):
+    if rank not in _BADGE_NAMES:
+        return None
     if rank in _BADGE_CACHE:
         return _BADGE_CACHE[rank].copy()
 
-    path = TEXT_PATH / _BADGE_NAMES.get(rank, "")
+    path = TEXT_PATH / _BADGE_NAMES[rank]
     if not path.exists():
         return None
 

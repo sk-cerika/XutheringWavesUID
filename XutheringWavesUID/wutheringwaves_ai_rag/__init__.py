@@ -71,7 +71,7 @@ def _iter_jsons(d: Path) -> Iterable[Tuple[str, Any]]:
             with open(p, "r", encoding="utf-8") as f:
                 yield p.stem, json.load(f)
         except Exception as e:
-            logger.warning(f"🧠 [鸣潮-RAG] 跳过 {p.name}: {e}")
+            logger.warning(f"[鸣潮·AI-RAG] 跳过 {p.name}: {e}")
 
 
 def _sorted_keys(d: Dict) -> List:
@@ -87,7 +87,7 @@ def _load_forte(cid: str) -> Optional[Dict]:
         with open(fp, "r", encoding="utf-8") as f:
             return json.load(f)
     except Exception as e:
-        logger.warning(f"🧠 [鸣潮-RAG] 读取 forte {cid} 失败: {e}")
+        logger.warning(f"[鸣潮·AI-RAG] 读取 forte {cid} 失败: {e}")
         return None
 
 
@@ -634,16 +634,16 @@ def _register_help_commands() -> int:
         from ..wutheringwaves_help.get_help import get_help_data
         help_data = get_help_data()
     except Exception as e:
-        logger.warning(f"🧠 [鸣潮-RAG] get_help_data() 调用失败，回退到直接读 help.json: {e}")
+        logger.warning(f"[鸣潮·AI-RAG] get_help_data() 调用失败，回退到直接读 help.json: {e}")
     if not help_data:
         if not HELP_JSON_PATH.exists():
-            logger.warning(f"🧠 [鸣潮-RAG] help.json 不存在: {HELP_JSON_PATH}")
+            logger.warning(f"[鸣潮·AI-RAG] help.json 不存在: {HELP_JSON_PATH}")
             return 0
         try:
             with open(HELP_JSON_PATH, "r", encoding="utf-8") as f:
                 help_data = json.load(f)
         except Exception as e:
-            logger.warning(f"🧠 [鸣潮-RAG] help.json 解析失败: {e}")
+            logger.warning(f"[鸣潮·AI-RAG] help.json 解析失败: {e}")
             return 0
 
     count = 0
@@ -691,13 +691,13 @@ def _register_help_commands() -> int:
 def _load_alias(name: str) -> Dict[str, List[str]]:
     p = MAP_PATH / "alias" / name
     if not p.exists():
-        logger.warning(f"🧠 [鸣潮-RAG] 别名文件缺失: {p}")
+        logger.warning(f"[鸣潮·AI-RAG] 别名文件缺失: {p}")
         return {}
     try:
         with open(p, "r", encoding="utf-8") as f:
             return json.load(f)
     except Exception as e:
-        logger.warning(f"🧠 [鸣潮-RAG] 别名解析失败 {p}: {e}")
+        logger.warning(f"[鸣潮·AI-RAG] 别名解析失败 {p}: {e}")
         return {}
 
 
@@ -746,10 +746,11 @@ def _register_guides(char_meta: Dict[str, Dict]) -> int:
 
 
 def register_all():
-    if not MAP_DETAIL_PATH.exists():
-        logger.warning(f"🧠 [鸣潮-RAG] {MAP_DETAIL_PATH} 不存在，跳过 wiki 注册")
-        return
+    # 先清旧实体: 即便资源缺失也得把上一次留下的 KP/Image 清掉, 避免向量库残留过期条目。
     _clear_self_entries()
+    if not MAP_DETAIL_PATH.exists():
+        logger.warning(f"[鸣潮·AI-RAG] {MAP_DETAIL_PATH} 不存在，跳过 wiki 注册")
+        return
     aliases = {
         "char": _load_alias("char_alias.json"),
         "weapon": _load_alias("weapon_alias.json"),
@@ -778,25 +779,45 @@ def register_all():
     for a in aliases.values():
         _register_aliases(a)
     logger.info(
-        f"🧠 [鸣潮-RAG] 注册完成: 角色 {len(chars)} | 武器 {len(weapons)} "
+        f"[鸣潮·AI-RAG] 注册完成: 角色 {len(chars)} | 武器 {len(weapons)} "
         f"| 怪物索引 {len(monsters)} | 攻略图 {guide_count} 张 "
         f"| 帮助命令 {help_count} 条 | 期数索引 {period_count} 条"
     )
 
 
 async def reload_ai_rag():
-    """资源下载后调用：重新注册 + 推送向量库同步。AI 未启用时自动 no-op。"""
-    register_all()
-    from . import tools as _tools  # noqa: F401
-    _tools.invalidate_caches()
-    from gsuid_core.ai_core.rag.knowledge import sync_knowledge
-    await sync_knowledge()
+    """资源下载后调用：重新注册 + 推送向量库同步。AI 未启用时自动 no-op。
+    register_all 中途失败时回滚到旧实体状态, 避免内存里残留半成品。
+    sync_knowledge 单独 try/except, 失败不影响 in-memory 已注册的新实体。"""
+    from gsuid_core.ai_core.register import _ENTITIES, _IMAGE_ENTITIES
+    own_entities_backup = [e for e in _ENTITIES if e.get("plugin") == PLUGIN]
+    own_images_backup = [e for e in _IMAGE_ENTITIES if e.get("plugin") == PLUGIN]
+    try:
+        register_all()
+    except Exception as e:
+        _clear_self_entries()
+        _ENTITIES.extend(own_entities_backup)
+        _IMAGE_ENTITIES.extend(own_images_backup)
+        logger.warning(f"[鸣潮·AI-RAG] register_all 失败, 已回滚到旧实体状态: {e}")
+        return
+    try:
+        from . import tools as _tools  # noqa: F401
+        _tools.invalidate_caches()
+        from gsuid_core.ai_core.rag.knowledge import sync_knowledge
+        await sync_knowledge()
+    except Exception as e:
+        logger.warning(f"[鸣潮·AI-RAG] 缓存失效/向量同步失败 (in-memory 已生效): {e}")
 
 
-@scheduler.scheduled_job("cron", hour=4, minute=1)
+@scheduler.scheduled_job(
+    "cron",
+    hour=4,
+    minute=1,
+    id="ww_rag_periodic_reload",
+)
 async def waves_rag_periodic_reload():
     """每日 04:01 重新注册——让深塔/海墟/矩阵 KP 的「当期/上期/下期」标签随期数滚动。"""
-    logger.info("🧠 [鸣潮-RAG] 定时重注册触发")
+    logger.info("[鸣潮·AI-RAG] 定时重注册触发")
     await reload_ai_rag()
 
 

@@ -32,7 +32,7 @@ def _auto_discover_solvers():
                 full_module_name = f"{package_name}.{module_info.name}"
                 importlib.import_module(full_module_name)
             except Exception as e:
-                logger.warning(f"无法导入求解器模块 {module_info.name}: {e}")
+                logger.warning(f"[鸣潮·验证码] 无法导入求解器模块 {module_info.name}: {e}")
 
 
 # 在包导入时运行发现机制
@@ -48,7 +48,7 @@ def get_solver() -> Optional[CaptchaSolver]:
 
     solver_class = SOLVER_REGISTRY.get(captcha_provider)
 
-    logger.info(f"获取验证码求解器: {SOLVER_REGISTRY}")
+    logger.info(f"[鸣潮·验证码] 获取验证码求解器: {SOLVER_REGISTRY}")
 
     if solver_class:
         return solver_class.create()

@@ -178,7 +178,7 @@ def list_images(t: str, char_id: str) -> List[dict]:
 
 
 # 缩略图按"角色卡实际显示区"裁剪的版本号; 改裁剪逻辑时 +1 使旧缓存失效。
-_THUMB_VERSION = 2
+_THUMB_VERSION = 4
 
 # card 自定义图经 contain 缩放居中进 PANEL_OUT, 仅 PANEL_VIS 窗口在角色卡可见
 # (与 card_utils._PANEL_VISIBLE_BOX_LOCAL / 前端 app.js panelVisibleRectInCrop 对齐)。

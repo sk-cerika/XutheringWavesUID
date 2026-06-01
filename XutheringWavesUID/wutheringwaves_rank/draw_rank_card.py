@@ -14,6 +14,7 @@ from gsuid_core.utils.image.image_tools import crop_center_img
 
 from .rank_avatar import get_avatar
 from .rank_badge import draw_rank_badge
+from ._permissions import get_rank_token_condition, filter_active_group_users
 from ..utils.util import hide_uid
 from ..utils.image import (
     RED,
@@ -242,75 +243,6 @@ async def get_all_rank_info(
     return rankInfoList
 
 
-async def get_waves_token_condition(ev):
-    wavesTokenUsersMap = {}
-    flag = False
-
-    # 群组 不限制token
-    WavesRankUseTokenGroup = WutheringWavesConfig.get_config("WavesRankNoLimitGroup").data
-    if WavesRankUseTokenGroup and ev.group_id in WavesRankUseTokenGroup:
-        return flag, wavesTokenUsersMap
-
-    # 群组 自定义的
-    WavesRankUseTokenGroup = WutheringWavesConfig.get_config("WavesRankUseTokenGroup").data
-    # 全局 主人定义的
-    RankUseToken = WutheringWavesConfig.get_config("RankUseToken").data
-    if (WavesRankUseTokenGroup and ev.group_id in WavesRankUseTokenGroup) or RankUseToken:
-        wavesTokenUsers = await WavesUser.get_waves_all_user()
-        wavesTokenUsersMap = {(w.user_id, w.uid): w.cookie for w in wavesTokenUsers}
-        flag = True
-
-    return flag, wavesTokenUsersMap
-
-
-async def filter_active_group_users(
-    users: List[WavesBind],
-    bot_id: str,
-    bot_self_id: Optional[str] = None,
-) -> List[WavesBind]:
-    active_days = WutheringWavesConfig.get_config("ActiveUserDays").data
-    if not users or not active_days:
-        return users
-
-    fallback_platform = bot_id
-    fallback_bot_self_id = bot_self_id or ""
-    user_pairs = {
-        (user.user_id, user.bot_id or fallback_platform, fallback_bot_self_id)
-        for user in users
-        if user.user_id
-    }
-    if not user_pairs:
-        return []
-
-    semaphore = asyncio.Semaphore(50)
-
-    async def check(user_id: str, platform: str, check_bot_self_id: str):
-        async with semaphore:
-            try:
-                import time
-
-                last_active_time = await WavesUserActivity.get_user_last_active_time(
-                    user_id, platform, check_bot_self_id
-                )
-                current_time = int(time.time())
-                threshold_time = current_time - (active_days * 24 * 60 * 60)
-                if last_active_time is None:
-                    is_active = False
-                elif last_active_time < threshold_time:
-                    is_active = False
-                else:
-                    is_active = True
-            except Exception:
-                is_active = False
-            return user_id, is_active
-
-    results = await asyncio.gather(
-        *(check(user_id, platform, check_bot_self_id) for user_id, platform, check_bot_self_id in user_pairs)
-    )
-    active_user_ids = {user_id for user_id, is_active in results if is_active}
-    return [user for user in users if user.user_id in active_user_ids]
-
-
 # TODO: PIL 卸到线程池 (loop body 多处 await get_attribute / get_square_weapon / get_attribute_effect, 重构成本大)
 async def draw_rank_img(bot: Bot, ev: Event, char: str, rank_type: str) -> Union[str, bytes]:
     char_id = char_name_to_char_id(char)
@@ -328,13 +260,13 @@ async def draw_rank_img(bot: Bot, ev: Event, char: str, rank_type: str) -> Union
         find_char_id = char_id
 
     start_time = time.time()
-    logger.info(f"[get_rank_info_for_user] start: {start_time}")
+    logger.info(f"[鸣潮·练度排行] get_rank_info_for_user start: {start_time}")
     # 获取群里的所有拥有该角色人的数据
     users = await WavesBind.get_group_all_uid(ev.group_id)
     if WutheringWavesConfig.get_config("RankActiveFilterGroup").data:
         users = await filter_active_group_users(list(users), ev.bot_id, ev.bot_self_id)
 
-    tokenLimitFlag, wavesTokenUsersMap = await get_waves_token_condition(ev)
+    tokenLimitFlag, wavesTokenUsersMap = await get_rank_token_condition(ev)
     if not users:
         msg = []
         msg.append(f"[鸣潮] 群【{ev.group_id}】暂无【{char}】面板")
@@ -577,7 +509,7 @@ async def draw_rank_img(bot: Bot, ev: Event, char: str, rank_type: str) -> Union
     card_img = add_footer(card_img)
     card_img = await convert_img(card_img)
 
-    logger.info(f"[get_rank_info_for_user] end: {time.time() - start_time}")
+    logger.info(f"[鸣潮·练度排行] get_rank_info_for_user end: {time.time() - start_time}")
     return card_img
 
 

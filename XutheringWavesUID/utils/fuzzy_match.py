@@ -17,9 +17,9 @@ def _import_pypinyin():
         from pypinyin import lazy_pinyin, Style  # type: ignore
         return lazy_pinyin, Style
     except Exception:
-        logger.warning("[鸣潮] 未安装pypinyin，安装后可使wiki查询失败时给出'你可能想找'的拼音模糊建议。")
-        logger.info("[鸣潮] 安装方法 Linux/Mac: 在当前目录下执行 source .venv/bin/activate && uv pip install pypinyin")
-        logger.info("[鸣潮] 安装方法 Windows: 在当前目录下执行 .venv\\Scripts\\activate; uv pip install pypinyin")
+        logger.warning("[鸣潮·模糊匹配] 未安装pypinyin，安装后可使wiki查询失败时给出'你可能想找'的拼音模糊建议。")
+        logger.info("[鸣潮·模糊匹配] 安装方法 Linux/Mac: 在当前目录下执行 source .venv/bin/activate && uv pip install pypinyin")
+        logger.info("[鸣潮·模糊匹配] 安装方法 Windows: 在当前目录下执行 .venv\\Scripts\\activate; uv pip install pypinyin")
         return None, None
 
 
@@ -28,9 +28,9 @@ def _import_rapidfuzz():
         from rapidfuzz import fuzz  # type: ignore
         return fuzz
     except Exception:
-        logger.warning("[鸣潮] 未安装rapidfuzz，安装后模糊匹配更快, 且支持'近子串'容错加分。")
-        logger.info("[鸣潮] 安装方法 Linux/Mac: 在当前目录下执行 source .venv/bin/activate && uv pip install rapidfuzz")
-        logger.info("[鸣潮] 安装方法 Windows: 在当前目录下执行 .venv\\Scripts\\activate; uv pip install rapidfuzz")
+        logger.warning("[鸣潮·模糊匹配] 未安装rapidfuzz，安装后模糊匹配更快, 且支持'近子串'容错加分。")
+        logger.info("[鸣潮·模糊匹配] 安装方法 Linux/Mac: 在当前目录下执行 source .venv/bin/activate && uv pip install rapidfuzz")
+        logger.info("[鸣潮·模糊匹配] 安装方法 Windows: 在当前目录下执行 .venv\\Scripts\\activate; uv pip install rapidfuzz")
         return None
 
 
@@ -161,9 +161,9 @@ def fuzzy_suggest(
     result = sorted(scores.items(), key=lambda x: -x[1])[:top_n]
     if result:
         detail = ", ".join(f"{n}:{s:.3f}" for n, s in result)
-        logger.info(f"[鸣潮][fuzzy] {query!r} (py={q_py!r}) → {detail}")
+        logger.info(f"[鸣潮·fuzzy] {query!r} (py={q_py!r}) → {detail}")
     else:
-        logger.info(f"[鸣潮][fuzzy] {query!r} (py={q_py!r}) → 无候选 (min_score={min_score})")
+        logger.info(f"[鸣潮·fuzzy] {query!r} (py={q_py!r}) → 无候选 (min_score={min_score})")
     return result
 
 

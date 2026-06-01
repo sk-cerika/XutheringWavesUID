@@ -14,8 +14,12 @@ from ..utils.api.request_util import PLATFORM_SOURCE
 
 async def _fetch_roles_by_game(ck: str, did: str, game_id: int):
     roles = await waves_api.get_kuro_role_list(ck, did, game_id=game_id)
-    if not roles.success or not roles.data or not isinstance(roles.data, list):
+    if not roles.success:
         return None, roles.throw_msg()
+    # 接口成功但 data 不是 list / 是空：账号没有该游戏角色，不应把 ok() 的占位 msg
+    # ("请求成功") 当成错误信息泄漏给用户，交给上层走"无角色"分支即可
+    if not roles.data or not isinstance(roles.data, list):
+        return None, None
     return roles.data, None
 
 

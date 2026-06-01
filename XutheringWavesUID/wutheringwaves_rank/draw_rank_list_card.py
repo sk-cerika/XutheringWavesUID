@@ -16,6 +16,7 @@ from gsuid_core.utils.image.convert import convert_img
 
 from .rank_avatar import get_avatar
 from .rank_badge import draw_rank_badge
+from ._permissions import get_rank_token_condition, filter_active_group_users
 from ..utils.image import (
     RED,
     GREY,
@@ -52,75 +53,6 @@ from ..utils.fonts.waves_fonts import (
     waves_font_58,
 )
 from ..utils.resource.RESOURCE_PATH import PLAYER_PATH
-
-
-async def get_practice_rank_token_condition(ev) -> Tuple[bool, Dict[Tuple[str, str], str]]:
-    """检查练度排行的权限配置，并返回登录用户映射"""
-    tokenLimitFlag = False
-    wavesTokenUsersMap: Dict[Tuple[str, str], str] = {}
-
-    # 群组 不限制token
-    WavesRankNoLimitGroup = WutheringWavesConfig.get_config("WavesRankNoLimitGroup").data
-    if ev.group_id and WavesRankNoLimitGroup and ev.group_id in WavesRankNoLimitGroup:
-        return tokenLimitFlag, wavesTokenUsersMap
-
-    # 群组 自定义的 + 全局 主人定义的
-    WavesRankUseTokenGroup = WutheringWavesConfig.get_config("WavesRankUseTokenGroup").data
-    RankUseToken = WutheringWavesConfig.get_config("RankUseToken").data
-    if (ev.group_id and WavesRankUseTokenGroup and ev.group_id in WavesRankUseTokenGroup) or RankUseToken:
-        wavesTokenUsers = await WavesUser.get_waves_all_user()
-        wavesTokenUsersMap = {(w.user_id, w.uid): w.cookie for w in wavesTokenUsers}
-        tokenLimitFlag = True
-
-    return tokenLimitFlag, wavesTokenUsersMap
-
-
-async def filter_active_group_users(
-    users: List[WavesBind],
-    bot_id: str,
-    bot_self_id: Optional[str] = None,
-) -> List[WavesBind]:
-    active_days = WutheringWavesConfig.get_config("ActiveUserDays").data
-    if not users or not active_days:
-        return users
-
-    fallback_platform = bot_id
-    fallback_bot_self_id = bot_self_id or ""
-    user_pairs = {
-        (user.user_id, user.bot_id or fallback_platform, fallback_bot_self_id)
-        for user in users
-        if user.user_id
-    }
-    if not user_pairs:
-        return []
-
-    semaphore = asyncio.Semaphore(50)
-
-    async def check(user_id: str, platform: str, check_bot_self_id: str):
-        async with semaphore:
-            try:
-                import time
-
-                last_active_time = await WavesUserActivity.get_user_last_active_time(
-                    user_id, platform, check_bot_self_id
-                )
-                current_time = int(time.time())
-                threshold_time = current_time - (active_days * 24 * 60 * 60)
-                if last_active_time is None:
-                    is_active = False
-                elif last_active_time < threshold_time:
-                    is_active = False
-                else:
-                    is_active = True
-            except Exception:
-                is_active = False
-            return user_id, is_active
-
-    results = await asyncio.gather(
-        *(check(user_id, platform, check_bot_self_id) for user_id, platform, check_bot_self_id in user_pairs)
-    )
-    active_user_ids = {user_id for user_id, is_active in results if is_active}
-    return [user for user in users if user.user_id in active_user_ids]
 
 
 def calculate_role_phantom_score(role_detail: RoleDetailData) -> float:
@@ -170,7 +102,7 @@ async def save_char_list_data(uid: str, char_list_data: Dict):
         async with aiofiles.open(path, "w", encoding="utf-8") as file:
             await file.write(json.dumps(char_list_data, ensure_ascii=False))
     except Exception as e:
-        logger.debug(f"保存charListData.json失败 uid={uid}: {e}")
+        logger.debug(f"[鸣潮·练度排行] 保存 charListData.json 失败 uid={uid}: {e}")
 
 
 async def load_char_list_data(uid: str) -> Optional[Dict]:
@@ -191,7 +123,7 @@ async def load_char_list_data(uid: str) -> Optional[Dict]:
             char_list_data = json.loads(await f.read())
             return char_list_data
     except Exception as e:
-        logger.debug(f"读取charListData.json失败 uid={uid}: {e}")
+        logger.debug(f"[鸣潮·练度排行] 读取 charListData.json 失败 uid={uid}: {e}")
         return None
 
 
@@ -218,6 +150,70 @@ class PracticeRankInfo(BaseModel):
     role_details: List[RoleDetailData]  # 角色详情列表
 
 
+async def _build_practice_rank_for_uid(
+    user_id: str, uid: str, threshold: int
+) -> Optional[PracticeRankInfo]:
+    """单 UID 的练度信息计算，供并发调度。"""
+    from ..utils.resource.constant import SPECIAL_CHAR_RANK_MAP
+
+    char_list_data = await load_char_list_data(uid)
+
+    if char_list_data:
+        total_score = 0.0
+        valid_role_ids = []
+        for role_id_str, score in char_list_data.items():
+            if score >= threshold:
+                total_score += score
+                valid_role_ids.append(role_id_str)
+
+        if total_score == 0:
+            return None
+
+        role_details_list = await get_all_role_detail_info_list(uid)
+        if role_details_list is None:
+            return None
+
+        role_details = [
+            r for r in role_details_list
+            if SPECIAL_CHAR_RANK_MAP.get(str(r.role.roleId), str(r.role.roleId)) in valid_role_ids
+        ]
+        return PracticeRankInfo(
+            qid=user_id, uid=uid, kuro_name=uid,
+            total_score=round(total_score, 2), role_details=role_details,
+        )
+
+    # charListData.json 不存在，从 rawData 计算并保存
+    role_details_list = await get_all_role_detail_info_list(uid)
+    if role_details_list is None:
+        return None
+    role_details = list(role_details_list)
+    if not role_details:
+        return None
+
+    total_score = 0.0
+    valid_role_details = []
+    char_list_data = {}
+    for role_detail in role_details:
+        phantom_score = calculate_role_phantom_score(role_detail)
+        role_id_str = str(role_detail.role.roleId)
+        mapped_id = SPECIAL_CHAR_RANK_MAP.get(role_id_str, role_id_str)
+        char_list_data[mapped_id] = phantom_score
+        if phantom_score >= threshold:
+            total_score += phantom_score
+            valid_role_details.append(role_detail)
+
+    if char_list_data:
+        await save_char_list_data(uid, char_list_data)
+
+    if total_score == 0:
+        return None
+
+    return PracticeRankInfo(
+        qid=user_id, uid=uid, kuro_name=uid,
+        total_score=round(total_score, 2), role_details=valid_role_details,
+    )
+
+
 async def get_all_rank_list_info(
     users: List[WavesBind],
     threshold: int = 175,
@@ -230,111 +226,33 @@ async def get_all_rank_list_info(
         users: 用户列表
         threshold: 计入排行的角色声骸分数阈值 (150-195)
     """
-    rankInfoList = []
+    tasks = []
+    semaphore = asyncio.Semaphore(8)
+
+    async def _wrapped(user_id: str, uid: str):
+        async with semaphore:
+            return await _build_practice_rank_for_uid(user_id, uid, threshold)
 
     for user in users:
         if not user.uid:
             continue
-
-        # 处理多个uid（用下划线连接）
         for uid in user.uid.split("_"):
             if tokenLimitFlag and wavesTokenUsersMap is not None:
                 if (user.user_id, uid) not in wavesTokenUsersMap:
                     continue
-            # 首先尝试从charListData.json读取缓存的角色评分
-            char_list_data = await load_char_list_data(uid)
+            tasks.append(_wrapped(user.user_id, uid))
 
-            if char_list_data:
-                # 使用缓存的角色评分数据
-                total_score = 0.0
-                valid_role_ids = []
-
-                for role_id_str, score in char_list_data.items():
-                    if score >= threshold:
-                        total_score += score
-                        valid_role_ids.append(role_id_str)
-
-                if total_score == 0:
-                    continue
-
-                total_score = round(total_score, 2)
-
-                # 获取角色详情用于排行展示
-                role_details_list = await get_all_role_detail_info_list(uid)
-                if role_details_list is None:
-                    continue
-
-                from ..utils.resource.constant import SPECIAL_CHAR_RANK_MAP
-                role_details = []
-                for r in role_details_list:
-                    role_id_str = str(r.role.roleId)
-                    mapped_id = SPECIAL_CHAR_RANK_MAP.get(role_id_str, role_id_str)
-                    if mapped_id in valid_role_ids:
-                        role_details.append(r)
-
-                rankInfo = PracticeRankInfo(
-                    qid=user.user_id,
-                    uid=uid,
-                    kuro_name=uid,
-                    total_score=total_score,
-                    role_details=role_details,
-                )
-                rankInfoList.append(rankInfo)
-            else:
-                # charListData.json不存在，从rawData计算并保存
-                role_details_list = await get_all_role_detail_info_list(uid)
-                if role_details_list is None:
-                    continue
-
-                role_details = list(role_details_list)
-                if not role_details:
-                    continue
-
-                # 计算总声骸分数并保存到charListData
-                total_score = 0.0
-                valid_role_details = []
-                char_list_data = {}
-
-                from ..utils.resource.constant import SPECIAL_CHAR_RANK_MAP
-
-                for role_detail in role_details:
-                    phantom_score = calculate_role_phantom_score(role_detail)
-                    role_id_str = str(role_detail.role.roleId)
-                    mapped_id = SPECIAL_CHAR_RANK_MAP.get(role_id_str, role_id_str)
-                    char_list_data[mapped_id] = phantom_score
-
-                    # 只计算分数>=阈值的角色
-                    if phantom_score >= threshold:
-                        total_score += phantom_score
-                        valid_role_details.append(role_detail)
-
-                # 保存计算结果到charListData.json
-                if char_list_data:
-                    await save_char_list_data(uid, char_list_data)
-
-                if total_score == 0:
-                    continue
-
-                total_score = round(total_score, 2)
-                rankInfo = PracticeRankInfo(
-                    qid=user.user_id,
-                    uid=uid,
-                    kuro_name=uid,
-                    total_score=total_score,
-                    role_details=valid_role_details,
-                )
-                rankInfoList.append(rankInfo)
-
-    return rankInfoList
+    results = await asyncio.gather(*tasks)
+    return [r for r in results if r is not None]
 
 
 async def draw_rank_list(bot: Bot, ev: Event, threshold: int = 175) -> Union[str, bytes]:
     from ..utils.calc import WuWaCalc
     start_time = time.time()
-    logger.info(f"[draw_practice_rank_list] start: {start_time}")
+    logger.info(f"[鸣潮·练度排行] draw_practice_rank_list start: {start_time}")
 
     # 检查权限配置
-    tokenLimitFlag, wavesTokenUsersMap = await get_practice_rank_token_condition(ev)
+    tokenLimitFlag, wavesTokenUsersMap = await get_rank_token_condition(ev)
 
     # 解析参数以获取阈值
     text = ev.text.strip() if ev.text else ""
@@ -393,8 +311,10 @@ async def draw_rank_list(bot: Bot, ev: Event, threshold: int = 175) -> Union[str
 
     rank_length = 20  # 显示前20条
     rankInfoList_display = rankInfoList[:rank_length]
+    display_rank_ids = list(range(1, len(rankInfoList_display) + 1))
     if rankId and rankInfo and rankId > rank_length:
         rankInfoList_display.append(rankInfo)
+        display_rank_ids.append(rankId)
 
     # 获取等级标签 (S/A/SS)
     threshold_label = "S"  # 默认值
@@ -468,7 +388,7 @@ async def draw_rank_list(bot: Bot, ev: Event, threshold: int = 175) -> Union[str
         char_avatar_map = dict(zip(all_role_ids, fetched))
 
     card_img = await _compose_rank_list(
-        card_img, bar, rankInfoList_display, results, char_avatar_map,
+        card_img, bar, rankInfoList_display, display_rank_ids, results, char_avatar_map,
         self_uid, threshold_label, header_height, item_spacing, width,
     )
     card_img = await convert_img(card_img)
@@ -477,7 +397,7 @@ async def draw_rank_list(bot: Bot, ev: Event, threshold: int = 175) -> Union[str
 
 
 @to_thread
-def _compose_rank_list(card_img, bar, rankInfoList_display, results, char_avatar_map,
+def _compose_rank_list(card_img, bar, rankInfoList_display, display_rank_ids, results, char_avatar_map,
                       self_uid, threshold_label, header_height, item_spacing, width):
     from ..utils.calc import WuWaCalc
     for rank_temp_index, temp in enumerate(zip(rankInfoList_display, results)):
@@ -489,7 +409,7 @@ def _compose_rank_list(card_img, bar, rankInfoList_display, results, char_avatar
         bar_bg.paste(role_avatar, (100, 0), role_avatar)
         bar_draw = ImageDraw.Draw(bar_bg)
 
-        rank_id = rank_temp_index + 1
+        rank_id = display_rank_ids[rank_temp_index]
         draw_rank_badge(bar_bg, rank_id)
 
         uid_color = "white"

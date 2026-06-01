@@ -1,6 +1,5 @@
 import os
 import time
-import random
 import asyncio
 from pathlib import Path
 
@@ -36,7 +35,8 @@ sv_anniv_report = SV("鸣潮周年庆")
 task_name_ann = "订阅鸣潮公告"
 ann_minute_check: int = WutheringWavesConfig.get_config("AnnMinuteCheck").data
 ann_push_tasks: set[asyncio.Task] = set()
-ANN_PUSH_CONCURRENCY = 4
+_ann_poll_lock = asyncio.Lock()
+ANN_PUSH_CONCURRENCY = 1
 
 # 周年报告触发锁
 anniv_report_lock = SingleFlightLock()
@@ -45,28 +45,31 @@ anniv_report_lock = SingleFlightLock()
 async def _send_ann_to_one_subscribe(subscribe, img, ann_id, semaphore: asyncio.Semaphore) -> bool:
     async with semaphore:
         try:
-            await asyncio.sleep(random.uniform(0.2, 1.2))
+            await asyncio.sleep(3)
             await subscribe.send(img)  # type: ignore
             return True
         except Exception as e:
             target_id = subscribe.group_id or subscribe.user_id
             logger.exception(
-                f"[鸣潮公告] 公告 {ann_id} 推送到订阅 {target_id} 失败: {e}"
+                f"[鸣潮·公告] 公告 {ann_id} 推送到订阅 {target_id} 失败: {e}"
             )
             return False
 
 
 async def _push_new_announcements(new_ann_need_send, datas) -> None:
     logger.info(
-        f"[鸣潮公告] 后台推送开始: 公告数={len(new_ann_need_send)}, 订阅数={len(datas)}"
+        f"[鸣潮·公告] 后台推送开始: 公告数={len(new_ann_need_send)}, 订阅数={len(datas)}"
     )
     semaphore = asyncio.Semaphore(ANN_PUSH_CONCURRENCY)
+    # 渲染返字符串 (过期 / 未找到) 视为永久失败, 保留在已处理集合;
+    # 渲染异常或订阅全失败视为临时失败, 回退让下次轮询重试。
+    retry_ids: list = []
 
     for ann_id in new_ann_need_send:
         try:
             img = await ann_detail_card(ann_id, is_check_time=True)
             if isinstance(img, str):
-                logger.info(f"[鸣潮公告] 公告 {ann_id} 跳过推送: {img}")
+                logger.info(f"[鸣潮·公告] 公告 {ann_id} 跳过推送: {img}")
                 continue
 
             results = await asyncio.gather(
@@ -77,12 +80,21 @@ async def _push_new_announcements(new_ann_need_send, datas) -> None:
             )
             success_count = sum(1 for result in results if result is True)
             logger.info(
-                f"[鸣潮公告] 公告 {ann_id} 推送完成: {success_count}/{len(datas)}"
+                f"[鸣潮·公告] 公告 {ann_id} 推送完成: {success_count}/{len(datas)}"
             )
+            if datas and success_count == 0:
+                retry_ids.append(ann_id)
         except Exception as e:
-            logger.exception(f"[鸣潮公告] 公告 {ann_id} 后台推送失败: {e}")
+            logger.exception(f"[鸣潮·公告] 公告 {ann_id} 后台推送失败: {e}")
+            retry_ids.append(ann_id)
 
-    logger.info("[鸣潮公告] 推送完毕")
+    if retry_ids:
+        existing = get_ann_new_ids() or []
+        kept = [x for x in existing if x not in retry_ids]
+        set_ann_new_ids(kept)
+        logger.info(f"[鸣潮·公告] {len(retry_ids)} 个公告本轮未成功推送, 下次轮询重试")
+
+    logger.info("[鸣潮·公告] 推送完毕")
 
 
 def _create_ann_push_task(new_ann_need_send, datas) -> None:
@@ -94,7 +106,7 @@ def _create_ann_push_task(new_ann_need_send, datas) -> None:
         try:
             done_task.result()
         except Exception as e:
-            logger.exception(f"[鸣潮公告] 后台推送任务异常: {e}")
+            logger.exception(f"[鸣潮·公告] 后台推送任务异常: {e}")
 
     task.add_done_callback(_on_done)
 
@@ -148,10 +160,11 @@ async def ann_(bot: Bot, ev: Event):
 @sv_anniv_report.on_fullmatch(("周年庆", "周年报", "周年回顾"), block=True)
 async def anniv_report_(bot: Bot, ev: Event):
     """查询鸣潮 2 周年《探秘！记忆程序》报告"""
-    logger.info("[鸣潮]开始执行[周年庆]")
+    logger.info("[鸣潮·公告] 开始执行[周年庆]")
     user_id = ruser_id(ev)
     uid = await WavesBind.get_uid_by_game(user_id, ev.bot_id)
     if not uid:
+        # 强需要登录的功能, uid 缺失直接报 102 (登录提示), 避免用户绑定 uid 后再被告知"还要登录"
         return await bot.send(error_reply(WAVES_CODE_102))
 
     if not anniv_report_lock.acquire(f"{user_id}_{uid}"):
@@ -217,10 +230,10 @@ async def sub_ann_(bot: Bot, ev: Event):
     if not WutheringWavesConfig.get_config("WavesAnnOpen").data:
         return await bot.send("鸣潮公告推送功能已关闭")
 
-    logger.info(f"[鸣潮公告] 群 {ev.group_id} 订阅公告，bot_id={ev.bot_id}, bot_self_id={ev.bot_self_id}")
+    logger.info(f"[鸣潮·公告] 群 {ev.group_id} 订阅公告，bot_id={ev.bot_id}, bot_self_id={ev.bot_self_id}")
 
     if ev.group_id:
-        await WavesSubscribe.check_and_update_bot(ev.group_id, ev.bot_self_id)
+        await WavesSubscribe.check_and_update_bot(ev.group_id, ev.bot_id, ev.bot_self_id)
 
     data = await gs_subscribe.get_subscribe(task_name_ann)
     is_resubscribe = False
@@ -229,7 +242,7 @@ async def sub_ann_(bot: Bot, ev: Event):
             if subscribe.group_id == ev.group_id:
                 await gs_subscribe.delete_subscribe("session", task_name_ann, ev)
                 is_resubscribe = True
-                logger.info(f"[鸣潮公告] 群 {ev.group_id} 重新订阅，已删除旧订阅")
+                logger.info(f"[鸣潮·公告] 群 {ev.group_id} 重新订阅，已删除旧订阅")
                 break
 
     await gs_subscribe.add_subscribe(
@@ -272,12 +285,21 @@ async def waves_check_ann_job():
 
 
 async def check_waves_ann_state():
-    logger.info("[鸣潮公告] 定时任务: 鸣潮公告查询..")
+    logger.info("[鸣潮·公告] 定时任务: 鸣潮公告查询..")
     datas = await gs_subscribe.get_subscribe(task_name_ann)
     if not datas:
-        logger.info("[鸣潮公告] 暂无群订阅")
+        logger.info("[鸣潮·公告] 暂无群订阅")
         return
 
+    if _ann_poll_lock.locked() or any(not t.done() for t in ann_push_tasks):
+        logger.info("[鸣潮·公告] 上一轮轮询或推送尚未结束, 本轮跳过")
+        return
+
+    async with _ann_poll_lock:
+        await _do_ann_poll(datas)
+
+
+async def _do_ann_poll(datas) -> None:
     ids = get_ann_new_ids()
     new_ann_list = await waves_api.get_ann_list()
     if not new_ann_list:
@@ -286,7 +308,7 @@ async def check_waves_ann_state():
     new_ann_ids = [x["id"] for x in new_ann_list]
     if not ids:
         set_ann_new_ids(new_ann_ids)
-        logger.info("[鸣潮公告] 初始成功, 将在下个轮询中更新.")
+        logger.info("[鸣潮·公告] 初始成功, 将在下个轮询中更新.")
         return
 
     new_ann_need_send = []
@@ -295,20 +317,20 @@ async def check_waves_ann_state():
             new_ann_need_send.append(ann_id)
 
     if not new_ann_need_send:
-        logger.info("[鸣潮公告] 没有最新公告")
+        logger.info("[鸣潮·公告] 没有最新公告")
         return
 
-    logger.info(f"[鸣潮公告] 更新公告id: {new_ann_need_send}")
+    logger.info(f"[鸣潮·公告] 更新公告id: {new_ann_need_send}")
     save_ids = sorted(ids, reverse=True) + new_ann_ids
     set_ann_new_ids(list(set(save_ids)))
 
     _create_ann_push_task(new_ann_need_send, datas)
-    logger.info("[鸣潮公告] 已创建后台推送任务")
+    logger.info("[鸣潮·公告] 已创建后台推送任务")
 
 
 def clean_old_cache_files(directory: Path, days: int) -> tuple[int, float]:
     if not directory.exists():
-        logger.debug(f"目录不存在: {directory}")
+        logger.debug(f"[鸣潮·缓存清理] 目录不存在: {directory}")
         return 0, 0.0
 
     current_time = time.time()
@@ -330,11 +352,11 @@ def clean_old_cache_files(directory: Path, days: int) -> tuple[int, float]:
                     file_path.unlink()
                     deleted_count += 1
                     freed_space += file_size
-                    logger.debug(f"删除过期缓存文件: {file_path.name}")
+                    logger.debug(f"[鸣潮·缓存清理] 删除过期缓存文件: {file_path.name}")
                 except Exception as e:
-                    logger.error(f"删除文件失败 {file_path.name}: {e}")
+                    logger.error(f"[鸣潮·缓存清理] 删除文件失败 {file_path.name}: {e}")
     except Exception as e:
-        logger.error(f"清理目录失败 {directory}: {e}")
+        logger.error(f"[鸣潮·缓存清理] 清理目录失败 {directory}: {e}")
 
     freed_space_mb = freed_space / (1024 * 1024)
     return deleted_count, freed_space_mb
@@ -357,11 +379,11 @@ def clean_all_cache_files(directory: Path):
                 file_path.unlink()
                 deleted_count += 1
                 freed_space += file_size
-                logger.debug(f"删除缓存文件: {file_path.name}")
+                logger.debug(f"[鸣潮·缓存清理] 删除缓存文件: {file_path.name}")
             except Exception as e:
-                logger.error(f"删除文件失败 {file_path.name}: {e}")
+                logger.error(f"[鸣潮·缓存清理] 删除文件失败 {file_path.name}: {e}")
     except Exception as e:
-        logger.error(f"清理目录失败 {directory}: {e}")
+        logger.error(f"[鸣潮·缓存清理] 清理目录失败 {directory}: {e}")
 
     freed_space_mb = freed_space / (1024 * 1024)
     return deleted_count, freed_space_mb
@@ -468,17 +490,17 @@ def migrate_ann_config_to_json():
         if config_new_ids:
             current_json_ids = get_ann_new_ids()
             if not current_json_ids:
-                logger.info("[鸣潮公告] 开始迁移公告ID数据到独立JSON文件...")
+                logger.info("[鸣潮·公告] 开始迁移公告ID数据到独立JSON文件...")
                 set_ann_new_ids(config_new_ids)
-                logger.info(f"[鸣潮公告] 成功迁移 {len(config_new_ids)} 个公告ID")
+                logger.info(f"[鸣潮·公告] 成功迁移 {len(config_new_ids)} 个公告ID")
 
                 try:
                     WutheringWavesConfig.set_config("WavesAnnNewIds", [])
-                    logger.info("[鸣潮公告] 已清空配置文件中的公告ID数据")
+                    logger.info("[鸣潮·公告] 已清空配置文件中的公告ID数据")
                 except Exception:
                     pass
     except Exception as e:
-        logger.warning(f"[鸣潮公告] 迁移公告配置时出现异常: {e}")
+        logger.warning(f"[鸣潮·公告] 迁移公告配置时出现异常: {e}")
 
 
 migrate_ann_config_to_json()

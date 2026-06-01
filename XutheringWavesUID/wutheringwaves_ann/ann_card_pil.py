@@ -172,7 +172,7 @@ async def _load_cover(url: str, size: Tuple[int, int], fit: bool = True) -> Opti
             return ImageOps.fit(img, size, Image.Resampling.LANCZOS, centering=(0.5, 0.5))
         return _resize_contain(img, size)
     except Exception as e:
-        logger.debug(f"公告图片加载失败: {url}, {e}")
+        logger.debug(f"[鸣潮·公告] 公告图片加载失败: {url}, {e}")
         return None
 
 
@@ -384,7 +384,7 @@ async def _prepare_sections(
 async def ann_list_card(user_id: Optional[str] = None) -> bytes:
     user_info: Optional[Dict[str, Any]] = None
     if user_id:
-        logger.debug(f"[鸣潮] 正在获取用户 {user_id} 的公告列表(PIL)...")
+        logger.debug(f"[鸣潮·公告] 正在获取用户 {user_id} 的公告列表(PIL)...")
         ann_list: List[Dict[str, Any]] = []
         res = await waves_api.get_bbs_list(user_id, pageIndex=1, pageSize=9)
         if res.success:
@@ -565,7 +565,7 @@ async def ann_detail_card(ann_id: Union[int, str], is_check_time=False) -> Union
     if is_check_time:
         post_time = format_post_time(res["postTime"])
         now_time = int(time.time())
-        logger.debug(f"公告id: {ann_id}, post_time: {post_time}, now_time: {now_time}, delta: {now_time - post_time}")
+        logger.debug(f"[鸣潮·公告] 公告id: {ann_id}, post_time: {post_time}, now_time: {now_time}, delta: {now_time - post_time}")
         if post_time < now_time - 86400:
             return "该公告已过期"
 
@@ -595,7 +595,7 @@ async def ann_detail_card(ann_id: Union[int, str], is_check_time=False) -> Union
                 if img:
                     result_images.append(await convert_img(flatten_rgba(img, PANEL_BG)))
             except Exception as e:
-                logger.warning(f"[鸣潮] 下载超长公告图片失败: {img_url}, {e}")
+                logger.warning(f"[鸣潮·公告] 下载超长公告图片失败: {img_url}, {e}")
 
         post_content = [
             item

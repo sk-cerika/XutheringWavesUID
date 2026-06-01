@@ -23,7 +23,7 @@ class TaskDispatcher:
         if any(h.__name__ == handler.__name__ for h in handlers):
             return
         handlers.append(handler)
-        logger.info(f"注册任务处理器: {task_type} -> {handler.__name__}")
+        logger.info(f"[鸣潮·队列] 注册任务处理器: {task_type} -> {handler.__name__}")
 
     def start(
         self,
@@ -36,19 +36,23 @@ class TaskDispatcher:
             try:
                 loop = asyncio.get_running_loop()
             except RuntimeError:
-                logger.warning("任务分发器启动失败: 当前无运行中的事件循环")
+                logger.warning("[鸣潮·队列] 任务分发器启动失败: 当前无运行中的事件循环")
                 return
 
         if loop.is_closed():
-            logger.warning("任务分发器启动失败: 事件循环已关闭")
+            logger.warning("[鸣潮·队列] 任务分发器启动失败: 事件循环已关闭")
             return
 
         # 即使 self.running 被 shutdown 设为 False, 旧 worker 可能还在 cancel 中.
         # 只看 worker 状态, 避免 shutdown-restart 边缘创建第二个 worker.
         if self._worker is not None and not self._worker.done():
             if self._loop is loop:
+                # 复用旧 worker 时若 running 被外部清零, 不补就会一直静默丢消息.
+                if not self.running:
+                    self.running = True
+                    logger.info("[鸣潮·队列] 任务分发器复用旧 worker, 已重置 running")
                 return
-            logger.warning("任务分发器已在其他事件循环中启动")
+            logger.warning("[鸣潮·队列] 任务分发器已在其他事件循环中启动")
             return
 
         self._loop = loop
@@ -57,7 +61,7 @@ class TaskDispatcher:
             self._process(),
             name="waves-task-dispatcher",
         )
-        logger.info("任务分发器已启动")
+        logger.info("[鸣潮·队列] 任务分发器已启动")
 
     def shutdown(self) -> None:
         self.running = False
@@ -79,7 +83,7 @@ class TaskDispatcher:
 
     def emit(self, task_type: str, data: Any) -> None:
         if not self.running or self._loop is None:
-            logger.warning("任务分发器未启动或已关闭")
+            logger.warning("[鸣潮·队列] 任务分发器未启动或已关闭")
             return
 
         if task_type not in self.handlers:
@@ -88,7 +92,7 @@ class TaskDispatcher:
         loop = self._loop
         if loop.is_closed():
             self.running = False
-            logger.warning("任务分发器事件循环已关闭")
+            logger.warning("[鸣潮·队列] 任务分发器事件循环已关闭")
             return
 
         try:
@@ -102,7 +106,7 @@ class TaskDispatcher:
             else:
                 loop.call_soon_threadsafe(self._enqueue_nowait, task_type, data)
         except RuntimeError as e:
-            logger.exception(f"任务入队调度异常: {e}")
+            logger.exception(f"[鸣潮·队列] 任务入队调度异常: {e}")
 
     def _enqueue_nowait(self, task_type: str, data: Any) -> None:
         if not self.running:
@@ -110,7 +114,7 @@ class TaskDispatcher:
         try:
             self.queue.put_nowait((task_type, data))
         except Exception as e:
-            logger.exception(f"任务入队异常: {e}")
+            logger.exception(f"[鸣潮·队列] 任务入队异常: {e}")
 
     async def _process(self) -> None:
         worker = asyncio.current_task()
@@ -125,7 +129,7 @@ class TaskDispatcher:
                         self._tasks.add(task)
                         task.add_done_callback(self._tasks.discard)
                 except Exception as e:
-                    logger.exception(f"任务处理异常: {e}")
+                    logger.exception(f"[鸣潮·队列] 任务处理异常: {e}")
                 finally:
                     self.queue.task_done()
         except asyncio.CancelledError:
@@ -142,7 +146,7 @@ class TaskDispatcher:
             if asyncio.iscoroutine(result):
                 await result
         except Exception as e:
-            logger.exception(f"任务执行错误 ({task_type}): {e}")
+            logger.exception(f"[鸣潮·队列] 任务执行错误 ({task_type}): {e}")
 
 
 _DISPATCHER_KEY = "__waves_task_dispatcher__"
@@ -183,6 +187,15 @@ def shutdown_dispatcher() -> None:
 def push_item(queue_name: str, item: Any) -> None:
     if not dispatcher.running:
         dispatcher.start()
+        # 兜底: 仅同一 loop 上 worker 存活时强制补 running, 不越过 start() 跨 loop 拒绝
+        if not dispatcher.running and dispatcher._worker is not None and not dispatcher._worker.done():
+            try:
+                current_loop = asyncio.get_running_loop()
+            except RuntimeError:
+                current_loop = None
+            if current_loop is not None and dispatcher._loop is current_loop:
+                dispatcher.running = True
+                logger.warning("[鸣潮·队列] push_item 兜底重置 running=True (worker 存活)")
     dispatcher.emit(queue_name, item)
 
 

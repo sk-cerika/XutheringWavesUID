@@ -26,12 +26,12 @@ Args:
 """,
 )
 async def send_role_info(bot: Bot, ev: Event):
-    logger.info("[鸣潮]开始执行[查询信息]")
+    logger.info("[鸣潮·角色信息] 开始执行[查询信息]")
     user_id = ruser_id(ev)
     uid = await WavesBind.get_uid_by_game(user_id, ev.bot_id)
-    logger.info(f"[鸣潮][查询信息] user_id: {user_id} UID: {uid}")
+    logger.info(f"[鸣潮·查询信息] user_id: {user_id} UID: {uid}")
     if not uid:
-        await bot.send(error_reply(WAVES_CODE_102))
+        await bot.send(error_reply(WAVES_CODE_103))
         return
     if is_intl_uid(uid):
         await bot.send(intl_unavailable_msg(uid))
@@ -48,20 +48,21 @@ async def send_role_info(bot: Bot, ev: Event):
 
 @waves_role_info.on_fullmatch(("积分", "伴行", "伴行积分"), block=True)
 async def send_score_info(bot: Bot, ev: Event):
-    logger.info("[鸣潮]开始执行[伴行积分]")
+    logger.info("[鸣潮·角色信息] 开始执行[伴行积分]")
     user_id = ruser_id(ev)
     uid = await WavesBind.get_uid_by_game(user_id, ev.bot_id)
-    logger.info(f"[鸣潮][伴行积分] user_id: {user_id} UID: {uid}")
+    logger.info(f"[鸣潮·伴行积分] user_id: {user_id} UID: {uid}")
     if not uid:
+        # 强需要登录的功能, uid 缺失直接报 102 (登录提示), 避免用户绑定 uid 后再被告知"还要登录"
         await bot.send(error_reply(WAVES_CODE_102))
         return
     if is_intl_uid(uid):
         await bot.send(intl_unavailable_msg(uid))
         return
 
-    is_self_ck, ck = await waves_api.get_ck_result(uid, user_id, ev.bot_id)
-    if not ck or not is_self_ck:
-        await bot.send(error_reply(WAVES_CODE_102))
+    ck, err = await waves_api.check_self_login(uid, user_id, ev.bot_id)
+    if not ck:
+        await bot.send(err or error_reply(WAVES_CODE_102))
         return
 
     im = await draw_reward_img(uid, ck, ev)

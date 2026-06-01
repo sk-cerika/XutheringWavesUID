@@ -57,7 +57,7 @@ def _build_i18n_reverse(i18n_path) -> Dict[str, str]:
                 if normalized and normalized != _normalize(chs_name):
                     reverse_map[normalized] = chs_name
     except Exception as e:
-        logger.exception(f"Failed to load i18n file {i18n_path}: {e}")
+        logger.exception(f"[鸣潮·伤害诊断] Failed to load i18n file {i18n_path}: {e}")
     return reverse_map
 
 
@@ -95,7 +95,7 @@ def load_alias_data():
             with open(CUSTOM_CHAR_ALIAS_PATH, "r", encoding="UTF-8") as f:
                 custom_char_alias_data = msgjson.decode(f.read(), type=Dict[str, List[str]])
         except Exception as e:
-            logger.exception(f"读取自定义角色别名失败 {CUSTOM_CHAR_ALIAS_PATH} - {e}")
+            logger.exception(f"[鸣潮·伤害诊断] 读取自定义角色别名失败 {CUSTOM_CHAR_ALIAS_PATH} - {e}")
             custom_char_alias_data = {}
 
         char_alias_data = add_dictionaries(char_alias_data, custom_char_alias_data)
@@ -106,7 +106,7 @@ def load_alias_data():
             with open(CUSTOM_SONATA_ALIAS_PATH, "r", encoding="UTF-8") as f:
                 custom_sonata_alias_data = msgjson.decode(f.read(), type=Dict[str, List[str]])
         except Exception as e:
-            logger.exception(f"读取自定义合鸣别名失败 {CUSTOM_SONATA_ALIAS_PATH} - {e}")
+            logger.exception(f"[鸣潮·伤害诊断] 读取自定义合鸣别名失败 {CUSTOM_SONATA_ALIAS_PATH} - {e}")
             custom_sonata_alias_data = {}
 
         sonata_alias_data = add_dictionaries(sonata_alias_data, custom_sonata_alias_data)
@@ -117,7 +117,7 @@ def load_alias_data():
             with open(CUSTOM_WEAPON_ALIAS_PATH, "r", encoding="UTF-8") as f:
                 custom_weapon_alias_data = msgjson.decode(f.read(), type=Dict[str, List[str]])
         except Exception as e:
-            logger.exception(f"读取自定义武器别名失败 {CUSTOM_WEAPON_ALIAS_PATH} - {e}")
+            logger.exception(f"[鸣潮·伤害诊断] 读取自定义武器别名失败 {CUSTOM_WEAPON_ALIAS_PATH} - {e}")
             custom_weapon_alias_data = {}
 
         weapon_alias_data = add_dictionaries(weapon_alias_data, custom_weapon_alias_data)
@@ -128,7 +128,7 @@ def load_alias_data():
             with open(CUSTOM_ECHO_ALIAS_PATH, "r", encoding="UTF-8") as f:
                 custom_echo_alias_data = msgjson.decode(f.read(), type=Dict[str, List[str]])
         except Exception as e:
-            logger.exception(f"读取自定义声骸别名失败 {CUSTOM_ECHO_ALIAS_PATH} - {e}")
+            logger.exception(f"[鸣潮·伤害诊断] 读取自定义声骸别名失败 {CUSTOM_ECHO_ALIAS_PATH} - {e}")
             custom_echo_alias_data = {}
 
         echo_alias_data = add_dictionaries(echo_alias_data, custom_echo_alias_data)
@@ -216,7 +216,7 @@ def ensure_data_loaded(force: bool = False):
             with open(CUSTOM_ID2NAME_PATH, "r", encoding="UTF-8") as f:
                 custom_id2name = msgjson.decode(f.read(), type=Dict[str, str])
         except Exception as e:
-            logger.exception(f"读取自定义id2name失败 {CUSTOM_ID2NAME_PATH} - {e}")
+            logger.exception(f"[鸣潮·伤害诊断] 读取自定义id2name失败 {CUSTOM_ID2NAME_PATH} - {e}")
             custom_id2name = {}
 
         # 合并自定义数据：资源中已存在的 key 以资源 value 为准，

@@ -23,7 +23,7 @@ async def get_skill_img(char_id: Union[str, int], skill_name: str, pic_url: str)
         if pic_url:
             await download(pic_url, _dir, name, tag="[鸣潮]")
         else:
-            # logger.warning(f"[鸣潮] 角色 {char_id} 的技能图片不存在，使用默认图片")
+            # logger.warning(f"[鸣潮·资源下载] 角色 {char_id} 的技能图片不存在，使用默认图片")
             _path = ROLE_DETAIL_SKILL_PATH / "1503" / "skill_星星花绽放.png"
 
     return Image.open(_path).convert("RGBA")
@@ -39,7 +39,7 @@ async def get_chain_img(char_id: Union[str, int], order_id: int, pic_url: str) -
         if pic_url:
             await download(pic_url, _dir, name, tag="[鸣潮]")
         else:
-            # logger.warning(f"[鸣潮] 角色 {char_id} 的共鸣链图片不存在，使用默认图片")
+            # logger.warning(f"[鸣潮·资源下载] 角色 {char_id} 的共鸣链图片不存在，使用默认图片")
             _path = ROLE_DETAIL_CHAINS_PATH / "1503" / f"chain_{order_id}.png"
 
     return Image.open(_path).convert("RGBA")

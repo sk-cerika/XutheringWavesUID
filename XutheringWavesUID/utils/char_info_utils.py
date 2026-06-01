@@ -20,7 +20,7 @@ async def get_all_role_detail_info_list(
         async with aiofiles.open(path, mode="r", encoding="utf-8") as f:
             player_data = json.loads(await f.read())
     except Exception as e:
-        logger.exception(f"get role detail info failed {path}:", e)
+        logger.exception(f"[鸣潮·角色信息] get role detail info failed {path}:", e)
         path.unlink(missing_ok=True)
         return None
 
@@ -50,6 +50,14 @@ async def get_all_roleid_detail_info_int(
     if not _all:
         return None
     return {r.role.roleId: r for r in _all}
+
+
+def lookup_chain(role_detail_info_map, role_id) -> tuple[int, str]:
+    """从 role_detail_info_map 取角色共鸣链 (num, name)，无数据返回 (0, '')"""
+    if role_detail_info_map and str(role_id) in role_detail_info_map:
+        temp: RoleDetailData = role_detail_info_map[str(role_id)]
+        return temp.get_chain_num(), temp.get_chain_name()
+    return 0, ""
 
 
 def parse_skill_levels(skill_str: str) -> list[int]:

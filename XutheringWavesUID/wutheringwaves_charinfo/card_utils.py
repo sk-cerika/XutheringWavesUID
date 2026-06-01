@@ -19,9 +19,9 @@ def _import_cv2():
         import cv2  # type: ignore
         return cv2
     except Exception:
-        logger.warning("[鸣潮] 未安装opencv-python，安装后可使用面板图重复判断、提取面板图等功能。")
-        logger.info("[鸣潮] 安装方法 Linux/Mac: 在当前目录下执行 source .venv/bin/activate && uv pip install opencv-python")
-        logger.info("[鸣潮] 安装方法 Windows: 在当前目录下执行 .venv\\Scripts\\activate; uv pip install opencv-python")
+        logger.warning("[鸣潮·卡片工具] 未安装opencv-python，安装后可使用面板图重复判断、提取面板图等功能。")
+        logger.info("[鸣潮·卡片工具] 安装方法 Linux/Mac: 在当前目录下执行 source .venv/bin/activate && uv pip install opencv-python")
+        logger.info("[鸣潮·卡片工具] 安装方法 Windows: 在当前目录下执行 .venv\\Scripts\\activate; uv pip install opencv-python")
         return None
     
 def _import_np():
@@ -242,7 +242,7 @@ async def match_hash_id_from_event(
     char_id: Optional[str] = None,
 ) -> Optional[Tuple[str, Path, float, str]]:
     if cv2 is None:
-        logger.warning("[鸣潮] 未安装opencv-python，无法使用相似度识别。")
+        logger.warning("[鸣潮·卡片工具] 未安装opencv-python，无法使用相似度识别。")
         return None
 
     urls = await get_image(ev)
@@ -397,7 +397,7 @@ def delete_orb_cache(image_path: Path) -> None:
         try:
             cache_path.unlink()
         except Exception:
-            logger.warning(f"[鸣潮] 删除ORB缓存失败: {cache_path}")
+            logger.warning(f"[鸣潮·卡片工具] 删除ORB缓存失败: {cache_path}")
 
 
 def _compute_orb_features(image_path: Path):
@@ -461,7 +461,10 @@ def _orb_similarity(
     matcher = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=False)
     knn = matcher.knnMatch(des1, des2, k=2)
     good = []
-    for m, n in knn:
+    for row in knn:
+        if len(row) < 2:
+            continue
+        m, n = row
         if m.distance < ratio * n.distance:
             good.append(m)
     if len(good) < min_matches:
@@ -591,7 +594,7 @@ async def send_repeated_custom_cards(
 ) -> None:
     at_sender = True if ev.group_id else False
     if cv2 is None:
-        logger.warning("[鸣潮] opencv-python 未安装，无法使用重复图片查找功能。")
+        logger.warning("[鸣潮·卡片工具] opencv-python 未安装，无法使用重复图片查找功能。")
         msg = "[鸣潮] 未安装opencv-python，无法使用重复图片查找功能！"
         return await bot.send((" " if at_sender else "") + msg, at_sender)
     groups: List[Tuple[List[Path], Dict[Tuple[Path, Path], float]]] = []

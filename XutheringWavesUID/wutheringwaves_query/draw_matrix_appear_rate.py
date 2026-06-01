@@ -77,7 +77,7 @@ async def get_matrix_appear_rate_data(char_id: int = 0) -> Union[Dict, None]:
             if res.status_code == 200:
                 return res.json().get("data")
         except Exception as e:
-            logger.exception(f"获取矩阵出场率数据失败: {e}")
+            logger.exception(f"[鸣潮·矩阵出场率] 获取矩阵出场率数据失败: {e}")
     return None
 
 

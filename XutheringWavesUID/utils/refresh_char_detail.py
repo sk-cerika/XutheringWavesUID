@@ -9,6 +9,7 @@ from gsuid_core.logger import logger
 from gsuid_core.models import Event
 
 from .hint import error_reply
+from .at_help import safe_sender_avatar
 from .util import get_version, hide_uid
 from .api.model import RoleList, AccountBaseInfo, OwnedRoleInfoResponse
 from .waves_api import waves_api
@@ -35,7 +36,7 @@ async def save_base_info_cache(uid: str, account_info: _AccountBaseInfo):
         async with aiofiles.open(path, "w", encoding="utf-8") as f:
             await f.write(account_info.model_dump_json())
     except Exception as e:
-        logger.exception(f"save_base_info_cache failed {path}:", e)
+        logger.exception(f"[鸣潮·角色状态] save_base_info_cache failed {path}:", e)
 
 
 async def load_base_info_cache(uid: str) -> Optional[_AccountBaseInfo]:
@@ -48,7 +49,7 @@ async def load_base_info_cache(uid: str) -> Optional[_AccountBaseInfo]:
             data = json.loads(await f.read())
         return _AccountBaseInfo.model_validate(data)
     except Exception as e:
-        logger.exception(f"load_base_info_cache failed {path}:", e)
+        logger.exception(f"[鸣潮·角色状态] load_base_info_cache failed {path}:", e)
         return None
 
 
@@ -125,7 +126,7 @@ async def send_card(
     # 单角色上传排行
     if len(waves_data) != 1 and len(role_info.roleList) != len(save_data):
         logger.warning(
-            f"角色数量不一致，role_info.roleNum:{len(role_info.roleList)} != save_data:{len(save_data)}"
+            f"[鸣潮·角色状态] 角色数量不一致，role_info.roleNum:{len(role_info.roleList)} != save_data:{len(save_data)}"
         )
         return
     account_info = await waves_api.get_base_info(uid, token=token)
@@ -136,7 +137,7 @@ async def send_card(
     account_info = AccountBaseInfo.model_validate(account_info.data)
     if len(waves_data) != 1 and account_info.roleNum != len(save_data):
         logger.warning(
-            f"角色数量不一致，role_info.roleNum:{account_info.roleNum} != save_data:{len(save_data)}"
+            f"[鸣潮·角色状态] 角色数量不一致，role_info.roleNum:{account_info.roleNum} != save_data:{len(save_data)}"
         )
         return
 
@@ -161,7 +162,7 @@ async def send_card(
         try:
             if len(waves_data) == 1:
                 results = await asyncio.gather(
-                    *(asyncio.to_thread(_compute_one_char_rank, rd, True, True) for rd in save_data),
+                    *(asyncio.to_thread(_compute_one_char_rank, rd, True, True) for rd in waves_data),
                     return_exceptions=True,
                 )
                 ranks = [r for r in results if isinstance(r, WavesCharRank)]
@@ -204,7 +205,7 @@ async def save_card_info(
                 old = json.loads(await f.read())
                 old_data = {d["role"]["roleId"]: d for d in old}
         except Exception as e:
-            logger.exception(f"save_card_info get failed {path}:", e)
+            logger.exception(f"[鸣潮·角色状态] save_card_info get failed {path}:", e)
             path.unlink(missing_ok=True)
 
     #
@@ -237,7 +238,7 @@ async def save_card_info(
         try:
             await record_refresh_batch(uid, refresh_update.keys(), refresh_unchanged.keys())
         except Exception as e:
-            logger.warning(f"[鸣潮·state] refresh 状态记录失败 uid={uid}: {e}")
+            logger.warning(f"[鸣潮·角色状态] refresh 状态记录失败 uid={uid}: {e}")
 
     await send_card(uid, user_id, save_data, is_self_ck, token, role_info, waves_data, sender_avatar)
 
@@ -247,10 +248,10 @@ async def save_card_info(
         async with aiofiles.open(path, "w", encoding="utf-8") as file:
             await file.write(json.dumps(cleaned_data, ensure_ascii=False))
     except Exception as e:
-        logger.exception(f"save_card_info save failed {path}:", e)
+        logger.exception(f"[鸣潮·角色状态] save_card_info save failed {path}:", e)
 
-    # 保存charListData.json（角色评分缓存）
-    waves_char_rank = await get_waves_char_rank(uid, save_data, True)
+    # 保存charListData.json（角色评分缓存）—— 只算本次变更的角色, 未变更角色 score 不变
+    waves_char_rank = await get_waves_char_rank(uid, list(refresh_update.values()), True)
 
     # 候选门槛: 不在漂泊者列表、本次确有变更、有旧分、旧分>140、
     #   跨档 / 单角色刷新 delta∈(0,50) ; 否则 delta∈(3,50)
@@ -346,7 +347,7 @@ async def save_char_list_cache(uid: str, waves_char_rank: Optional[List[WavesCha
         if existing_char_list_data:
             await save_char_list_data(uid, existing_char_list_data)
     except Exception as e:
-        logger.debug(f"保存charListData.json失败 uid={uid}: {e}")
+        logger.debug(f"[鸣潮·角色状态] 保存charListData.json失败 uid={uid}: {e}")
 
 
 async def refresh_char(
@@ -378,7 +379,7 @@ async def refresh_char(
     try:
         role_info = RoleList.model_validate(role_info.data)
     except Exception as e:
-        logger.exception(f"{uid} 角色信息解析失败", e)
+        logger.exception(f"[鸣潮·角色状态] {uid} 角色信息解析失败", e)
         msg = f"鸣潮特征码[{hide_uid(uid)}]获取数据失败\n1.是否注册过库街区\n2.库街区能否查询当前鸣潮特征码数据"
         return msg
 
@@ -463,7 +464,7 @@ async def refresh_char(
                 else:
                     i["unlocked"] = False
         except Exception as e:
-            logger.exception(f"{uid} 共鸣链修正失败", e)
+            logger.exception(f"[鸣潮·角色状态] {uid} 共鸣链修正失败", e)
 
         # 修正合鸣效果
         try:
@@ -475,7 +476,7 @@ async def refresh_char(
                     if sonata_name == "雷曜日冕之冠":
                         i["fetterDetail"]["name"] = "荣斗铸锋之冠"  # type: ignore
         except Exception as e:
-            logger.exception(f"{uid} 合鸣效果修正失败", e)
+            logger.exception(f"[鸣潮·角色状态] {uid} 合鸣效果修正失败", e)
 
         # 下载共鸣模态图片
         try:
@@ -492,13 +493,11 @@ async def refresh_char(
                             from gsuid_core.utils.download_resource.download_file import download
                             await download(pic_url, cache_dir, save_name, tag="[鸣潮]")
         except Exception as e:
-            logger.exception(f"{uid} 共鸣模态图片下载失败", e)
+            logger.exception(f"[鸣潮·角色状态] {uid} 共鸣模态图片下载失败", e)
 
         waves_datas.append(role_detail_info)
 
-    sender_avatar = (ev.sender or {}).get("avatar") or ""
-    if not (isinstance(sender_avatar, str) and sender_avatar.startswith(("http://", "https://"))):
-        sender_avatar = ""
+    sender_avatar = safe_sender_avatar(ev)
 
     await save_card_info(
         uid,

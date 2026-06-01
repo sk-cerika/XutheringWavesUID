@@ -41,7 +41,7 @@ async def get_slash_appear_rate_data() -> Union[Dict, None]:
             if res.status_code == 200:
                 return res.json().get("data", [])
         except Exception as e:
-            logger.exception(f"获取冥海出场率数据失败: {e}")
+            logger.exception(f"[鸣潮·冥海出场率] 获取冥海出场率数据失败: {e}")
 
 
 async def draw_slash_use_rate(ev: Event):
@@ -64,26 +64,30 @@ async def draw_slash_use_rate(ev: Event):
     slash_name_bg_h = 150
     footer_h = 50
 
+    half_rate_list = data.get("half_rate_list") or []
+
     if filter_type is None:
-        show_data = data["half_rate_list"]
+        show_data = half_rate_list
 
         totalNum = defaule_filter * 2
         h = title_h + totalNum * bar_star_h + slash_name_bg_h * 2 + footer_h
 
     elif "1" == filter_type:
-        show_data = []
-        show_data.append(data["half_rate_list"][0])
+        if not half_rate_list:
+            return "暂无冥海上半场数据, 请稍后再试"
+        show_data = [half_rate_list[0]]
 
-        char_num = len(data["half_rate_list"][0]["rates"])
+        char_num = len(half_rate_list[0]["rates"])
         totalNum = char_num // 4 + (0 if char_num % 4 == 0 else 1)
 
         h = title_h + totalNum * bar_star_h + slash_name_bg_h + footer_h
 
     elif "2" == filter_type:
-        show_data = []
-        show_data.append(data["half_rate_list"][1])
+        if len(half_rate_list) < 2:
+            return "暂无冥海下半场数据, 请稍后再试"
+        show_data = [half_rate_list[1]]
 
-        char_num = len(data["half_rate_list"][1]["rates"])
+        char_num = len(half_rate_list[1]["rates"])
         totalNum = char_num // 4 + (0 if char_num % 4 == 0 else 1)
 
         h = title_h + totalNum * bar_star_h + slash_name_bg_h + footer_h
@@ -106,8 +110,9 @@ async def draw_slash_use_rate(ev: Event):
                 continue
             avatar_cache[char_id] = await get_square_avatar(char_id)
 
+    is_use_rate = "使用率" in (ev.command or "")
     card_img = await _render_slash_use_rate(
-        show_data, filter_type, h, defaule_filter, slash_name_bg_h, avatar_cache
+        show_data, filter_type, h, defaule_filter, slash_name_bg_h, avatar_cache, is_use_rate
     )
     return await convert_img(card_img)
 
@@ -120,6 +125,7 @@ def _render_slash_use_rate(
     defaule_filter,
     slash_name_bg_h,
     avatar_cache: Dict[str, Image.Image],
+    is_use_rate: bool = False,
 ) -> Image.Image:
     card_img = get_waves_bg(1050, h, "bg9")
 
@@ -133,7 +139,7 @@ def _render_slash_use_rate(
     title_bg.paste(icon, (60, 240), icon)
 
     # title
-    title_text = "#冥歌海墟出场率"
+    title_text = "#冥歌海墟使用率" if is_use_rate else "#冥歌海墟出场率"
     title_bg_draw = ImageDraw.Draw(title_bg)
     title_bg_draw.text((220, 290), title_text, "white", waves_font_58, "lm")
 

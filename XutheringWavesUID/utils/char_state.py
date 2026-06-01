@@ -39,7 +39,7 @@ async def load_state(uid: str) -> Optional[Dict[str, Any]]:
         async with aiofiles.open(path, "r", encoding="utf-8") as f:
             return json.loads(await f.read())
     except Exception as e:
-        logger.warning(f"[鸣潮·state] load {uid}: {e}")
+        logger.warning(f"[鸣潮·角色状态] load {uid}: {e}")
         return None
 
 
@@ -51,7 +51,7 @@ async def save_state(uid: str, state: Dict[str, Any]) -> bool:
             await f.write(json.dumps(state, ensure_ascii=False, indent=2))
         return True
     except Exception as e:
-        logger.warning(f"[鸣潮·state] save {uid}: {e}")
+        logger.warning(f"[鸣潮·角色状态] save {uid}: {e}")
         return False
 
 

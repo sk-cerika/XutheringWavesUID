@@ -10,7 +10,6 @@ from gsuid_core.pool import to_thread
 from gsuid_core.utils.image.convert import convert_img
 from gsuid_core.utils.image.image_tools import crop_center_img
 
-from ..utils.hint import error_reply
 from ..utils.util import async_func_lock, hide_uid, get_hide_uid_pref
 from ..utils.cache import TimedCache
 from ..utils.image import (
@@ -25,10 +24,8 @@ from ..utils.image import (
     get_random_share_bg_path,
 )
 from ..utils.button import WavesButton
-from ..utils.api.model import RoleDetailData, AccountBaseInfo
+from ..utils.api.model import RoleDetailData
 from ..utils.imagetool import draw_pic_with_ring
-from ..utils.waves_api import waves_api
-from ..utils.error_reply import WAVES_CODE_102
 from ..utils.expression_ctx import WavesCharRank, get_waves_char_rank
 from ..utils.char_info_utils import get_all_role_detail_info_list
 from ..utils.database.models import WavesBind
@@ -42,7 +39,7 @@ from ..utils.fonts.waves_fonts import (
     waves_font_60,
 )
 from ..utils.resource.constant import NAME_ALIAS, SPECIAL_CHAR_NAME
-from ..utils.refresh_char_detail import refresh_char, save_base_info_cache
+from ..utils.refresh_char_detail import refresh_char
 from . import base_info_cache
 
 TEXT_PATH = Path(__file__).parent / "texture2d"
@@ -217,20 +214,13 @@ async def draw_refresh_char_detail_img(
     time_stamp = can_refresh_card(user_id, uid, is_single_refresh)
     if time_stamp > 0:
         return get_refresh_interval_notify(time_stamp, is_single_refresh), 0, None
-    self_ck, ck = await waves_api.get_ck_result(uid, user_id, ev.bot_id)
-    if not ck:
-        return error_reply(WAVES_CODE_102), 0, None
+    info, ck, self_ck = await base_info_cache.load_account_context(
+        uid, user_id, ev.bot_id, require_fresh=True
+    )
+    if isinstance(info, str):
+        return info, 0, None
+    account_info = info
     user_pref = await get_hide_uid_pref(uid, user_id, ev.bot_id)
-    # 账户数据
-    account_info = await waves_api.get_base_info(uid, ck)
-    if not account_info.success:
-        return account_info.throw_msg(), 0, None
-    if not account_info.data:
-        return f"用户未展示数据, 请尝试【{PREFIX}登录】", 0, None
-    account_info = AccountBaseInfo.model_validate(account_info.data)
-    # 缓存账户基本信息
-    await save_base_info_cache(uid, account_info)
-    base_info_cache.set(uid, account_info)
     # 更新group id
     await WavesBind.insert_waves_uid(user_id, ev.bot_id, uid, ev.group_id, lenth_limit=9)
 
@@ -261,6 +251,9 @@ async def draw_refresh_char_detail_img(
     role_detail_list = [
         RoleDetailData(**r) for key in ["refresh_update", "refresh_unchanged"] for r in waves_map[key].values()
     ]
+
+    if not role_detail_list:
+        return f"[鸣潮] 暂无角色面板数据, 请确认账号已展示角色后重试", 0, None
 
     # 总角色个数
     role_len = len(role_detail_list)

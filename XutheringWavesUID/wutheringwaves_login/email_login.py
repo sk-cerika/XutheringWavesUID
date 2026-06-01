@@ -36,7 +36,7 @@ from ..utils.resource.RESOURCE_PATH import custom_waves_template, waves_template
 from ..wutheringwaves_config import ShowConfig
 from ..wutheringwaves_user.login_succ import login_success_msg
 from .login import cache as email_cache
-from .login import get_token, get_url, send_login
+from .login import evict_user_login, get_token, get_url, send_login
 
 GAME_TITLE = "[鸣潮]"
 LOGIN_FLOW = "email"
@@ -63,7 +63,8 @@ async def email_login_entry(bot: Bot, ev: Event):
 
 async def _email_login_local(bot: Bot, ev: Event, url: str):
     at_sender = True if ev.group_id else False
-    user_token = get_token(ev.user_id)
+    evict_user_login(ev.user_id)  # 撤销同用户旧登录会话, 新链接唯一有效
+    user_token = get_token()
 
     email_cache.set(
         user_token,
@@ -141,7 +142,7 @@ async def _email_login_other(bot: Bot, ev: Event, url: str):
             text = r.text
             if not text or text.strip() == "":
                 logger.error(
-                    f"请求登录服务失败：服务器返回空响应 (状态码: {r.status_code})"
+                    f"[鸣潮·邮箱登录] 请求登录服务失败：服务器返回空响应 (状态码: {r.status_code})"
                 )
                 token = ""
             else:
@@ -149,12 +150,12 @@ async def _email_login_other(bot: Bot, ev: Event, url: str):
                     token = r.json().get("token", "")
                 except Exception as json_err:
                     logger.error(
-                        f"请求登录服务失败：{json_err} | 响应内容: {text[:200]}"
+                        f"[鸣潮·邮箱登录] 请求登录服务失败：{json_err} | 响应内容: {text[:200]}"
                     )
                     token = ""
         except Exception as e:
             token = ""
-            logger.error(f"请求登录服务失败：{e}")
+            logger.error(f"[鸣潮·邮箱登录] 请求登录服务失败：{e}")
         if not token:
             return await bot.send("服务请求失败! 请稍后再试\n", at_sender=at_sender)
 
@@ -181,7 +182,7 @@ async def _email_login_other(bot: Bot, ev: Event, url: str):
                         text = result.text
                         if not text or text.strip() == "":
                             logger.error(
-                                "请求登录服务失败：/waves/l/get 返回空响应"
+                                "[鸣潮·邮箱登录] 请求登录服务失败：/waves/l/get 返回空响应"
                             )
                             times -= 1
                             await asyncio.sleep(5)
@@ -189,7 +190,7 @@ async def _email_login_other(bot: Bot, ev: Event, url: str):
                         data = result.json()
                     except Exception as json_err:
                         logger.error(
-                            f"请求登录服务失败：{json_err} | 响应: {result.text[:200]}"
+                            f"[鸣潮·邮箱登录] 请求登录服务失败：{json_err} | 响应: {result.text[:200]}"
                         )
                         times -= 1
                         await asyncio.sleep(5)
@@ -395,6 +396,8 @@ async def waves_launcher_login(data: EmailLoginRequest):
     state = email_cache.get(data.auth)
     if not isinstance(state, dict):
         return {"success": False, "msg": "登录会话已超时，请重新发起命令"}
+    if state.get("flow") != LOGIN_FLOW:
+        return {"success": False, "msg": "登录会话不匹配"}
 
     device_no = state.get("device_no") or str(uuid.uuid4()).upper()
     captcha = _captcha_form(data.captcha)
@@ -483,6 +486,8 @@ async def waves_launcher_bind(data: EmailBindRequest):
     state = email_cache.get(data.auth)
     if not isinstance(state, dict):
         return {"success": False, "msg": "登录会话已超时，请重新发起命令"}
+    if state.get("flow") != LOGIN_FLOW:
+        return {"success": False, "msg": "登录会话不匹配"}
 
     chosen = next(
         (

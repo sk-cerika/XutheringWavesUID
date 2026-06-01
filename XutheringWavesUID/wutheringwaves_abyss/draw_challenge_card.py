@@ -8,7 +8,7 @@ from ..utils.hint import error_reply
 from ..utils.util import hide_uid, get_hide_uid_pref
 from ..utils.waves_api import waves_api
 from ..utils.error_reply import WAVES_CODE_102
-from ..utils.api.model import ChallengeArea, AccountBaseInfo, RoleDetailData
+from ..utils.api.model import ChallengeArea, AccountBaseInfo
 from ..wutheringwaves_config import WutheringWavesConfig, PREFIX
 from ..utils.name_convert import char_name_to_char_id
 from ..utils.ascension.char import get_char_detail
@@ -27,7 +27,7 @@ from ..utils.image import (
     get_square_avatar_path,
     CHAIN_COLOR,
 )
-from ..utils.char_info_utils import get_all_roleid_detail_info
+from ..utils.char_info_utils import get_all_roleid_detail_info, lookup_chain
 from .draw_challenge_card_pil import (
     draw_challenge_img as draw_challenge_img_pil,
     ERROR_UNLOCK,
@@ -113,13 +113,7 @@ async def draw_challenge_img(ev: Event, uid: str, user_id: str) -> Union[bytes, 
                         except Exception:
                             pass
 
-                    # 获取共鸣链信息
-                    chain_num = 0
-                    chain_name = ""
-                    if role_id and role_detail_info_map and str(role_id) in role_detail_info_map:
-                        temp: RoleDetailData = role_detail_info_map[str(role_id)]
-                        chain_num = temp.get_chain_num()
-                        chain_name = temp.get_chain_name()
+                    chain_num, chain_name = lookup_chain(role_detail_info_map, role_id)
 
                     # 使用本地头像（和PIL版本一致）
                     role_icon_b64 = img_to_b64(get_square_avatar_path(role_id), quality=75, bake=True, cover_size=(128, 128))
@@ -166,14 +160,14 @@ async def draw_challenge_img(ev: Event, uid: str, user_id: str) -> Union[bytes, 
             "bg_url": bg_url,
         }
 
-        logger.debug("[鸣潮] 准备通过HTML渲染全息卡片")
+        logger.debug("[鸣潮·全息渲染] 准备 HTML 渲染")
         img_bytes = await render_html(waves_templates, "abyss/challenge_card.html", context)
         if img_bytes:
             return img_bytes
         else:
-            logger.warning("[鸣潮] Playwright 渲染返回空, 正在回退到 PIL 渲染")
+            logger.warning("[鸣潮·全息渲染] Playwright 返回空, 回退到 PIL")
             return await draw_challenge_img_pil(ev, uid, user_id)
 
     except Exception as e:
-        logger.exception(f"[鸣潮] HTML渲染失败: {e}")
+        logger.exception(f"[鸣潮·全息渲染] HTML 失败: {e}")
         return await draw_challenge_img_pil(ev, uid, user_id)

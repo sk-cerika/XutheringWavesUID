@@ -61,6 +61,7 @@ from ..wutheringwaves_abyss.period import (
     MATRIX_BASE_TIMESTAMP,
     get_matrix_period_number,
     is_matrix_record_expired,
+    parse_rank_date,
 )
 
 TEXT_PATH = Path(__file__).parent / "texture2d"
@@ -107,9 +108,9 @@ async def get_rank(item: MatrixRankItem) -> Optional[MatrixRankRes]:
             if res.status_code == 200:
                 return MatrixRankRes.model_validate(res.json())
             else:
-                logger.warning(f"获取矩阵排行失败: {res.status_code} - {res.text}")
+                logger.warning(f"[鸣潮·矩阵排行] 获取远端排行失败: {res.status_code} - {res.text}")
         except Exception as e:
-            logger.exception(f"获取矩阵排行失败: {e}")
+            logger.exception(f"[鸣潮·矩阵排行] 获取远端排行失败: {e}")
 
 
 # TODO: PIL 卸到线程池 (loop 内 await get_square_avatar / pic_download_from_url 频繁, 需要批量预取重构)
@@ -172,21 +173,26 @@ async def draw_all_matrix_rank_card(bot: Bot, ev: Event):
     title_bg_draw = ImageDraw.Draw(title_bg)
     title_bg_draw.text((220, 290), title_text, "white", waves_font_58, "lm")
 
-    period_label = f"第{get_matrix_period_number()}期"
+    period_label = None
+    if rankInfoList.data and rankInfoList.data.start_date:
+        rank_dt = parse_rank_date(rankInfoList.data.start_date)
+        if rank_dt:
+            period_label = f"第{get_matrix_period_number(rank_dt)}期"
     date_text = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
-    period_pos = (225, 360)
-    title_bg_draw.text(period_pos, period_label, GREY, waves_font_20, "lm")
-    try:
-        period_width = title_bg_draw.textlength(period_label, font=waves_font_20)
-    except Exception:
-        period_width = waves_font_20.getsize(period_label)[0]
-    title_bg_draw.text(
-        (period_pos[0] + period_width + 16, period_pos[1]),
-        date_text,
-        GREY,
-        waves_font_20,
-        "lm",
-    )
+    if period_label:
+        period_pos = (225, 360)
+        title_bg_draw.text(period_pos, period_label, GREY, waves_font_20, "lm")
+        try:
+            period_width = title_bg_draw.textlength(period_label, font=waves_font_20)
+        except Exception:
+            period_width = waves_font_20.getsize(period_label)[0]
+        title_bg_draw.text(
+            (period_pos[0] + period_width + 16, period_pos[1]),
+            date_text,
+            GREY,
+            waves_font_20,
+            "lm",
+        )
 
     # 遮罩
     char_mask = Image.open(TEXT_PATH / "char_mask.png").convert("RGBA")
@@ -336,7 +342,7 @@ async def draw_all_matrix_rank_card(bot: Bot, ev: Event):
                     # 角色头像最多3个(150px)，buff放在角色后面
                     role_bg.alpha_composite(buff_bg, (team_base_x + team_index * team_spacing + 160, 15))
                 except Exception as e:
-                    logger.debug(f"绘制矩阵buff图标失败: {e}")
+                    logger.debug(f"[鸣潮·矩阵排行] 绘制 buff 图标失败: {e}")
 
             # 队伍得分标签 — 与上方 角色(3×50) + buff(10+50) 整体居中
             # 整体宽度 = 150 + 10 + 50 = 210，中心偏移 = 105
@@ -447,7 +453,7 @@ async def get_all_matrix_rank_info(
                     continue
 
                 if is_matrix_record_expired(record_time):
-                    logger.debug(f"用户{uid}矩阵数据已过期，跳过")
+                    logger.debug(f"[鸣潮·矩阵排行] 用户 uid={uid} 数据已过期, 跳过")
                     continue
 
                 if not matrix_data.get("isUnlock", False):
@@ -461,7 +467,7 @@ async def get_all_matrix_rank_info(
                 if rankInfo.score > 0:
                     rankInfoList.append(rankInfo)
             except Exception as e:
-                logger.debug(f"获取用户{uid}本地矩阵数据失败: {e}")
+                logger.debug(f"[鸣潮·矩阵排行] 获取 uid={uid} 本地数据失败: {e}")
                 continue
 
     return rankInfoList
@@ -511,7 +517,7 @@ async def get_role_chain_count(uid: str, role_id: int) -> int:
                         return len(unlocked_chains)
         return -1
     except Exception as e:
-        logger.debug(f"获取角色{role_id}共鸣链失败: {e}")
+        logger.debug(f"[鸣潮·矩阵排行] 获取角色 roleId={role_id} 共鸣链失败: {e}")
         return -1
 
 
@@ -519,7 +525,7 @@ async def get_role_chain_count(uid: str, role_id: int) -> int:
 async def draw_matrix_rank_list(bot: Bot, ev: Event):
     """绘制矩阵群排行 (PIL)"""
     start_time = time.time()
-    logger.info(f"[draw_matrix_rank_list] start: {start_time}")
+    logger.info(f"[鸣潮·矩阵排行] 群排行 start: {start_time}")
 
     # 检查权限配置
     tokenLimitFlag, wavesTokenUsersMap = await get_matrix_rank_token_condition(ev)
@@ -703,7 +709,7 @@ async def draw_matrix_rank_list(bot: Bot, ev: Event):
 
                     role_bg.alpha_composite(role_pic, (base_x + role_index * 50, 20))
                 except Exception as e:
-                    logger.debug(f"绘制矩阵角色头像失败: {e}")
+                    logger.debug(f"[鸣潮·矩阵排行] 绘制角色头像失败: {e}")
 
             # buff图标 (与slash信物位置一致)
             if team_info.buff_icon:
@@ -720,7 +726,7 @@ async def draw_matrix_rank_list(bot: Bot, ev: Event):
                     buff_bg.paste(buff_pic, (0, 0), buff_pic)
                     role_bg.alpha_composite(buff_bg, (base_x + 150, 15))
                 except Exception as e:
-                    logger.debug(f"绘制矩阵buff失败: {e}")
+                    logger.debug(f"[鸣潮·矩阵排行] 绘制 buff 失败: {e}")
 
             # 队伍分数 (在角色和buff下方)
             team_color = get_local_score_color(team_info.score)
@@ -740,5 +746,5 @@ async def draw_matrix_rank_list(bot: Bot, ev: Event):
     card_img = add_footer(card_img)
     card_img = await convert_img(card_img)
 
-    logger.info(f"[draw_matrix_rank_list] end: {time.time() - start_time}")
+    logger.info(f"[鸣潮·矩阵排行] 群排行 end: {time.time() - start_time}")
     return card_img

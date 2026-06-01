@@ -26,7 +26,7 @@ def read_char_json_files(directory):
                 file_name = file.name.split(".")[0]
                 char_id_data[file_name] = data
         except Exception as e:
-            logger.exception(f"read_char_json_files load fail decoding {file}", e)
+            logger.exception(f"[鸣潮·角色升级] read_char_json_files load fail decoding {file}", e)
 
 
 def ensure_data_loaded(force: bool = False):
@@ -122,7 +122,7 @@ def get_char_detail(char_id: Union[str, int], level: int, breach: Union[int, Non
     ensure_data_loaded()
     result = WavesCharResult()
     if str(char_id) not in char_id_data:
-        logger.exception(f"get_char_detail char_id: {char_id} not found")
+        logger.exception(f"[鸣潮·角色升级] get_char_detail char_id: {char_id} not found")
         return result
 
     breach = get_breach(breach, level)
@@ -146,7 +146,7 @@ def get_char_detail(char_id: Union[str, int], level: int, breach: Union[int, Non
             try:
                 result.fixed_skill[name] = sum_percentages(skill_info["param"][0], result.fixed_skill[name])
             except (IndexError, KeyError, TypeError) as e:
-                logger.warning(f"get_char_detail param[0] failed for char_id {char_id}, skill {name}: {e}")
+                logger.warning(f"[鸣潮·角色升级] get_char_detail param[0] failed for char_id {char_id}, skill {name}: {e}")
 
         if skill_info.get("type") == "固有技能":
             for i, orig_name in enumerate(fixed_name):
@@ -165,13 +165,13 @@ def get_char_detail(char_id: Union[str, int], level: int, breach: Union[int, Non
                         if match:
                             result.fixed_skill[name] = sum_percentages(match.group(1), result.fixed_skill[name])
                         else:
-                            logger.warning(f"get_char_detail extract_param failed for char_id {char_id}, skill {name}")
+                            logger.warning(f"[鸣潮·角色升级] get_char_detail extract_param failed for char_id {char_id}, skill {name}")
                     else:
                         try:
                             param_value = skill_info["param"][param_index]
                             result.fixed_skill[name] = sum_percentages(param_value, result.fixed_skill[name])
                         except (IndexError, KeyError, TypeError) as e:
-                            logger.warning(f"get_char_detail param[{param_index}] failed for char_id {char_id}, skill {name}: {e}")
+                            logger.warning(f"[鸣潮·角色升级] get_char_detail param[{param_index}] failed for char_id {char_id}, skill {name}: {e}")
 
     return result
 

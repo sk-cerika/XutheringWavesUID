@@ -1,4 +1,4 @@
-"""rank 模块共用的头像逻辑（fallback：sender_avatar → QQ → DB → 角色头像）"""
+"""rank 模块共用的头像逻辑（fallback：sender_avatar → DB → QQ → 角色头像）"""
 import io
 from pathlib import Path
 from typing import Optional
@@ -39,7 +39,7 @@ async def _fetch_sender_avatar_image(url: str) -> Optional[Image.Image]:
         pic_cache.set(cache_key, img)
         return img
     except Exception as e:
-        logger.debug(f"sender_avatar 抓取失败 {url}: {e}")
+        logger.debug(f"[鸣潮·排行头像] sender_avatar 抓取失败 url={url}: {e}")
         return None
 
 
@@ -50,7 +50,7 @@ async def _fetch_db_avatar_image(user_id: Optional[str]) -> Optional[Image.Image
     try:
         url = await WavesUser.get_avatar_url(user_id)
     except Exception as e:
-        logger.debug(f"db avatar_url 查询失败 user_id={user_id}: {e}")
+        logger.debug(f"[鸣潮·排行头像] db avatar_url 查询失败 user_id={user_id}: {e}")
         return None
     if not url:
         return None
@@ -78,7 +78,11 @@ async def get_avatar(
         if WutheringWavesConfig.get_config("QQPicCache").data:
             pic = pic_cache.get(qid)
         if pic is None:
-            pic = await get_qq_avatar(qid, size=100)
+            try:
+                pic = await get_qq_avatar(qid, size=100)
+            except Exception as e:
+                logger.debug(f"[鸣潮·排行头像] QQ 头像获取失败 qid={qid}: {e}")
+                pic = None
             if pic:
                 pic_cache.set(qid, pic)
 
@@ -91,7 +95,11 @@ async def get_avatar(
         return img
 
     fallback_char_id = randomize_special_char_id(int(char_id)) if char_id else default_avatar_char_id
-    pic = await get_square_avatar(fallback_char_id)
+    try:
+        pic = await get_square_avatar(fallback_char_id)
+    except Exception as e:
+        logger.warning(f"[鸣潮·排行头像] 角色头像获取失败 char_id={fallback_char_id}: {e}")
+        return Image.new("RGBA", (180, 180))
 
     pic_temp = Image.new("RGBA", pic.size)
     pic_temp.paste(pic.resize((160, 160)), (10, 10))

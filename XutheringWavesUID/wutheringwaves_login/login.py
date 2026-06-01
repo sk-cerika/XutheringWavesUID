@@ -2,7 +2,7 @@ import os
 import re
 import uuid
 import asyncio
-import hashlib
+import secrets
 from typing import Union
 from pathlib import Path
 
@@ -74,8 +74,15 @@ def is_validate_code(code):
     return pattern.match(code) is not None
 
 
-def get_token(userId: str):
-    return hashlib.sha256(userId.encode()).hexdigest()[:8]
+def get_token() -> str:
+    return secrets.token_urlsafe(16)
+
+
+def evict_user_login(user_id: str) -> int:
+    """撤销同一用户的所有未完成登录会话, 让新发的链接成为唯一有效的"""
+    return cache.delete_where(
+        lambda v: isinstance(v, dict) and v.get("user_id") == user_id
+    )
 
 
 async def send_login(bot: Bot, ev: Event, url, refresh_panel: bool = True):
@@ -126,15 +133,16 @@ async def send_login(bot: Bot, ev: Event, url, refresh_panel: bool = True):
 
 async def page_login_local(bot: Bot, ev: Event, url):
     at_sender = True if ev.group_id else False
-    user_token = get_token(ev.user_id)
+    evict_user_login(ev.user_id)  # 撤销同用户旧登录会话, 新链接唯一有效
+    user_token = get_token()
     logger.debug(
-        f"[鸣潮登录] page_login_local user_id={ev.user_id} user_token={user_token}"
+        f"[鸣潮·登录] page_login_local user_id={ev.user_id} user_token={user_token}"
     )
 
-    # 始终以最新指令为准：直接覆盖任何已有 session（含邮箱），并刷新 TTL。
-    # 先写 cache 再发 URL，关掉「URL 已可见但 cache 未写入」的瞬开窗口。
-    # 旧的邮箱 waiter 下一次轮询会看到 flow 变了，按 email_login.py 的逻辑静默退出。
-    cache.set(user_token, {"mobile": -1, "code": -1, "user_id": ev.user_id})
+    cache.set(
+        user_token,
+        {"flow": "page", "mobile": -1, "code": -1, "user_id": ev.user_id},
+    )
     await send_login(bot, ev, f"{url}/waves/i/{user_token}")
 
     text = None
@@ -145,12 +153,12 @@ async def page_login_local(bot: Bot, ev: Event, url):
                 if result is None:
                     # 缓存被另一个 waiter 消费 / 显式清理，静默退出，由外层 timeout 兜底真正的超时
                     return
-                if isinstance(result, dict) and result.get("flow") == "email":
+                if not isinstance(result, dict) or result.get("flow") != "page":
                     return
                 if result.get("mobile") != -1 and result.get("code") != -1:
                     text = f"{result['mobile']},{result['code']}"
                     logger.debug(
-                        f"[鸣潮登录] page_login_local 收到提交 user_id={ev.user_id} "
+                        f"[鸣潮·登录] page_login_local 收到提交 user_id={ev.user_id} "
                         f"user_token={user_token}"
                     )
                     cache.delete(user_token)
@@ -169,20 +177,11 @@ async def page_login_local(bot: Bot, ev: Event, url):
 
 async def page_login_other(bot: Bot, ev: Event, url):
     at_sender = True if ev.group_id else False
-    user_token = get_token(ev.user_id)
     logger.debug(
-        f"[鸣潮登录] page_login_other user_id={ev.user_id} user_token={user_token} url={url}"
+        f"[鸣潮·登录] page_login_other user_id={ev.user_id} url={url}"
     )
 
     auth = {"bot_id": ev.bot_id, "user_id": ev.user_id}
-
-    token = cache.get(user_token)
-    if isinstance(token, str):
-        logger.debug(
-            f"[鸣潮登录] page_login_other 命中缓存 token user_id={ev.user_id}"
-        )
-        await send_login(bot, ev, f"{url}/waves/i/{token}")
-        return
 
     async with httpx.AsyncClient() as client:
         try:
@@ -193,23 +192,22 @@ async def page_login_other(bot: Bot, ev: Event, url):
             )
             text = r.text
             if not text or text.strip() == "":
-                logger.error(f"请求登录服务失败：服务器返回空响应 (状态码: {r.status_code})")
+                logger.error(f"[鸣潮·登录] 请求登录服务失败：服务器返回空响应 (状态码: {r.status_code})")
                 token = ""
             else:
                 try:
                     token = r.json().get("token", "")
                 except Exception as json_err:
-                    logger.error(f"请求登录服务失败：{json_err} | 响应内容: {text[:200]}")
+                    logger.error(f"[鸣潮·登录] 请求登录服务失败：{json_err} | 响应内容: {text[:200]}")
                     token = ""
         except Exception as e:
             token = ""
-            logger.error(f"请求登录服务失败：{e}")
+            logger.error(f"[鸣潮·登录] 请求登录服务失败：{e}")
         if not token:
             return await bot.send("服务请求失败! 请稍后再试\n", at_sender=at_sender)
 
         await send_login(bot, ev, f"{url}/waves/i/{token}")
 
-        cache.set(user_token, token)
         times = 3
         try:
             async with timeout(180):
@@ -226,13 +224,13 @@ async def page_login_other(bot: Bot, ev: Event, url):
                     try:
                         text = result.text
                         if not text or text.strip() == "":
-                            logger.error("请求登录服务失败：/waves/get返回空响应")
+                            logger.error("[鸣潮·登录] 请求登录服务失败：/waves/get返回空响应")
                             times -= 1
                             await asyncio.sleep(5)
                             continue
                         data = result.json()
                     except Exception as json_err:
-                        logger.error(f"请求登录服务失败：{json_err} | 响应: {result.text[:200]}")
+                        logger.error(f"[鸣潮·登录] 请求登录服务失败：{json_err} | 响应: {result.text[:200]}")
                         times -= 1
                         await asyncio.sleep(5)
                         continue
@@ -242,10 +240,9 @@ async def page_login_other(bot: Bot, ev: Event, url):
                         continue
 
                     logger.debug(
-                        f"[鸣潮登录] page_login_other 拿到 ck user_id={ev.user_id}"
+                        f"[鸣潮·登录] page_login_other 拿到 ck user_id={ev.user_id}"
                     )
                     waves_user, bind_msg = await add_cookie(ev, data["ck"], data["did"])
-                    cache.delete(user_token)
                     if "成功" in bind_msg:
                         await bot.send((" " if at_sender else "") + bind_msg.rstrip("\n"), at_sender)
                     if waves_user and isinstance(waves_user, WavesUser):
@@ -255,14 +252,13 @@ async def page_login_other(bot: Bot, ev: Event, url):
                             return
                         return await bot.send(bind_msg if bind_msg else msg_error, at_sender=at_sender)
         except asyncio.TimeoutError:
-            cache.delete(user_token)
             return await bot.send("登录超时!", at_sender=at_sender)
 
 
 async def page_login(bot: Bot, ev: Event):
     url, is_local = await get_url()
     logger.debug(
-        f"[鸣潮登录] page_login user_id={ev.user_id} url={url} is_local={is_local}"
+        f"[鸣潮·登录] page_login user_id={ev.user_id} url={url} is_local={is_local}"
     )
 
     if is_local:
@@ -279,22 +275,24 @@ async def code_login(bot: Bot, ev: Event, text: str, isPage=False):
         phone_number, code = text.split(",")
         if not is_valid_chinese_phone_number(phone_number):
             raise ValueError("Invalid phone number")
+        if not is_validate_code(code):
+            raise ValueError("Invalid verification code")
     except ValueError as _:
         logger.debug(
-            f"[鸣潮登录] code_login 格式错误 user_id={ev.user_id} isPage={isPage}"
+            f"[鸣潮·登录] code_login 格式错误 user_id={ev.user_id} isPage={isPage}"
         )
         return await bot.send(
-            f"{game_title} 手机号+验证码登录失败\n\n请参照以下格式:\n{PREFIX}登录 手机号,验证码\n",
+            f"{game_title} 手机号+验证码登录失败\n\n请参照以下格式:\n{PREFIX}登录 手机号,验证码\n验证码为 6 位数字\n",
             at_sender=at_sender,
         )
 
     did = str(uuid.uuid4()).upper()
     logger.debug(
-        f"[鸣潮登录] code_login 提交 user_id={ev.user_id} isPage={isPage}"
+        f"[鸣潮·登录] code_login 提交 user_id={ev.user_id} isPage={isPage}"
     )
     result = await waves_api.login(phone_number, code, did)
     logger.debug(
-        f"[鸣潮登录] code_login waves_api.login 返回 user_id={ev.user_id} "
+        f"[鸣潮·登录] code_login waves_api.login 返回 user_id={ev.user_id} "
         f"success={result.success} msg={result.msg!r}"
     )
     if not result.success:
@@ -305,18 +303,22 @@ async def code_login(bot: Bot, ev: Event, text: str, isPage=False):
         return await bot.send(msg_error, at_sender=at_sender)
 
     if not result.data or not isinstance(result.data, dict):
-        return await bot.send(message=result.throw_msg(), at_sender=at_sender)
+        # 库街区接口可能在未注册等情况下返回 success=true / data=null / msg="请求成功"，
+        # 不能把这个占位 msg 回显给用户，统一走 msg_error 提示更清晰
+        return await bot.send(message=msg_error, at_sender=at_sender)
 
     token = result.data.get("token", "")
     waves_user, bind_msg = await add_cookie(ev, token, did)
-    if "成功" in bind_msg:
+    # 严格匹配 deal.add_cookie 的成功文案，避免 "请求成功" 这种内部占位被误判为成功
+    bind_succeed = "登录成功" in bind_msg or "记录成功" in bind_msg
+    if bind_succeed:
         await bot.send((" " if at_sender else "") + bind_msg.rstrip("\n"), at_sender)
     if waves_user and isinstance(waves_user, WavesUser):
         return await login_success_msg(bot, ev, waves_user)
-    else:
-        if "成功" in bind_msg:
-            return
-        return await bot.send(bind_msg if bind_msg else msg_error, at_sender=at_sender)
+    if bind_succeed:
+        return
+    # 未匹配成功文案时统一兜底，不直接回显 bind_msg，避免 "请求成功" / 空字符串等泄漏
+    return await bot.send(msg_error, at_sender=at_sender)
 
 
 async def add_cookie(ev, token, did) -> tuple[Union[WavesUser, None], str]:
@@ -324,7 +326,7 @@ async def add_cookie(ev, token, did) -> tuple[Union[WavesUser, None], str]:
     ck_res = await deal.add_cookie(ev, token, did, is_login=True)
     success = "成功" in ck_res
     logger.debug(
-        f"[鸣潮登录] add_cookie user_id={ev.user_id} success={success} "
+        f"[鸣潮·登录] add_cookie user_id={ev.user_id} success={success} "
         f"summary={ck_res[:80]!r}"
     )
     if success:
@@ -334,7 +336,7 @@ async def add_cookie(ev, token, did) -> tuple[Union[WavesUser, None], str]:
             if data == 0 or data == -2:
                 await WavesBind.switch_uid_by_game(ev.user_id, ev.bot_id, user.uid)
         logger.debug(
-            f"[鸣潮登录] add_cookie 绑定 user_id={ev.user_id} uid={getattr(user, 'uid', None)}"
+            f"[鸣潮·登录] add_cookie 绑定 user_id={ev.user_id} uid={getattr(user, 'uid', None)}"
         )
         return user, ck_res
     return None, ck_res
@@ -344,7 +346,7 @@ async def add_cookie(ev, token, did) -> tuple[Union[WavesUser, None], str]:
 async def waves_login_index(auth: str):
     state = cache.get(auth)
     logger.debug(
-        f"[鸣潮登录] waves_login_index auth={auth} state_type={type(state).__name__} "
+        f"[鸣潮·登录] waves_login_index auth={auth} state_type={type(state).__name__} "
         f"flow={(state.get('flow') if isinstance(state, dict) else None)!r}"
     )
 
@@ -362,7 +364,7 @@ async def waves_login_index(auth: str):
     if temp is None:
         # 多 worker / 进程重启 / TTL 过期都会走这里，打点便于排查
         logger.info(
-            f"[登录404] auth={auth} pid={os.getpid()} "
+            f"[鸣潮·登录404] auth={auth} pid={os.getpid()} "
             f"mem_keys={len(cache.cache)} persist={cache.persist_path is not None}"
         )
         # 检查自定义404页面路径
@@ -416,10 +418,12 @@ class LoginModel(BaseModel):
 async def waves_login(data: LoginModel):
     temp = cache.get(data.auth)
     logger.debug(
-        f"[鸣潮登录] waves_login POST auth={data.auth} cache_hit={temp is not None}"
+        f"[鸣潮·登录] waves_login POST auth={data.auth} cache_hit={temp is not None}"
     )
     if temp is None:
         return {"success": False, "msg": "登录超时"}
+    if not isinstance(temp, dict) or temp.get("flow") != "page":
+        return {"success": False, "msg": "登录会话不匹配"}
 
     temp.update(data.model_dump())
     cache.set(data.auth, temp)

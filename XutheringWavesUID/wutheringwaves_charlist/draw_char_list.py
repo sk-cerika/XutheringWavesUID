@@ -24,13 +24,14 @@ from ..utils.image import (
     get_square_weapon,
     get_custom_waves_bg,
 )
-from ..utils.api.model import WeaponData, RoleDetailData, AccountBaseInfo
+from ..utils.api.model import WeaponData, RoleDetailData
 from ..utils.waves_api import waves_api
 from ..utils.error_reply import WAVES_CODE_102
 from ..utils.ascension.char import char_id_data, ensure_data_loaded
 from ..utils.expression_ctx import WavesCharRank, get_waves_char_rank
 from ..utils.char_info_utils import get_all_roleid_detail_info_int
-from ..wutheringwaves_config import WutheringWavesConfig, PREFIX
+from ..wutheringwaves_config import WutheringWavesConfig
+from ..wutheringwaves_charinfo import base_info_cache
 from ..utils.ascension.weapon import get_breach
 from ..utils.fonts.waves_fonts import (
     waves_font_16,
@@ -98,18 +99,12 @@ async def draw_char_list_img(
         return error_reply(WAVES_CODE_102)
     user_pref = await get_hide_uid_pref(user_waves_id, user_id, ev.bot_id)
 
-    if uid == user_waves_id and is_self_ck:
-        is_self_ck = True
-    else:
-        is_self_ck = False
+    is_self_ck = is_self_ck and (uid == user_waves_id)
 
-    # 账户数据
-    account_info = await waves_api.get_base_info(uid, ck)
-    if not account_info.success:
-        return account_info.throw_msg()
-    if not account_info.data:
-        return f"用户未展示数据, 请尝试【{PREFIX}登录】"
-    account_info = AccountBaseInfo.model_validate(account_info.data)
+    info = await base_info_cache.get_or_fetch_account_info(uid, ck)
+    if isinstance(info, str):
+        return info
+    account_info = info
 
     all_role_detail = await get_all_roleid_detail_info(
         ev,

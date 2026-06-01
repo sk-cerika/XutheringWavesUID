@@ -13,12 +13,9 @@ from ..utils.waves_api import waves_api
 from ..utils.error_reply import WAVES_CODE_102
 from ..utils.api.model import (
     AccountBaseInfo,
-    RoleDetailData,
-    Role,
     RoleList,
 )
 from ..utils.ascension.char import get_char_detail
-from ..utils.waves_api import waves_api
 from ..wutheringwaves_config import WutheringWavesConfig, PREFIX
 from ..utils.render_utils import (
     PLAYWRIGHT_AVAILABLE,
@@ -34,22 +31,23 @@ from ..utils.image import (
     get_square_avatar_path,
     CHAIN_COLOR,
 )
-from ..utils.char_info_utils import get_all_roleid_detail_info
+from ..utils.char_info_utils import get_all_roleid_detail_info, lookup_chain
 from .period import get_tower_period_number
 from .draw_abyss_card_pil import (
     draw_abyss_img as draw_abyss_img_pil,
     get_abyss_data,
+    upload_abyss_record,
     ABYSS_ERROR_MESSAGE_NO_UNLOCK,
     ABYSS_ERROR_MESSAGE_NO_DEEP,
 )
+
+TEXT_PATH = Path(__file__).parent / "texture2d"
 
 
 async def draw_abyss_img(ev: Event, uid: str, user_id: str) -> Union[bytes, str]:
     use_html_render = WutheringWavesConfig.get_config("UseHtmlRender").data
     if not PLAYWRIGHT_AVAILABLE or not use_html_render:
         return await draw_abyss_img_pil(ev, uid, user_id)
-
-    TEXT_PATH = Path(__file__).parent / "texture2d"
 
     try:
         is_self_ck, ck = await waves_api.get_ck_result(uid, user_id, ev.bot_id)
@@ -144,12 +142,7 @@ async def draw_abyss_img(ev: Event, uid: str, user_id: str) -> Union[bytes, str]
                         if role:
                             role_level = role.level
 
-                        chain_name = ""
-                        chain_num = 0
-                        if role_detail_info_map and str(_role.roleId) in role_detail_info_map:
-                            temp: RoleDetailData = role_detail_info_map[str(_role.roleId)]
-                            chain_name = temp.get_chain_name()
-                            chain_num = temp.get_chain_num()
+                        chain_num, chain_name = lookup_chain(role_detail_info_map, _role.roleId)
 
                         role_icon_b64 = img_to_b64(get_square_avatar_path(_role.roleId), quality=75, bake=True, cover_size=(128, 128))
 
@@ -214,14 +207,15 @@ async def draw_abyss_img(ev: Event, uid: str, user_id: str) -> Union[bytes, str]
             "chain_colors": chain_colors,
         }
 
-        logger.debug("[鸣潮] 准备通过HTML渲染深渊卡片")
+        logger.debug("[鸣潮·深塔渲染] 准备 HTML 渲染")
         img_bytes = await render_html(waves_templates, "abyss/abyss_card.html", context)
         if img_bytes:
+            await upload_abyss_record(is_self_ck, uid, difficultyName, abyss_data)
             return img_bytes
         else:
-            logger.warning("[鸣潮] Playwright 渲染返回空, 正在回退到 PIL 渲染")
+            logger.warning("[鸣潮·深塔渲染] Playwright 返回空, 回退到 PIL")
             return await draw_abyss_img_pil(ev, uid, user_id)
 
     except Exception as e:
-        logger.exception(f"[鸣潮] HTML渲染失败: {e}")
+        logger.exception(f"[鸣潮·深塔渲染] HTML 失败: {e}")
         return await draw_abyss_img_pil(ev, uid, user_id)

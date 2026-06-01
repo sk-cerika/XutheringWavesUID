@@ -18,7 +18,7 @@ ANN_DATA_PATH = MAIN_PATH / "ann_data.json"
 PLAYER_PATH = MAIN_PATH / "players"
 
 # 抽卡记录备份目录（import/update/delete 三类备份均在此目录下，按 uid 分子目录）
-GACHA_BACKUP_PATH = MAIN_PATH / "backup"
+GACHA_BACKUP_PATH = MAIN_PATH / "backup" / "gacha_backup"
 
 # 储存数据保存路径
 CACHE_PATH = MAIN_PATH / "cache"

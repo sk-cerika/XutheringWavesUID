@@ -73,7 +73,8 @@ async def send_waves_add_ck_msg(bot: Bot, ev: Event):
         )
 
     ck_msg = await add_cookie(ev, ck, did, is_login=False)
-    if "成功" in ck_msg:
+    # 严格匹配 deal.add_cookie 的成功文案，避免 "请求成功" 等内部占位被误判为成功
+    if isinstance(ck_msg, str) and ("登录成功" in ck_msg or "记录成功" in ck_msg):
         # 先发绑定概要
         await bot.send((" " if at_sender else "") + ck_msg.rstrip("\n"), at_sender)
 
@@ -204,7 +205,8 @@ async def waves_delete_inactive_group_members(bot: Bot, ev: Event):
             if last_active_time is not None:
                 if latest_time is None or last_active_time > latest_time:
                     latest_time = last_active_time
-        if latest_time is None or latest_time < threshold_time:
+        # 无活跃记录视为宽限期, 不入集合
+        if latest_time is not None and latest_time < threshold_time:
             inactive_uids.add(uid)
 
     if not inactive_uids:
@@ -217,7 +219,9 @@ async def waves_delete_inactive_group_members(bot: Bot, ev: Event):
             continue
         uid_list = [u for u in (bind.uid or "").split("_") if u]
         pgr_uid_list = [u for u in (bind.pgr_uid or "").split("_") if u]
-        if not any(uid in inactive_uids for uid in uid_list + pgr_uid_list):
+        # 任一 uid 仍活跃则整行豁免, 避免小号拖累大号
+        all_uids = uid_list + pgr_uid_list
+        if not all_uids or not all(uid in inactive_uids for uid in all_uids):
             continue
 
         new_group_list = [g for g in group_list if g != ev.group_id]
@@ -228,8 +232,10 @@ async def waves_delete_inactive_group_members(bot: Bot, ev: Event):
         )
         updated += 1
         
-    logger.info(f"[鸣潮] 已移除不活跃群成员 UID 数：{len(inactive_uids)}，更新绑定记录数：{updated}")
+    logger.info(f"[鸣潮·用户] 已移除不活跃群成员 UID 数：{len(inactive_uids)}，更新绑定记录数：{updated}")
 
+    if updated == 0:
+        return await bot.send("[鸣潮] 本群暂无可清理的不活跃群成员")
     return await bot.send(
         f"[鸣潮] 已移除不活跃群成员，UID 数：{len(inactive_uids)}"
     )
@@ -237,28 +243,34 @@ async def waves_delete_inactive_group_members(bot: Bot, ev: Event):
 
 @scheduler.scheduled_job("cron", hour=23, minute=30)
 async def auto_delete_all_invalid_cookie():
-    DelInvalidCookie = WutheringWavesConfig.get_config("DelInvalidCookie").data
-    if not DelInvalidCookie:
-        return
-    del_len = await WavesUser.delete_all_invalid_cookie()
-    if del_len == 0:
-        return
-    msg = f"[鸣潮] 删除无效token【{del_len}】个"
-    config_masters = core_config.get_config("masters")
+    try:
+        DelInvalidCookie = WutheringWavesConfig.get_config("DelInvalidCookie").data
+        if not DelInvalidCookie:
+            return
+        del_len = await WavesUser.delete_all_invalid_cookie()
+        if del_len == 0:
+            return
+        msg = f"[鸣潮] 删除无效token【{del_len}】个"
+        config_masters = core_config.get_config("masters")
 
-    if not config_masters:
-        return
-    for bot_id in gss.active_bot:
-        await gss.active_bot[bot_id].target_send(
-            msg,
-            "direct",
-            config_masters[0],
-            "onebot",
-            "",
-            "",
-        )
-        break
-    logger.info(f"[鸣潮]推送主人删除无效token结果: {msg}")
+        if not config_masters:
+            return
+        for bot_id in gss.active_bot:
+            try:
+                await gss.active_bot[bot_id].target_send(
+                    msg,
+                    "direct",
+                    config_masters[0],
+                    "onebot",
+                    "",
+                    "",
+                )
+            except Exception as e:
+                logger.warning(f"[鸣潮·用户] 推送主人删除结果失败 bot_id={bot_id}: {e}")
+            break
+        logger.info(f"[鸣潮·用户] 推送主人删除无效token结果: {msg}")
+    except Exception as e:
+        logger.exception(f"[鸣潮·用户] cron auto_delete_all_invalid_cookie 异常: {e}")
 
 
 @waves_bind_uid.on_command(
@@ -284,8 +296,8 @@ async def send_waves_bind_uid_msg(bot: Bot, ev: Event):
             return await bot.send((" " if at_sender else "") + msg, at_sender)
         uid_list = await WavesBind.get_uid_list_by_game(qid, ev.bot_id)
         cookie_uid_list = await WavesUser.select_user_cookie_uids(qid)
-        if uid_list and cookie_uid_list:
-            difference_uid_list = set(uid_list).difference(set(cookie_uid_list))
+        if uid_list and uid not in uid_list:
+            difference_uid_list = set(uid_list).difference(set(cookie_uid_list or []))
             max_bind_num: int = WutheringWavesConfig.get_config("MaxBindNum").data
             if len(difference_uid_list) >= max_bind_num:
                 msg = "[鸣潮] 绑定特征码达到上限"
@@ -341,7 +353,7 @@ async def send_waves_bind_uid_msg(bot: Bot, ev: Event):
             try:
                 await WavesStaminaRecord.delete_by_user(qid, ev.bot_id)
             except Exception:
-                logger.exception("[鸣潮] 删除全部特征码时清理体力记录失败")
+                logger.exception("[鸣潮·用户] 删除全部特征码时清理体力记录失败")
             msg = "[鸣潮] 删除全部特征码成功！"
             return await bot.send((" " if at_sender else "") + msg, at_sender)
         else:

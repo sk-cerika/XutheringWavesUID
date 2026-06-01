@@ -110,7 +110,7 @@ async def draw_weapon_list(weapon_type: str):
         if result:
             return result
     except Exception as e:
-        logger.warning(f"[鸣潮] 武器列表HTML渲染失败，回退到PIL: {e}")
+        logger.warning(f"[鸣潮·百科列表] 武器列表HTML渲染失败，回退到PIL: {e}")
 
     # 回退到PIL绘制
     return await _draw_weapon_list_pil(weapon_type)
@@ -127,13 +127,13 @@ async def _draw_weapon_list_pil(weapon_type: str):
 
     # 创建反向映射（中文类型 → 数字类型）
     reverse_type_map = {v: k for k, v in WEAPON_TYPE_ID_MAP.items()}
-    logger.debug(f"正在处理武器类型：{weapon_type}")
-    logger.debug(f"正在处理武器列表：{reverse_type_map}")
+    logger.debug(f"[鸣潮·百科列表] 正在处理武器类型：{weapon_type}")
+    logger.debug(f"[鸣潮·百科列表] 正在处理武器列表：{reverse_type_map}")
 
     # 按武器类型分组收集武器数据
     weapon_groups = defaultdict(list)
     target_type = reverse_type_map.get(weapon_type)
-    logger.debug(f"成功处理：{target_type}")
+    logger.debug(f"[鸣潮·百科列表] 成功处理：{target_type}")
 
     for weapon_id, data in weapon_id_data.items():
         name = data.get("name", "未知武器")
@@ -285,7 +285,7 @@ async def draw_sonata_list(version: str = ""):
         if result:
             return result
     except Exception as e:
-        logger.warning(f"[鸣潮] 套装列表HTML渲染失败，回退到PIL: {e}")
+        logger.warning(f"[鸣潮·百科列表] 套装列表HTML渲染失败，回退到PIL: {e}")
 
     # 回退到PIL绘制
     return await _draw_sonata_list_pil(version)

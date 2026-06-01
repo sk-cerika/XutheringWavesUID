@@ -91,6 +91,28 @@ def _migrate_legacy_gacha_backups():
                 if moved:
                     prune_gacha_backups(uid_dir.name, type_)
 
+    # 旧路径3: MAIN_PATH/backup/{uid}/(delete|import|update)_gacha_logs_*.json
+    # 新路径加了 gacha_backup 子层避免与其他模块同名 backup 撞目录
+    legacy_flat_root = GACHA_BACKUP_PATH.parent
+    if legacy_flat_root.exists():
+        for uid_dir in legacy_flat_root.iterdir():
+            if not uid_dir.is_dir() or uid_dir.name == GACHA_BACKUP_PATH.name:
+                continue
+            if not uid_dir.name.isdigit():
+                continue
+            moved_types = set()
+            for src in uid_dir.glob("*_gacha_logs_*.json"):
+                _move(src, GACHA_BACKUP_PATH / uid_dir.name, src.name)
+                prefix = src.name.split("_", 1)[0]
+                if prefix in ("import", "update", "delete"):
+                    moved_types.add(prefix)
+            for t in moved_types:
+                prune_gacha_backups(uid_dir.name, t)
+            try:
+                uid_dir.rmdir()
+            except OSError:
+                pass
+
 
 _migrate_legacy_gacha_backups()
 
@@ -179,7 +201,7 @@ async def get_gacha_log_by_link(bot: Bot, ev: Event):
 
         is_force = False
         if ev.command.startswith("强制"):
-            await bot.logger.info("[WARNING]本次为强制刷新")
+            await bot.logger.info("[鸣潮·抽卡] 本次为强制刷新")
             is_force = True
         await bot.send(f"UID{hide_uid(uid, user_pref)}开始执行[更新抽卡记录]，需要一定时间，请稍等!\n官方仅保存近180天抽卡记录，仅更新该部分。")
         im = await save_gachalogs(ev, uid, record_id, is_force)
@@ -264,7 +286,7 @@ Args:
 """,
 )
 async def send_gacha_log_card_info(bot: Bot, ev: Event):
-    await bot.logger.info("[鸣潮]开始执行 抽卡记录")
+    await bot.logger.info("[鸣潮·抽卡] 开始执行 抽卡记录")
     uid = await WavesBind.get_uid_by_game(ev.user_id, ev.bot_id)
     if not uid:
         return await bot.send(ERROR_CODE[WAVES_CODE_103])
@@ -356,6 +378,8 @@ async def delete_gacha_history(bot: Bot, ev: Event):
         except Exception as e:
             logger.exception(f"[鸣潮·抽卡删除] 移动失败 uid={uid}: {e}")
             return await bot.send("移动抽卡记录失败，请稍后重试")
+        # 同步失效 stats 缓存，避免抽卡排行读到已删数据
+        (player_dir / "gachaStats.json").unlink(missing_ok=True)
         prune_gacha_backups(uid, "delete")
 
         await bot.send(f"UID{hide_uid(uid, user_pref)}抽卡记录已删除！")
@@ -375,7 +399,7 @@ async def delete_import_gacha_files(bot: Bot, ev: Event):
                     file_path.unlink()
                     delete_count += 1
                 except Exception as e:
-                    await bot.logger.warning(f"删除导入记录失败 {file_path}: {e}")
+                    await bot.logger.warning(f"[鸣潮·抽卡] 删除导入记录失败 {file_path}: {e}")
 
     await bot.send(f"删除导入记录{delete_count}个")
 
@@ -398,7 +422,7 @@ async def send_gacha_rank_info(bot: Bot, ev: Event):
     if not ev.group_id:
         return await bot.send("请在群聊中使用本功能！")
 
-    await bot.logger.info("[鸣潮]开始执行 抽卡排行")
+    await bot.logger.info("[鸣潮·抽卡] 开始执行 抽卡排行")
     im = await draw_gacha_rank_card(bot, ev)
     await bot.send(im)
 

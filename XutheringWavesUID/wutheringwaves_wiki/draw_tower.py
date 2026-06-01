@@ -97,7 +97,7 @@ async def draw_tower_challenge_img(ev: Event, period: Optional[int] = None) -> U
                 if res:
                     return res
             except Exception:
-                logger.warning("Failed to render tower wiki with playwright, fallback to PIL")
+                logger.warning("[鸣潮·百科挑战] Failed to render tower wiki with playwright, fallback to PIL")
 
         # 加载数据
         tower_data = load_json_file(json_path)
@@ -117,12 +117,14 @@ async def draw_tower_challenge_img(ev: Event, period: Optional[int] = None) -> U
             if floor_4_1:
                 sections.append(("残响之塔", floor_4_1))
 
-        # 深境之塔全部4层
+        # 深境之塔 - 与 HTML 对齐，读 1..9 直到断层
         if "2" in areas and "Floor" in areas["2"]:
-            for floor_id in ["1", "2", "3", "4"]:
-                floor_data = areas["2"]["Floor"].get(floor_id)
+            for i in range(1, 10):
+                floor_data = areas["2"]["Floor"].get(str(i))
                 if floor_data:
-                    sections.append((f"深境之塔 {floor_id}层", floor_data))
+                    sections.append((f"深境之塔 {i}层", floor_data))
+                else:
+                    break
 
         # 回音之塔第4层
         if "3" in areas and "Floor" in areas["3"]:
@@ -138,7 +140,7 @@ async def draw_tower_challenge_img(ev: Event, period: Optional[int] = None) -> U
         return card_img
 
     except Exception as e:
-        logger.error(f"Error drawing tower challenge: {e}")
+        logger.error(f"[鸣潮·百科挑战] Error drawing tower challenge: {e}")
         return f"绘制深塔信息失败: {str(e)}"
 
 
@@ -190,7 +192,7 @@ async def draw_slash_challenge_img(ev: Event, period: Optional[int] = None) -> U
                 if res:
                     return res
             except Exception:
-                logger.warning("Failed to render slash wiki with playwright, fallback to PIL")
+                logger.warning("[鸣潮·百科挑战] Failed to render slash wiki with playwright, fallback to PIL")
 
         # 加载数据
         slash_data = load_json_file(json_path)
@@ -224,7 +226,7 @@ async def draw_slash_challenge_img(ev: Event, period: Optional[int] = None) -> U
         return card_img
 
     except Exception as e:
-        logger.error(f"Error drawing slash challenge: {e}")
+        logger.error(f"[鸣潮·百科挑战] Error drawing slash challenge: {e}")
         return f"绘制海墟信息失败: {str(e)}"
 
 
@@ -898,7 +900,7 @@ async def draw_matrix_challenge_img(ev: Event, season: Optional[int] = None) -> 
                 if res:
                     return res
             except Exception:
-                logger.warning("Failed to render matrix wiki with playwright, fallback to PIL")
+                logger.warning("[鸣潮·百科挑战] Failed to render matrix wiki with playwright, fallback to PIL")
 
         matrix_data = load_json_file(json_path)
         if not matrix_data:
@@ -907,5 +909,5 @@ async def draw_matrix_challenge_img(ev: Event, season: Optional[int] = None) -> 
         return await _draw_matrix_challenge_pil(season, matrix_data)
 
     except Exception as e:
-        logger.error(f"Error drawing matrix challenge: {e}")
+        logger.error(f"[鸣潮·百科挑战] Error drawing matrix challenge: {e}")
         return f"绘制矩阵信息失败: {str(e)}"

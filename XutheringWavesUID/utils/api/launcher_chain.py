@@ -34,18 +34,18 @@ async def fetch_launcher_panel(
     """
     waves_user = await WavesUser.select_waves_user(uid, user_id, bot_id, game_id=WAVES_GAME_ID)
     if not waves_user:
-        logger.info(f"[launcher_chain] 没有 WavesUser uid={uid} user_id={user_id}")
+        logger.info(f"[鸣潮·启动链] 没有 WavesUser uid={uid} user_id={user_id}")
         return None
     if not waves_user.cookie:
-        logger.info(f"[launcher_chain] WavesUser.cookie 为空 uid={uid}")
+        logger.info(f"[鸣潮·启动链] WavesUser.cookie 为空 uid={uid}")
         return None
     if waves_user.status == "无效":
-        logger.info(f"[launcher_chain] WavesUser 已被标记为无效 uid={uid}")
+        logger.info(f"[鸣潮·启动链] WavesUser 已被标记为无效 uid={uid}")
         return None
 
     sdk_record = await WavesUserSdk.select_record(user_id, bot_id, uid)
     if not sdk_record or not sdk_record.region:
-        logger.info(f"[launcher_chain] WavesUserSdk 没有 region 记录 uid={uid}")
+        logger.info(f"[鸣潮·启动链] WavesUserSdk 没有 region 记录 uid={uid}")
         return None
 
     return await _fetch_with_refresh(
@@ -118,12 +118,12 @@ async def _fetch_with_refresh(
         if data is not None:
             return data
         if err == "maintenance":
-            logger.warning(f"[launcher_chain] 服务器维护中, 跳过 uid={uid}")
+            logger.warning(f"[鸣潮·启动链] 服务器维护中, 跳过 uid={uid}")
             return None
         if err != "expired":
             # 非鉴权失败, 续登也救不了, bubble up
             logger.warning(
-                f"[launcher_chain] launcher 查询失败 (非鉴权) uid={uid}"
+                f"[鸣潮·启动链] launcher 查询失败 (非鉴权) uid={uid}"
             )
             return None
 
@@ -131,14 +131,14 @@ async def _fetch_with_refresh(
     login = await launcher_sdk.auto_login(auto_token, device_no=device_no)
     if not login.success or not login.data:
         if login.is_server_maintenance:
-            logger.warning(f"[launcher_chain] auto_login 命中维护 uid={uid}")
+            logger.warning(f"[鸣潮·启动链] auto_login 命中维护 uid={uid}")
             return None
-        logger.warning(f"[launcher_chain] auto_login 失败 uid={uid} msg={login.msg!r}")
+        logger.warning(f"[鸣潮·启动链] auto_login 失败 uid={uid} msg={login.msg!r}")
         return None
 
     tok = await launcher_sdk.exchange_access_token(login.data.code, device_no=device_no)
     if not tok.success or not tok.data:
-        logger.warning(f"[launcher_chain] exchange_token 失败 uid={uid} msg={tok.msg!r}")
+        logger.warning(f"[鸣潮·启动链] exchange_token 失败 uid={uid} msg={tok.msg!r}")
         return None
 
     new_auto = login.data.auto_token
@@ -160,11 +160,11 @@ async def _fetch_with_refresh(
         )
         await WavesUserSdk.update_bat_expires_at(user_id, bot_id, uid, new_expires_at)
     except Exception:
-        logger.exception(f"[launcher_chain] 凭据回写失败 uid={uid}")
+        logger.exception(f"[鸣潮·启动链] 凭据回写失败 uid={uid}")
 
     data, err = await _query(
         new_access, uid=uid, region=region, device_no=device_no
     )
     if data is None and err == "maintenance":
-        logger.warning(f"[launcher_chain] 续登后查询命中维护 uid={uid}")
+        logger.warning(f"[鸣潮·启动链] 续登后查询命中维护 uid={uid}")
     return data

@@ -41,7 +41,7 @@ async def get_tower_appear_rate_data() -> Union[Dict, None]:
             if res.status_code == 200:
                 return res.json().get("data", [])
         except Exception as e:
-            logger.exception(f"获取深塔出场率数据失败: {e}")
+            logger.exception(f"[鸣潮·深塔出场率] 获取深塔出场率数据失败: {e}")
 
 
 async def draw_tower_use_rate(ev: Event):
@@ -66,7 +66,8 @@ async def draw_tower_use_rate(ev: Event):
         totalNum = 9
         h = title_h + totalNum * bar_star_h + tower_name_bg_h * 3 + footer_h
     else:
-        char_num = len(data["appear_rate_list"][0]["rates"])
+        target = next((i for i in data["appear_rate_list"] if i["area_type"] == filter_type), None)
+        char_num = len(target["rates"]) if target else 0
         totalNum = char_num // 4 + (0 if char_num % 4 == 0 else 1)
 
         h = title_h + totalNum * bar_star_h + tower_name_bg_h + footer_h

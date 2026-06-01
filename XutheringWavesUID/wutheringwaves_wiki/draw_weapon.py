@@ -185,9 +185,7 @@ def get_weapon_icon_bg(star: int = 3) -> Image.Image:
     if star < 3:
         star = 3
     bg_path = TEXT_PATH / f"weapon_icon_bg_{star}.png"
-    bg_img = Image.open(bg_path)
-    bg_img = Image.new("RGBA", bg_img.size)
-    return bg_img
+    return Image.open(bg_path).convert("RGBA")
 
 
 async def draw_wiki_weapon(weapon_name: str):
@@ -198,7 +196,7 @@ async def draw_wiki_weapon(weapon_name: str):
         if result:
             return result
     except Exception as e:
-        logger.warning(f"[鸣潮] 武器图鉴HTML渲染失败，回退到PIL: {e}")
+        logger.warning(f"[鸣潮·百科武器] 武器图鉴HTML渲染失败，回退到PIL: {e}")
 
     # 回退到PIL绘制
     return await _draw_wiki_weapon_pil(weapon_name)

@@ -3,7 +3,7 @@ from gsuid_core.bot import Bot
 from gsuid_core.logger import logger
 from gsuid_core.models import Event
 
-from .char_alias_ops import char_alias_list, action_char_alias
+from .char_alias_ops import char_alias_list, action_char_alias_batch
 from .char_alias_pil import draw_all_char_alias_pil
 from ..utils.name_convert import load_alias_data
 from ..utils.char_info_utils import PATTERN
@@ -30,14 +30,8 @@ async def handle_add_char_alias(bot: Bot, ev: Event):
     if not alias_list:
         return await bot.send("别名不能为空")
 
-    msgs = []
-    need_reload = False
-    for alias in alias_list:
-        msg = await action_char_alias(action, char_name, alias)
-        msgs.append(msg)
-        if "成功" in msg:
-            need_reload = True
-    if need_reload:
+    msgs = await action_char_alias_batch(action, char_name, alias_list)
+    if any("成功" in m for m in msgs):
         load_alias_data()
     await bot.send("\n".join(msgs))
 
@@ -134,14 +128,14 @@ async def handle_all_char_alias(bot: Bot, ev: Event):
             img_bytes = await render_html(waves_templates, "alias_all.html", context)
             if img_bytes:
                 return await bot.send(img_bytes)
-            logger.warning("[鸣潮] 全角色别名HTML渲染返回空，回退到PIL")
+            logger.warning("[鸣潮·别名] 全角色别名HTML渲染返回空，回退到PIL")
         except Exception as e:
-            logger.warning(f"[鸣潮] 全角色别名HTML渲染失败: {e}，回退到PIL")
+            logger.warning(f"[鸣潮·别名] 全角色别名HTML渲染失败: {e}，回退到PIL")
 
     try:
         return await bot.send(await draw_all_char_alias_pil(chars))
     except Exception as e:
-        logger.exception(f"[鸣潮] 全角色别名PIL渲染失败: {e}")
+        logger.exception(f"[鸣潮·别名] 全角色别名PIL渲染失败: {e}")
 
     lines = [
         f"{char['name']}：" + (" ".join(char["aliases"]) if char["aliases"] else "暂无别名")
