@@ -268,7 +268,9 @@ async def update_gacha_log_by_cloud(bot: Bot, ev: Event):
         )
 
     await bot.send(
-        (" " if at_sender else "") + f"UID{hide_uid(uid, user_pref)} 正在更新抽卡记录，请稍候...",
+        (" " if at_sender else "")
+        + f"UID{hide_uid(uid, user_pref)} 正在更新抽卡记录，请稍候...\n"
+        + "官方仅保存近180天抽卡记录，仅更新该部分。",
         at_sender=at_sender,
     )
     await pull_cloud_gacha(bot, ev, uid, record_id)
