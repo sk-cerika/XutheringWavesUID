@@ -259,14 +259,6 @@
         "need_ck": false,
         "need_sk": false,
         "need_admin": false
-      },
-      {
-        "name": "周年庆",
-        "desc": "鸣潮 2 周年限定回顾报告（个人统计 + 主题彩蛋）。",
-        "eg": "周年回顾",
-        "need_ck": true,
-        "need_sk": true,
-        "need_admin": false
       }
     ]
   },
@@ -545,6 +537,14 @@
         "name": "角色攻略",
         "desc": "查询某角色的攻略图（社区作者贡献的配装/共鸣链优先级/技能加点等）。格式：`<角色名>攻略`，例 `长离攻略`、`椿攻略`、`忌炎攻略`。",
         "eg": "椿攻略",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "dps榜",
+        "desc": "查询角色 DPS 排行图。格式：`dps榜`。",
+        "eg": "dps榜",
         "need_ck": false,
         "need_sk": false,
         "need_admin": false

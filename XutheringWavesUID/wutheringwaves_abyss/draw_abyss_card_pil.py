@@ -301,20 +301,25 @@ async def upload_abyss_record(
         for tower_index, tower in enumerate(_abyss.towerAreaList):
             if not tower.floorList:
                 continue
-            if len(tower.floorList) <= 1:
-                continue
-            floor = tower.floorList[-1]
-            if floor.star == 3 and floor.roleList:
-                abyss_record.append(
-                    AbyssDetail.model_validate(
-                        {
-                            "area_type": f"{ABYSS_TYPE_MAP[tower.areaName]}{floor.floor}",
-                            "area_name": tower.areaName,
-                            "floor": floor.floor,
-                            "char_ids": [role.roleId for role in floor.roleList],
-                        }
+            # 深境之塔(中)四层等同难度, 各层分别上传(m1~m4); 残响/回音为爬塔, 只取顶层(l4/r4)
+            if tower.areaName == "深境之塔":
+                floors = tower.floorList
+            else:
+                if len(tower.floorList) <= 1:
+                    continue
+                floors = [tower.floorList[-1]]
+            for floor in floors:
+                if floor.star == 3 and floor.roleList:
+                    abyss_record.append(
+                        AbyssDetail.model_validate(
+                            {
+                                "area_type": f"{ABYSS_TYPE_MAP[tower.areaName]}{floor.floor}",
+                                "area_name": tower.areaName,
+                                "floor": floor.floor,
+                                "char_ids": [role.roleId for role in floor.roleList],
+                            }
+                        )
                     )
-                )
 
     if not abyss_record:
         return

@@ -26,9 +26,10 @@ from ..utils.image import (
     get_attribute,
     get_square_avatar,
     get_square_weapon,
+    get_sonata_label,
     get_custom_waves_bg,
-    get_attribute_effect,
     get_role_pile_default,
+    get_sonata_effect_image,
 )
 from ..utils.api.model import WeaponData, RoleDetailData
 from ..utils.calculate import (
@@ -37,6 +38,7 @@ from ..utils.calculate import (
     get_total_score_bg,
 )
 from ..utils.name_convert import alias_to_char_name, char_name_to_char_id
+from ..utils.ascension.sonata import detect_combo_sonata
 from ..utils.char_info_utils import get_all_role_detail_info_list
 from ..utils.damage.abstract import DamageRankRegister
 from ..utils.database.models import WavesBind, WavesUser
@@ -128,6 +130,10 @@ async def get_one_rank_info(user_id, uid, role_detail, rankDetail):
             if ph.get("isFull"):
                 sonata_name = ph.get("ph_name", "")
                 break
+
+        combo_sonata = detect_combo_sonata(role_detail.role.roleId, ph_detail)
+        if combo_sonata:
+            sonata_name = combo_sonata
 
     expected_damage_int = 0
     if expected_damage is not None:
@@ -392,10 +398,9 @@ async def draw_rank_img(bot: Bot, ev: Event, char: str, rank_type: str) -> Union
 
         # 合鸣效果
         if rank.sonata_name:
-            effect_image = await get_attribute_effect(rank.sonata_name)
-            effect_image = effect_image.resize((50, 50))
+            effect_image = await get_sonata_effect_image(rank.sonata_name, 50)
             bar_bg.alpha_composite(effect_image, (533, 15))
-            sonata_name = rank.sonata_name
+            sonata_name = get_sonata_label(rank.sonata_name)
         else:
             sonata_name = "合鸣效果"
 

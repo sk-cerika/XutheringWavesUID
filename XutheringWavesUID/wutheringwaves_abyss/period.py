@@ -25,17 +25,42 @@ def parse_rank_date(date_str: str) -> Optional[datetime]:
 
 @dataclass(frozen=True)
 class CycleSpec:
-    """玩法周期。base_time 是 base_period 开启的边界 (含)；早于 base_time 视为 base_period - 1"""
+    """玩法周期。base_time 是 base_period 开启的边界 (含)；早于 base_time 视为 base_period - 1。
+
+    anchors 为可选的显式周期边界 ((期号, 开始时间), …) 升序；用于非匀速排期(某期提前/延后几天)。
+    不填=纯匀速(base_time+N×refresh)。填了则按显式边界判定, 末端边界之后再按 refresh_seconds 外推。"""
     base_time: datetime
     refresh_seconds: int
     base_period: int
+    anchors: tuple = ()
 
     @property
     def base_timestamp(self) -> int:
         return int(self.base_time.astimezone(timezone.utc).timestamp())
 
+    def _resolve(self, ref: datetime) -> tuple:
+        """显式边界模式: 返回 (期号, 当期开始时间)。早于首边界向前外推, 晚于末边界向后外推。"""
+        first_p, first_st = self.anchors[0]
+        last_p, last_st = self.anchors[-1]
+        step = self.refresh_seconds
+        if ref < first_st:
+            n = -int(-(first_st - ref).total_seconds() // step)  # 向上取整
+            return first_p - n, first_st - timedelta(seconds=n * step)
+        cur_p, cur_st = first_p, first_st
+        for p, st in self.anchors:
+            if ref >= st:
+                cur_p, cur_st = p, st
+            else:
+                break
+        if (cur_p, cur_st) == (last_p, last_st):
+            n = int((ref - last_st).total_seconds() // step)
+            return last_p + n, last_st + timedelta(seconds=n * step)
+        return cur_p, cur_st
+
     def cycle_start(self, ref_time: Optional[datetime] = None) -> datetime:
         now = ref_time or datetime.now(CHINA_TZ)
+        if self.anchors:
+            return self._resolve(now)[1]
         if now <= self.base_time:
             return self.base_time
         elapsed = int((now - self.base_time).total_seconds())
@@ -48,7 +73,7 @@ class CycleSpec:
         ref_time: Optional[datetime] = None,
     ) -> bool:
         now = ref_time or datetime.now(CHINA_TZ)
-        if now <= self.base_time:
+        if not self.anchors and now <= self.base_time:
             return False
         if record_timestamp is None:
             return True
@@ -57,12 +82,14 @@ class CycleSpec:
         except (TypeError, ValueError):
             return True
         record_time = datetime.fromtimestamp(record_ts, tz=timezone.utc).astimezone(CHINA_TZ)
-        if record_time < self.base_time:
+        if not self.anchors and record_time < self.base_time:
             return True
         return record_time < self.cycle_start(now)
 
     def period_number(self, ref_time: Optional[datetime] = None) -> int:
         ref = ref_time or datetime.now(CHINA_TZ)
+        if self.anchors:
+            return self._resolve(ref)[0]
         if ref < self.base_time:
             return self.base_period - 1
         elapsed = int((ref - self.base_time).total_seconds())
@@ -84,11 +111,16 @@ TOWER_CYCLE = CycleSpec(
     base_period=29,
 )
 
-# 2026-05-07 04:00 为第 3 / 第 4 期分界, 此前第 3 期, 此后每 42 天 +1
+# 矩阵非匀速排期: 第4期 2026-05-07 04:00 开启; 第5期实际 2026-06-14 04:00 开启
+# (比 42 天匀速的 06-18 提前几天)。第5期之后按 42 天外推。base 锚定到末边界(第5期)。
 MATRIX_CYCLE = CycleSpec(
-    base_time=datetime(2026, 5, 7, 4, 0, 0, tzinfo=CHINA_TZ),
+    base_time=datetime(2026, 6, 14, 4, 0, 0, tzinfo=CHINA_TZ),
     refresh_seconds=42 * 24 * 60 * 60,
-    base_period=4,
+    base_period=5,
+    anchors=(
+        (4, datetime(2026, 5, 7, 4, 0, 0, tzinfo=CHINA_TZ)),
+        (5, datetime(2026, 6, 14, 4, 0, 0, tzinfo=CHINA_TZ)),
+    ),
 )
 
 

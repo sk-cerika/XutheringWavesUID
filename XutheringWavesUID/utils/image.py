@@ -1,5 +1,4 @@
 import os
-import re
 import random
 import base64
 from io import BytesIO
@@ -31,6 +30,7 @@ from .resource.RESOURCE_PATH import (
     WEAPON_PATH,
     ROLE_BG_PATH,
     SHARE_BG_PATH,
+    TITLE_BG_PATH,
     ROLE_PILE_PATH,
     CUSTOM_CARD_PATH,
     CUSTOM_MR_BG_PATH,
@@ -252,28 +252,54 @@ WEAPON_RESONLEVEL_COLOR = {
 }
 
 
-_BOT_COLOR_PATTERN = re.compile(
-    r'([^,()]+)-\s*\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*\)'
-)
+# 排行卡 bot 背景: title_bg 下 T_TitleCardBg_<Name>.png
+_TITLE_BG_PREFIX = "T_TitleCardBg_"
+_RESERVED_BG = "weixin"  # 小程序专属, 普通用户禁用, 随机兜底也排除
+# 标准背景图在 388x72 内的实际有效区域(量自常规图 L7/T9/R7/B8)。固定裁剪而非按各图
+# 透明边裁: 部分图有溢出有效区的特效, 按透明边裁会得到不一致大小。比例化兼容非标尺寸。
+_title_bg_index_cache: Optional[dict] = None
+_title_bg_img_cache: dict = {}
 
 
-def parse_bot_color_config(raw: str) -> dict:
-    """解析 BotColorMap 配置字符串，返回 {name: (R, G, B)} 字典。
+def _title_bg_index() -> dict:
+    """{小写名: 路径} 索引。空目录不缓存, 以便资源后到位时重扫。"""
+    global _title_bg_index_cache
+    if _title_bg_index_cache:
+        return _title_bg_index_cache
+    index = {}
+    try:
+        for f in os.listdir(TITLE_BG_PATH):
+            if not f.startswith(_TITLE_BG_PREFIX) or not f.lower().endswith(".png"):
+                continue
+            index[f[len(_TITLE_BG_PREFIX):-4].lower()] = TITLE_BG_PATH / f
+    except FileNotFoundError:
+        pass
+    if index:
+        _title_bg_index_cache = index
+    return index
 
-    格式: 名称-(R,G,B)，多个用逗号分隔，如: 小维-(255,128,0),千咲-(0,128,255)
-    不合法的条目会被静默跳过。
-    """
-    result = {}
-    if not raw or not raw.strip():
-        return result
-    for m in _BOT_COLOR_PATTERN.finditer(raw):
-        name = m.group(1).strip()
-        r, g, b = int(m.group(2)), int(m.group(3)), int(m.group(4))
-        if r > 255 or g > 255 or b > 255:
-            continue
-        if name:
-            result[name] = (r, g, b)
-    return result
+
+def get_bot_bg(background: str) -> Optional[Image.Image]:
+    """bot 背景: 按名取背景图(大小写无关); 未指定/未命中则随机(排除 weixin); 无图返回 None。"""
+    index = _title_bg_index()
+    if not index:
+        return None
+    path = index.get((background or "").strip().lower())
+    if path is None:
+        candidates = [p for n, p in index.items() if n != _RESERVED_BG]
+        if not candidates:
+            return None
+        path = random.choice(candidates)
+    key = str(path)
+    img = _title_bg_img_cache.get(key)
+    if img is None:
+        try:
+            img = Image.open(path).convert("RGBA")
+        except Exception:
+            return None
+        # 不裁剪, 返回整图由调用方直接 resize, 兼容异形边缘的背景
+        _title_bg_img_cache[key] = img
+    return img
 
 
 def _random_image_from_dir(directory: str) -> Optional[str]:
@@ -557,6 +583,26 @@ async def get_attribute_effect(name: str = "") -> Image.Image:
         return Image.open(TEXT_PATH / "attribute_effect" / f"attr_{name}.png").convert("RGBA")
     else:
         return Image.open(TEXT_PATH / "attribute_effect" / "attr.png").convert("RGBA")
+
+
+def get_sonata_label(sonata_name: str) -> str:
+    """组合套装名形如 '洛2+2|沉日劫明|幽夜隐匿之帷', 显示只取 '|' 前标签。"""
+    return sonata_name.split("|", 1)[0]
+
+
+async def get_sonata_effect_image(sonata_name: str, size: int = 50) -> Image.Image:
+    """取合鸣图标; 组合套装名(含 '|')时把 '|' 后各套装图标对角错位叠成一张。"""
+    parts = sonata_name.split("|")
+    names = parts[1:] if len(parts) > 1 else parts[:1]
+    icons = [await get_attribute_effect(n) for n in names]
+    if len(icons) <= 1:
+        return icons[0].resize((size, size))
+    canvas = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    sub = int(size * 0.66)
+    step = (size - sub) // (len(icons) - 1)
+    for i, icon in enumerate(icons):
+        canvas.alpha_composite(icon.resize((sub, sub)), (step * i, step * i))
+    return canvas
 
 
 async def get_weapon_type(name: str = "") -> Image.Image:  # 出新武器改这里

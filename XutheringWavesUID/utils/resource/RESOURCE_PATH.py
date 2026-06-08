@@ -35,6 +35,7 @@ ROLE_DETAIL_PATH = RESOURCE_PATH / "role_detail"
 ROLE_DETAIL_SKILL_PATH = ROLE_DETAIL_PATH / "skill"
 ROLE_DETAIL_CHAINS_PATH = ROLE_DETAIL_PATH / "chains"
 SHARE_BG_PATH = RESOURCE_PATH / "share"
+TITLE_BG_PATH = RESOURCE_PATH / "title_bg"
 
 # 攻略
 GUIDE_PATH = MAIN_PATH / "guide_new"
@@ -54,6 +55,8 @@ WUHEN_GUIDE_PATH = GUIDE_PATH / "WuHen"
 XFM_GUIDE_PATH = GUIDE_PATH / "XFM"
 # 社区攻略 攻略库
 KUROBBS_GUIDE_PATH = GUIDE_PATH / "KuroBBS"
+# 猫眼石 攻略库
+CHRYSOBERYL_GUIDE_PATH = GUIDE_PATH / "Chrysoberyl"
 
 # 构建 和 详情文件
 BUILD_ROOT = Path(__file__).parent.parent
@@ -123,6 +126,7 @@ def init_dir():
         ROLE_DETAIL_SKILL_PATH,
         ROLE_DETAIL_CHAINS_PATH,
         SHARE_BG_PATH,
+        TITLE_BG_PATH,
         GUIDE_PATH,
         XMU_GUIDE_PATH,
         MOEALKYNE_GUIDE_PATH,
@@ -131,6 +135,7 @@ def init_dir():
         XIAOYANG_GUIDE_PATH,
         XFM_GUIDE_PATH,
         KUROBBS_GUIDE_PATH,
+        CHRYSOBERYL_GUIDE_PATH,
         CUSTOM_CARD_PATH,
         OTHER_PATH,
         CALENDAR_PATH,

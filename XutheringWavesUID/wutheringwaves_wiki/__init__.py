@@ -140,6 +140,7 @@ async def send_waves_wiki(bot: Bot, ev: Event):
         return await bot.send(msg, at_sender)
 
 
+@sv_waves_guide.on_fullmatch(("dps榜", "Dps榜", "DPS榜"), block=True)
 @sv_waves_guide.on_regex(
     rf"^(?P<char>{PATTERN})(?:攻略|gl)$",
     block=True,
@@ -153,7 +154,7 @@ Args:
 """,
 )
 async def send_role_guide_pic(bot: Bot, ev: Event):
-    char_name = ev.regex_dict.get("char", "")
+    char_name = ev.regex_dict.get("char", "") or "dps"
     if "设置排除" in char_name:
         return
 

@@ -834,13 +834,30 @@ async def send_char_optimize_msg(bot: Bot, ev: Event):
         return
     if waves_id and is_intl_uid(waves_id):
         return await bot.send(intl_unavailable_msg(waves_id))
+
+    is_limit_query = False
+    if isinstance(char, str) and ("极限" in char or "limit" in char):
+        is_limit_query = True
+        char = char.replace("极限", "").replace("limit", "")
     if not char:
         return
     res = resolve_char(char)
     if not res.ok:
         return await bot.send(res.fail_msg())
     char = res.matched
-    canonical_cmd = f"{PREFIX}{char}优化{change_list_regex or ''}"
+    body = f"极限{char}" if is_limit_query else char
+    canonical_cmd = f"{PREFIX}{body}优化{change_list_regex or ''}"
+
+    if is_limit_query:
+        im = await draw_char_optimize_img(ev, "1", char, ev.user_id, change_list_regex=change_list_regex, is_limit_query=True)
+        at_sender = False
+        if isinstance(im, str) and ev.group_id:
+            at_sender = True
+        if isinstance(im, str):
+            return await bot.send(res.with_tip(im, canonical_cmd), at_sender)
+        if isinstance(im, bytes):
+            return await bot.send(res.wrap(im, canonical_cmd), at_sender)
+        return
 
     _ru = await _resolve_self_uid(bot, ev)
     if _ru is None:

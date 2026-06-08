@@ -794,8 +794,8 @@ def parse_char_skill_rate(skillLevels: Optional[Dict[str, SkillLevel]], table_wi
         # 应用 format 格式化数值
         param_values = skillLevel.param[0][5:10]
         if skillLevel.format:
-            # 使用 format 字符串格式化每个值
-            formatted_values = [f"{v}{skillLevel.format}" for v in param_values]
+            # format 是含 {0} 的模板(如 "{0}偏谐系数"), 把数值填进占位, 而非拼在后面
+            formatted_values = [skillLevel.format.replace("{0}", str(v)) for v in param_values]
             row.extend(formatted_values)
         else:
             row.extend(param_values)

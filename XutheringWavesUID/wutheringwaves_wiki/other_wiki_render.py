@@ -152,6 +152,7 @@ async def _prepare_echo_context(echo_id: str, echo_model: EchoModel) -> Dict[str
         "icon": echo_pic_b64,
         "group_icons": group_icons,
         "stats": stats,
+        "resistance": echo_model.get_resistance(),
         "skill_desc": echo_model.get_skill_detail(),
         "bg_url": bg_b64,
         "footer_url": image_to_base64(TEXTURE2D_PATH / "footer_white.png"),

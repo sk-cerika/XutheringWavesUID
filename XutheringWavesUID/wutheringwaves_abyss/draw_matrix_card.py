@@ -25,6 +25,7 @@ from ..utils.queues.queues import push_item
 from ..utils.resource.RESOURCE_PATH import PLAYER_PATH, MATRIX_PATH, waves_templates
 from ..utils.image import pil_to_b64, get_waves_bg, get_event_avatar, CHAIN_COLOR
 from ._colors import get_matrix_score_class
+from .period import get_matrix_period_number
 from .draw_matrix_card_pil import (
     draw_matrix_index_img as draw_matrix_index_img_pil,
     draw_matrix_detail_img as draw_matrix_detail_img_pil,
@@ -314,6 +315,7 @@ async def _get_common_context(ev: Event, uid: str, user_id: str, ck: str) -> Uni
         "avatar_url": avatar_url,
         "bg_url": bg_url,
         "current_date": current_date,
+        "period": get_matrix_period_number(),
         "footer_b64": get_footer_b64(footer_type="white") or "",
     }
 

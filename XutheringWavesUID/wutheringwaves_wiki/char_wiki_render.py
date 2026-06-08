@@ -252,7 +252,8 @@ async def prepare_char_skill_data(data: Dict[str, Dict[str, Skill]]) -> List[Dic
                 row_values = []
                 param_values = skillLevel.param[0][5:10]
                 if skillLevel.format:
-                    row_values = [f"{v}{skillLevel.format}" for v in param_values]
+                    # format 是含 {0} 的模板(如 "{0}偏谐系数"/"{0}秒"), 把数值填进占位, 而非拼在后面
+                    row_values = [skillLevel.format.replace("{0}", str(v)) for v in param_values]
                 else:
                     row_values = param_values
                 

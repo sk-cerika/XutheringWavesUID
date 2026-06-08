@@ -10,7 +10,7 @@ from gsuid_core.pool import to_thread
 from gsuid_core.utils.image.convert import convert_img
 from gsuid_core.utils.image.image_tools import crop_center_img
 
-from ..utils.util import async_func_lock, hide_uid, get_hide_uid_pref
+from ..utils.util import hide_uid, get_hide_uid_pref
 from ..utils.cache import TimedCache
 from ..utils.image import (
     RED,
@@ -39,10 +39,11 @@ from ..utils.fonts.waves_fonts import (
     waves_font_60,
 )
 from ..utils.resource.constant import NAME_ALIAS, SPECIAL_CHAR_NAME
-from ..utils.refresh_char_detail import refresh_char
+from ..utils.refresh_char_detail import refresh_char, refresh_lock
 from . import base_info_cache
 
 TEXT_PATH = Path(__file__).parent / "texture2d"
+VIEW_COMMANDS = {"面板", "面版", "面包", "🍞", "mb"}
 
 refresh_char_bg = Image.open(TEXT_PATH / "refresh_char_bg.png")
 refresh_yes = Image.open(TEXT_PATH / "refresh_yes.png")
@@ -199,7 +200,6 @@ def _render_refresh_role_img(path: Path, width: int, height: int):
 
 
 # TODO: PIL 卸到线程池 (await/PIL 深度交错, draw_pic 已单独卸载)
-@async_func_lock(keys=["user_id", "uid"])
 async def draw_refresh_char_detail_img(
     bot: Bot,
     ev: Event,
@@ -210,12 +210,51 @@ async def draw_refresh_char_detail_img(
 ):
     # 判断是单角色刷新还是全部刷新
     is_single_refresh = refresh_type != "all"
+    is_view = ev.command in VIEW_COMMANDS
 
-    time_stamp = can_refresh_card(user_id, uid, is_single_refresh)
-    if time_stamp > 0:
-        return get_refresh_interval_notify(time_stamp, is_single_refresh), 0, None
+    if is_view:
+        return await _draw_refresh_char_detail_img(
+            bot,
+            ev,
+            user_id,
+            uid,
+            buttons,
+            refresh_type,
+            is_single_refresh,
+            is_view,
+        )
+
+    scope = "single" if is_single_refresh else "all"
+    async with refresh_lock(uid, scope):
+        return await _draw_refresh_char_detail_img(
+            bot,
+            ev,
+            user_id,
+            uid,
+            buttons,
+            refresh_type,
+            is_single_refresh,
+            is_view,
+        )
+
+
+async def _draw_refresh_char_detail_img(
+    bot: Bot,
+    ev: Event,
+    user_id: str,
+    uid: str,
+    buttons: List[WavesButton],
+    refresh_type: Union[str, List[str]],
+    is_single_refresh: bool,
+    is_view: bool,
+):
+    if not is_view:
+        time_stamp = can_refresh_card(user_id, uid, is_single_refresh)
+        if time_stamp > 0:
+            return get_refresh_interval_notify(time_stamp, is_single_refresh), 0, None
+
     info, ck, self_ck = await base_info_cache.load_account_context(
-        uid, user_id, ev.bot_id, require_fresh=True
+        uid, user_id, ev.bot_id, require_fresh=not is_view
     )
     if isinstance(info, str):
         return info, 0, None
@@ -225,7 +264,7 @@ async def draw_refresh_char_detail_img(
     await WavesBind.insert_waves_uid(user_id, ev.bot_id, uid, ev.group_id, lenth_limit=9)
 
     waves_map = {"refresh_update": {}, "refresh_unchanged": {}, "top_improver": None}
-    if ev.command in ["面板", "面包", "🍞", "mb"]:
+    if is_view:
         all_waves_datas = await get_all_role_detail_info_list(uid)
         if not all_waves_datas:
             return "暂无面板数据", 0, None
@@ -388,7 +427,8 @@ async def draw_refresh_char_detail_img(
     img.paste(refresh_bar, (0, 300), refresh_bar)
     img = add_footer(img, 600, 20)
     img = await convert_img(img)
-    set_cache_refresh_card(user_id, uid, is_single_refresh)
+    if not is_view:
+        set_cache_refresh_card(user_id, uid, is_single_refresh)
     return img, role_update, waves_map.get("top_improver")
 
 

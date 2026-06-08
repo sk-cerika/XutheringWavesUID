@@ -1,6 +1,7 @@
 import re
 import json
 import asyncio
+import contextlib
 from typing import Dict, List, Union, Optional
 
 import aiofiles
@@ -25,6 +26,14 @@ from .char_state import record_refresh_batch
 from .api.model import AccountBaseInfo as _AccountBaseInfo
 
 _BG_TASKS: set = set()
+_refresh_locks: dict[tuple[str, str], asyncio.Lock] = {}
+
+
+@contextlib.asynccontextmanager
+async def refresh_lock(uid: str, scope: str):
+    lock = _refresh_locks.setdefault((uid, scope), asyncio.Lock())
+    async with lock:
+        yield
 
 
 async def save_base_info_cache(uid: str, account_info: _AccountBaseInfo):

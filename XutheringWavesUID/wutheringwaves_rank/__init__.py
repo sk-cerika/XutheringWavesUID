@@ -8,6 +8,8 @@ from .draw_rank_list_card import draw_rank_list
 from .draw_total_rank_card import draw_total_rank
 from ..utils.char_info_utils import PATTERN
 from ..utils.name_resolve import resolve_char
+from ..utils.name_convert import char_name_to_char_id
+from ..utils.damage.modal import get_modal_key_by_name
 
 sv_waves_rank_list = SV("ww角色排行", priority=3)
 sv_waves_rank_all_list = SV("ww角色总排行", priority=1)
@@ -71,7 +73,7 @@ async def send_rank_card(bot: Bot, ev: Event):
 
 
 @sv_waves_rank_all_list.on_regex(
-    rf"^(?P<char>{PATTERN})(?:总排行|总排行榜|总排名|zph|zpm)(?P<pages>\d+)?$",
+    rf"^(?P<char>{PATTERN})(?:总排行|总排行榜|总排名|zph|zpm)(?P<pages>\d+)?(?P<modal>\S+)?$",
     block=True,
     to_ai="""查询全体某角色的排行（伤害或评分，跨群）。
 
@@ -114,7 +116,13 @@ async def send_all_rank_card(bot: Bot, ev: Event):
         else:
             canonical_cmd = f"{PREFIX}{char}总排行"
 
-    im = await draw_all_rank_card(bot, ev, char, rank_type, pages)
+    modal = ""
+    modal_text = ev.regex_dict.get("modal")
+    if modal_text and char:
+        cid = char_name_to_char_id(char)
+        if cid:
+            modal = get_modal_key_by_name(int(cid), modal_text)
+    im = await draw_all_rank_card(bot, ev, char, rank_type, pages, modal)
 
     if isinstance(im, str):
         at_sender = True if ev.group_id else False

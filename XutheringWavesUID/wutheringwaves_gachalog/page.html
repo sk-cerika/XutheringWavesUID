@@ -808,7 +808,7 @@ const PATH_BASE = location.pathname.replace(/\/$/, '');
 const DATA_URL = PATH_BASE + '/data';
 const ASSET = (k, rid) => `${PATH_BASE}/${k}/${rid}.png`;
 
-const POOL_LIMITED = new Set(["角色精准调谐", "武器精准调谐", "角色新旅唤取", "武器新旅唤取"]);
+const POOL_LIMITED = new Set(["角色精准调谐", "武器精准调谐", "角色新旅唤取", "武器新旅唤取", "角色联动唤取", "武器联动唤取"]);
 const POOL_PERM = new Set(["角色调谐（常驻池）", "武器调谐（常驻池）"]);
 const POOL_NEWBIE = new Set(["新手调谐", "新手自选唤取", "新手自选唤取（感恩定向唤取）"]);
 
@@ -822,6 +822,8 @@ const POOL_ABBR = {
   "新手自选唤取（感恩定向唤取）": "感恩·定向",
   "角色新旅唤取": "新旅·角色",
   "武器新旅唤取": "新旅·武器",
+  "角色联动唤取": "联动·角色",
+  "武器联动唤取": "联动·武器",
 };
 
 const WD = ["日","一","二","三","四","五","六"];

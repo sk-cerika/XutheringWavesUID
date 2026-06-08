@@ -20,14 +20,7 @@ from ._permissions import get_rank_token_condition, filter_active_group_users
 from ..utils.image import (
     RED,
     GREY,
-    AMBER,
-    WAVES_VOID,
     SPECIAL_GOLD,
-    WAVES_MOLTEN,
-    WAVES_SIERRA,
-    WAVES_MOONLIT,
-    WAVES_FREEZING,
-    WAVES_LINGERING,
     get_ICON,
     add_footer,
     get_square_avatar,
@@ -129,17 +122,6 @@ async def load_char_list_data(uid: str) -> Optional[Dict]:
 
 TEXT_PATH = Path(__file__).parent / "texture2d"
 char_mask = Image.open(TEXT_PATH / "char_mask.png")
-
-
-BOT_COLOR = [
-    WAVES_MOLTEN,
-    AMBER,
-    WAVES_VOID,
-    WAVES_SIERRA,
-    WAVES_FREEZING,
-    WAVES_LINGERING,
-    WAVES_MOONLIT,
-]
 
 
 class PracticeRankInfo(BaseModel):

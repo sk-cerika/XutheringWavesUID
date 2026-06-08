@@ -15,16 +15,16 @@ sv_waves_char_list = SV("ww角色练度统计", priority=3)
 
 
 @sv_waves_char_list.on_regex(
-    r"^(\d+)?(练度|ld|练度统计|角色列表|刷新练度|刷新练度统计|刷新角色列表|updld)$",
+    r"^(\d+)?(练度|ld|练度统计|角色列表|刷新练度|刷新练度统计|刷新角色列表|updld)(?:\s*(?:全部|all|五星|5星|四星|4星|五|四|5|4))?$",
     block=True,
     to_ai="""查询账号下全部角色的练度统计图（按等级/共鸣链/武器精炼/声骸主词条评分排序）。
 
 当用户问「练度统计 / 我有哪些角色 / 角色列表」时调用。需绑定 cookie。
 text 也可以是「刷新练度统计」从米游社拉新后再统计（写操作）。
-可选 9 位 UID 前缀窥视别人。
+可选 9 位 UID 前缀窥视别人。可附星级 五星/四星/全部 筛选（默认角色多于25时仅显示五星）。
 
 Args:
-    text: 例: "练度统计" / "练度" / "ld" (查自己) / "刷新练度统计" (强制刷新后统计) / "123456789练度统计" (窥视别人)。
+    text: 例: "练度统计" / "练度" / "ld" (查自己) / "刷新练度统计" (强制刷新后统计) / "123456789练度统计" (窥视别人) / "练度统计 五星" (按星级筛选)。
 """,
 )
 async def send_char_list_msg_new(bot: Bot, ev: Event):
@@ -36,6 +36,17 @@ async def send_char_list_msg_new(bot: Bot, ev: Event):
         return
     query_waves_id = match.group("waves_id")
     query_type = match.group("query_type")
+
+    star_match = re.search(r"(全部|all|五星|5星|四星|4星|五|四|5|4)$", ev.raw_text.strip())
+    star_filter = None
+    if star_match:
+        star = star_match.group(1)
+        if star in ("全部", "all"):
+            star_filter = "all"
+        elif star in ("四星", "4星", "四", "4"):
+            star_filter = "4"
+        else:
+            star_filter = "5"
 
     is_refresh = False
     if "刷新" in query_type or "upd" in query_type:
@@ -69,6 +80,7 @@ async def send_char_list_msg_new(bot: Bot, ev: Event):
         is_refresh,
         is_peek,
         user_waves_id,
+        star_filter,
     )
     if isinstance(im, bytes) and (is_peek or is_refresh):
         return await bot.send(["[鸣潮] 数据已刷新", MessageSegment.image(im)])

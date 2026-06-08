@@ -131,11 +131,11 @@ async def draw_calendar_img(ev: Event, uid: str):
     content = None
     side_modules = wiki_home.get("data", {}).get("contentJson", {}).get("sideModules", [])
     for side_module in side_modules:
-        if side_module["title"] == "角色活动唤取":
-            gacha_char_list = await draw_calendar_gacha(side_module, "角色")
+        if side_module["title"] in ("角色活动唤取", "角色联动唤取"):
+            gacha_char_list += await draw_calendar_gacha(side_module, "角色")
 
-        elif side_module["title"] == "武器活动唤取":
-            gacha_weapon_list = await draw_calendar_gacha(side_module, "武器")
+        elif side_module["title"] in ("武器活动唤取", "武器联动唤取"):
+            gacha_weapon_list += await draw_calendar_gacha(side_module, "武器")
 
         elif side_module["title"] == "版本活动":
             side_module["content"].insert(0, tower_node(now))

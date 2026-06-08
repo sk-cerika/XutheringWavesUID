@@ -157,7 +157,7 @@ async def ann_(bot: Bot, ev: Event):
     return await bot.send(img)  # type: ignore
 
 
-@sv_anniv_report.on_fullmatch(("周年庆", "周年报", "周年回顾"), block=True)
+# @sv_anniv_report.on_fullmatch(("周年庆", "周年报", "周年回顾"), block=True)
 async def anniv_report_(bot: Bot, ev: Event):
     """查询鸣潮 2 周年《探秘！记忆程序》报告"""
     logger.info("[鸣潮·公告] 开始执行[周年庆]")

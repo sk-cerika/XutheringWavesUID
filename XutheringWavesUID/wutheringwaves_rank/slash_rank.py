@@ -1,5 +1,4 @@
 import re
-import copy
 import json
 import time
 import asyncio
@@ -20,21 +19,13 @@ from ..utils.util import get_version, hide_uid
 from ..utils.image import (
     RED,
     GREY,
-    AMBER,
-    WAVES_VOID,
-    WAVES_MOLTEN,
-    WAVES_SIERRA,
-    WAVES_MOONLIT,
-    WAVES_FREEZING,
-    WAVES_LINGERING,
     get_ICON,
     add_footer,
     get_waves_bg,
     get_square_avatar,
     pic_download_from_url,
-    parse_bot_color_config,
 )
-from .rank_badge import draw_rank_badge
+from .rank_badge import draw_bot_name_badge, draw_rank_badge
 from ..utils.api.model import SlashDetail
 from ..utils.api.wwapi import (
     GET_SLASH_RANK_URL,
@@ -44,7 +35,7 @@ from ..utils.api.wwapi import (
 )
 from ..utils.ascension.char import get_char_model
 from ..utils.database.models import WavesBind, WavesUser
-from ..utils.resource.constant import SPECIAL_CHAR_INT_ALL, randomize_special_char_id
+from ..utils.resource.constant import SPECIAL_CHAR_INT_ALL, NORMAL_LIST_IDS, randomize_special_char_id
 from ..wutheringwaves_config import PREFIX, WutheringWavesConfig
 from ..utils.fonts.waves_fonts import (
     waves_font_12,
@@ -87,16 +78,6 @@ async def get_endless_rank_token_condition(ev) -> Tuple[bool, Dict[Tuple[str, st
 
 TEXT_PATH = Path(__file__).parent / "texture2d"
 
-BOT_COLOR = [
-    WAVES_MOLTEN,
-    AMBER,
-    WAVES_VOID,
-    WAVES_SIERRA,
-    WAVES_FREEZING,
-    WAVES_LINGERING,
-    WAVES_MOONLIT,
-]
-
 CHINA_TZ = timezone(timedelta(hours=8))
 
 
@@ -129,6 +110,14 @@ async def get_rank(item: SlashRankItem) -> Optional[SlashRankRes]:
                 logger.warning(f"[鸣潮·冥海排行] 获取远端排行失败: {res.status_code} - {res.text}")
         except Exception as e:
             logger.exception(f"[鸣潮·冥海排行] 获取远端排行失败: {e}")
+
+
+def is_limited_5star(char_id: int) -> bool:
+    """限定五星: 排除常驻/漂泊者/四星。金数 = 链数 + 1。"""
+    if char_id in SPECIAL_CHAR_INT_ALL or char_id in NORMAL_LIST_IDS:
+        return False
+    char_model = get_char_model(char_id)
+    return bool(char_model and char_model.starLevel == 5)
 
 
 # TODO: PIL 卸到线程池 (loop 内 await get_square_avatar / pic_download_from_url 较多, 需要批量预取重构)
@@ -222,14 +211,6 @@ async def draw_all_slash_rank_card(bot: Bot, ev: Event):
     tasks = [get_avatar(rank.user_id, getattr(rank, "sender_avatar", "")) for rank in rank_list]
     results = await asyncio.gather(*tasks)
 
-    # 获取角色信息
-    bot_color_map = parse_bot_color_config(
-        WutheringWavesConfig.get_config("BotColorMap").data
-    )
-    bot_color = copy.deepcopy(BOT_COLOR)
-
-    # for rank_temp_index, rank_temp in enumerate(rank_list):
-
     for rank_temp_index, temp in enumerate(zip(rank_list, results)):
         rank_temp: SlashRank = temp[0]
         role_avatar: Image.Image = temp[1]
@@ -254,18 +235,7 @@ async def draw_all_slash_rank_card(bot: Bot, ev: Event):
         # bot主人名字
         botName = rank_temp.alias_name if rank_temp.alias_name else ""
         if botName:
-            color = (54, 54, 54)
-            if botName in bot_color_map:
-                color = bot_color_map[botName]
-            elif bot_color:
-                color = bot_color.pop(0)
-                bot_color_map[botName] = color
-
-            info_block = Image.new("RGBA", (200, 30), color=(255, 255, 255, 0))
-            info_block_draw = ImageDraw.Draw(info_block)
-            info_block_draw.rounded_rectangle([0, 0, 200, 30], radius=6, fill=color + (int(0.6 * 255),))
-            info_block_draw.text((100, 15), f"bot: {botName}", "white", waves_font_18, "mm")
-            role_bg.alpha_composite(info_block, (350, 66))
+            draw_bot_name_badge(role_bg, getattr(rank_temp, "background", ""), botName, (346, 61))
 
         # 总分数
         role_bg_draw.text(
@@ -275,6 +245,14 @@ async def draw_all_slash_rank_card(bot: Bot, ev: Event):
             waves_font_44,
             "mm",
         )
+
+        char_gold_total = sum(
+            cd.chain + 1
+            for sh in rank_temp.half_list
+            for cd in sh.char_detail
+            if cd.chain >= 0 and is_limited_5star(cd.char_id)
+        )
+        role_bg_draw.text((210, 40), f"角色限定{char_gold_total}金", "white", waves_font_18, "lm")
 
         for half_index, slash_half in enumerate(rank_temp.half_list):
             for role_index, char_detail in enumerate(slash_half.char_detail):
@@ -596,7 +574,6 @@ async def draw_slash_rank_list(bot: Bot, ev: Event):
         rank_id = rank_temp_index + 1
         draw_rank_badge(role_bg, rank_id)
 
-        # 计算出场角色的金数
         char_gold_total = 0
         if rankInfo.slash_data and rankInfo.slash_data.difficultyList:
             difficulty_12 = next((k for k in rankInfo.slash_data.difficultyList if k.difficulty == 2), None)
@@ -608,17 +585,13 @@ async def draw_slash_rank_list(bot: Bot, ev: Event):
                 if challenge and challenge.halfList:
                     for slash_half in challenge.halfList:
                         for slash_role in slash_half.roleList:
-                            role_id = slash_role.roleId
-
-                            if role_id in SPECIAL_CHAR_INT_ALL:
+                            if not is_limited_5star(slash_role.roleId):
                                 continue
+                            chain_count = await get_role_chain_count(rankInfo.uid, slash_role.roleId)
+                            if chain_count >= 0:
+                                char_gold_total += chain_count + 1
 
-                            char_model = get_char_model(role_id)
-                            if char_model and char_model.starLevel == 5:
-                                chain_count = await get_role_chain_count(rankInfo.uid, role_id)
-                                char_gold_total += (chain_count + 1) if chain_count >= 0 else 0
-
-        role_bg_draw.text((210, 40), f"角色金数: {char_gold_total}", "white", waves_font_18, "lm")
+        role_bg_draw.text((210, 40), f"角色限定{char_gold_total}金", "white", waves_font_18, "lm")
 
         # 特征码（白色UID）
         uid_color = "white"

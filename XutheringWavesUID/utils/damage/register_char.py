@@ -5,6 +5,7 @@ from .utils import (
     CHAR_ATTR_SINKING,
     CHAR_ATTR_FREEZING,
     CHAR_ATTR_CELESTIAL,
+    Hack_Shifting_Role_Ids,
     temp_atk,
     temp_def,
     hit_damage,
@@ -15,7 +16,7 @@ from .utils import (
     cast_attack,
     liberation_damage,
 )
-from .damage import DamageAttribute
+from .damage import DamageAttribute, check_char_id
 from .abstract import (
     CharAbstract,
     WavesCharRegister,
@@ -160,11 +161,80 @@ class Char_1108(CharAbstract):
             attr.add_dmg_bonus(0.25, title, msg)
 
         # 六链 - 纵使前路永夜无终: 持有 3 层【雪锈】时, 队伍中登场角色一定范围内
-        # 的目标受到【霜冻效应】的最终伤害提升 25% (仅在结算霜渐/霜冻效应伤害时生效)
+        # 的目标受到【霜冻效应】的最终伤害提升 25% (独立乘区, 仅结算霜渐/霜冻效应伤害时生效)
         if chain >= 6 and attr.env_glacio_chafe_deepen:
             title = f"{self.name}-六链"
-            msg = "3层【雪锈】, 队伍中登场角色对【霜冻效应】伤害加深25%"
-            attr.add_dmg_deepen(0.25, title, msg)
+            msg = "3层【雪锈】, 目标受到【霜冻效应】最终伤害提升25%"
+            attr.add_effect_easy_damage(0.25, title, msg)
+
+
+class Char_1109(CharAbstract):
+    id = 1109
+    name = "洛瑟菈"
+    starLevel = 5
+
+    # 两种共鸣模态的 team buff 按当前结算伤害类型分别作用:
+    #   霜渐模态 → 冷凝/霜渐 伤害段; 声骸模态 → 声骸技能伤害段。
+    def _do_buff(
+        self,
+        attr: DamageAttribute,
+        chain: int = 0,
+        resonLevel: int = 1,
+        isGroup: bool = True,
+    ):
+        # 两模态互斥: DPS 为冷凝 → 霜渐模态; 否则结算声骸技能伤害 → 声骸模态。
+        # (冰系角色的声骸技能伤害也归霜渐模态, 不吃声骸 buff)
+        if attr.char_attr == CHAR_ATTR_FREEZING:
+            attr.set_env_glacio_chafe()
+
+            # 固有技能-慢镜头(霜渐): 目标冷凝抗性降低8%
+            title = f"{self.name}-固有技能-慢镜头"
+            attr.add_enemy_resistance(-0.08, title, "霜渐模态, 目标冷凝抗性降低8%")
+
+            # 延奏技能-蒙太奇(霜渐): 目标受到【霜渐效应】伤害加深60% (仅结算霜渐效应伤害时)
+            if attr.env_glacio_chafe_deepen:
+                title = f"{self.name}-延奏技能-蒙太奇"
+                attr.add_effect_dmg_deepen(0.6, title, "目标受到【霜渐效应】伤害加深60%")
+
+            # 二链-酣睡的月光(共鸣解放·历历在目, 霜渐模态): 目标受到【霜渐效应】伤害加深80%
+            if chain >= 2 and attr.env_glacio_chafe_deepen:
+                title = f"{self.name}-二链"
+                attr.add_effect_dmg_deepen(0.8, title, "目标受到【霜渐效应】伤害加深80%")
+
+        elif attr.char_damage == phantom_damage:
+            # 固有技能-慢镜头(声骸): 队伍中角色声骸技能伤害加成提升25%
+            title = f"{self.name}-固有技能-慢镜头"
+            attr.add_dmg_bonus(0.25, title, "声骸模态, 声骸技能伤害加成提升25%")
+
+            # 共鸣回路-变焦(声骸): 每层声骸技能暴击伤害+10%, 满4层(铭记上限)假定满层
+            title = f"{self.name}-共鸣回路-变焦"
+            attr.add_crit_dmg(0.4, title, "声骸模态满4层, 声骸技能暴击伤害提升40%")
+
+            # 延奏技能-蒙太奇(声骸): 下一个登场角色声骸技能伤害加深50%
+            title = f"{self.name}-延奏技能-蒙太奇"
+            attr.add_dmg_deepen(0.5, title, "下一个登场角色声骸技能伤害加深50%")
+
+            # 二链-酣睡的月光(声骸): 队伍中角色声骸技能伤害加成提升40%
+            if chain >= 2:
+                title = f"{self.name}-二链"
+                attr.add_dmg_bonus(0.4, title, "声骸模态, 声骸技能伤害加成提升40%")
+
+        # 套装-延奏效果 (按当前模态选套装): 冷凝→雪落无声之愿, 否则→轻云出月
+        if attr.char_attr == CHAR_ATTR_FREEZING:
+            title = f"{self.name}-套装-雪落无声之愿"
+            msg = "下一个变奏登场角色冷凝伤害提升25%"
+            attr.add_dmg_bonus(0.25, title, msg)
+        elif attr.char_template == temp_atk:
+            title = f"{self.name}-套装-轻云出月"
+            msg = "下一个登场角色攻击提升22.5%"
+            attr.add_atk_percent(0.225, title, msg)
+
+        # 角色武器-存帧 (21050086): 上方已 set 霜渐 env, 驱动武器把"队伍攻击提升"段作用到队友
+        weapon_id = 21050086
+        weapon_clz = WavesWeaponRegister.find_class(weapon_id)
+        if weapon_clz:
+            w = weapon_clz(weapon_id, 90, 6, resonLevel)
+            w.do_action(["buff"], attr, isGroup)
 
 
 class Char_1202(CharAbstract):
@@ -360,7 +430,7 @@ class Char_1211(CharAbstract):
             if attr.env_fusion_burst_deepen:
                 title = f"{self.name}-延奏技能-未竟的谎言"
                 msg = "目标受到【聚爆效应】伤害加深60%"
-                attr.add_dmg_deepen(0.6, title, msg)
+                attr.add_effect_dmg_deepen(0.6, title, msg)
 
             # 二链 为何给我安慰: 队伍中角色施加【聚爆效应】后, 热熔伤害加成 +50%
             if chain >= 2 and attr.char_attr == CHAR_ATTR_MOLTEN:
@@ -550,13 +620,85 @@ class Char_1407(CharAbstract):
         resonLevel: int = 1,
         isGroup: bool = True,
     ):
-        pass
+        # 音律独奏 / 二链 均为气动伤害加成, 仅对气动队友生效
+        if attr.char_attr == CHAR_ATTR_SIERRA:
+            title = f"{self.name}-音律独奏"
+            attr.add_dmg_bonus(0.24, title, "队伍中所有角色气动伤害加成提升24%")
+
+            # 二链-三重华彩: 队伍中角色气动伤害加成提升40%
+            if chain >= 2:
+                title = f"{self.name}-二链"
+                attr.add_dmg_bonus(0.4, title, "三重华彩期间队伍中角色气动伤害加成提升40%")
+
+        # 延奏技能: 目标受到风蚀效应伤害加深100% (效应加深, 仅结算风蚀效应伤害时)
+        if attr.env_aero_erosion_deepen:
+            title = f"{self.name}-延奏技能"
+            attr.add_effect_dmg_deepen(1.0, title, "目标受到风蚀效应伤害加深100%")
 
 
 class Char_1408(Char_1406):
     id = 1408
     name = "漂泊者·气动"
     starLevel = 5
+
+
+class Char_1308(CharAbstract):
+    id = 1308
+    name = "丽贝卡"
+    starLevel = 5
+
+    def _do_buff(
+        self,
+        attr: DamageAttribute,
+        chain: int = 0,
+        resonLevel: int = 1,
+        isGroup: bool = True,
+    ):
+        # 骇破·偏移: 丽贝卡编队时持续附加【骇破·偏移】, 让队友/武器的骇破条件 buff 触发
+        attr.set_env_hack_shifting()
+
+        # 固有技能-有破绽！: 施放共鸣解放时, 附近队伍中所有角色攻击提升20%
+        if attr.char_template == temp_atk:
+            title = f"{self.name}-固有技能-有破绽！"
+            msg = "施放共鸣解放时, 队伍中所有角色攻击提升20%"
+            attr.add_atk_percent(0.2, title, msg)
+
+        # 固有技能-该你了！: 队伍中角色附加【骇破·偏移】时, 谐度破坏增幅提升30点
+        if check_char_id(attr, Hack_Shifting_Role_Ids):
+            title = f"{self.name}-固有技能-该你了！"
+            msg = "附加【骇破·偏移】时, 谐度破坏增幅提升30点"
+            attr.add_tune_break_boost(30, title, msg)
+
+        # 延奏技能-好搭档: 下一位登场角色获得【浪客羁绊】, 全伤害加深15%
+        title = f"{self.name}-延奏技能-好搭档"
+        msg = "下一位登场角色全伤害加深15%"
+        attr.add_dmg_deepen(0.15, title, msg)
+
+        # 延奏技能-好搭档: 【浪客羁绊】期间每0.2秒叠1层【超限】(重击伤害加深0.5%), 上限35%
+        # (露西持有则直接满层) — 假定满层
+        if attr.char_damage == hit_damage:
+            title = f"{self.name}-延奏技能-好搭档"
+            msg = "【超限】满层, 重击伤害加深35%"
+            attr.add_dmg_deepen(0.35, title, msg)
+
+        # 二链-哦, 原来是你啊！: 施放变奏/共鸣解放时, 队伍中角色全属性伤害加成提升20%
+        if chain >= 2:
+            title = f"{self.name}-二链"
+            msg = "队伍中角色全属性伤害加成提升20%"
+            attr.add_dmg_bonus(0.2, title, msg)
+
+            # 二链: 队伍中角色附加【骇破·偏移】时, 全伤害加深15%
+            if check_char_id(attr, Hack_Shifting_Role_Ids):
+                title = f"{self.name}-二链"
+                msg = "附加【骇破·偏移】时, 全伤害加深15%"
+                attr.add_dmg_deepen(0.15, title, msg)
+
+        # 角色武器-碎骨 (21030066): 上方已 set 骇破 env, 驱动武器把"队伍攻击提升"段作用到队友
+        weapon_id = 21030066
+        weapon_clz = WavesWeaponRegister.find_class(weapon_id)
+        if weapon_clz:
+            w = weapon_clz(weapon_id, 90, 6, resonLevel)
+            w.do_action(["buff"], attr, isGroup)
 
 
 class Char_1501(CharAbstract):
@@ -799,12 +941,12 @@ class Char_1506(CharAbstract):
         if attr.env_spectro_deepen:
             title = f"{self.name}-延奏技能-告解"
             msg = "下一个变奏登场角色【光噪效应】伤害加深100%。"
-            attr.add_dmg_deepen(1, title, msg)
+            attr.add_effect_dmg_deepen(1, title, msg)
 
             if chain >= 2:
                 title = f"{self.name}-二链"
                 msg = "告解状态下，默祷的【光噪效应】伤害加深效果额外提升120%。"
-                attr.add_dmg_deepen(1.2, title, msg)
+                attr.add_effect_dmg_deepen(1.2, title, msg)
 
             if chain >= 4:
                 title = f"{self.name}-四链"
@@ -863,10 +1005,10 @@ class Char_1508(CharAbstract):
             attr.add_dmg_bonus(0.5, title, msg)
 
         # 六链效果：异常效应伤害加深
-        if attr.env_abnormal_deepen:
+        if chain >= 6 and attr.env_abnormal_deepen:
             title = "千咲-六链"
             msg = "拥有虚无绞痕·终焉的目标受到异常效应伤害加深30%"
-            attr.add_dmg_deepen(0.3, title, msg)
+            attr.add_effect_dmg_deepen(0.3, title, msg)
 
         weapon_clz = WavesWeaponRegister.find_class(21010056)
         if weapon_clz:
@@ -935,6 +1077,47 @@ class Char_1510(CharAbstract):
     starLevel = 5
     
     
+class Char_1511(CharAbstract):
+    id = 1511
+    name = "露西"
+    starLevel = 5
+
+    def _do_buff(
+        self,
+        attr: DamageAttribute,
+        chain: int = 0,
+        resonLevel: int = 1,
+        isGroup: bool = True,
+    ):
+        # 骇破·偏移: 露西编队时持续附加【骇破·偏移】, 让队友/武器的骇破条件 buff 触发
+        attr.set_env_hack_shifting()
+
+        # 延奏技能-反制程序: 下一名登场角色普攻伤害加深25%
+        if attr.char_damage == attack_damage:
+            title = f"{self.name}-延奏技能-反制程序"
+            msg = "下一名登场角色普攻伤害加深25%"
+            attr.add_dmg_deepen(0.25, title, msg)
+
+        # 延奏技能-反制程序: 队伍中(除露西)附加【骇破·偏移】的角色全伤害加深20%
+        if check_char_id(attr, Hack_Shifting_Role_Ids):
+            title = f"{self.name}-延奏技能-反制程序"
+            msg = "附加【骇破·偏移】的角色全伤害加深20%"
+            attr.add_dmg_deepen(0.2, title, msg)
+
+        # 共鸣解放·网络行者-欺骗程式 (大招标记目标后选取, 对全队均生效):
+        # 义体故障: 标记目标受到伤害提升5%
+        attr.add_easy_damage(0.05, f"{self.name}-欺骗程式·义体故障", "标记目标受到伤害提升5%")
+        # 突破协议: 标记目标降低5%防御
+        attr.add_defense_reduction(0.05, f"{self.name}-欺骗程式·突破协议", "标记目标降低5%防御")
+
+        # 四链-夜之城没有活着的传奇: 队伍附加【骇破·偏移】后(露西编队即满足),
+        # 队伍中角色全属性伤害加成提升20%
+        if chain >= 4:
+            title = f"{self.name}-四链"
+            msg = "队伍附加【骇破·偏移】后, 全属性伤害加成提升20%"
+            attr.add_dmg_bonus(0.2, title, msg)
+
+
 class Char_1601(CharAbstract):
     id = 1601
     name = "桃祈"

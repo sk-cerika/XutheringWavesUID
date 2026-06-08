@@ -137,14 +137,57 @@ def parse_echo_statistic_content(echo_model: EchoModel, echo_image):
     echo_image.alpha_composite(echo_bg_temp, (10, 200))
 
 
+_EL_RGB = {
+    "物理": (194, 197, 205), "冷凝": (76, 200, 232), "热熔": (241, 90, 59),
+    "导电": (187, 90, 232), "气动": (63, 214, 160), "衍射": (242, 207, 69), "湮灭": (225, 90, 178),
+}
+
+
+def _res_mix(col, t, base=(16, 17, 24)):
+    """元素色按比例 t 混入深底 → 不透明色 (规避 PIL alpha 填充不混合的坑)。"""
+    return tuple(int(col[i] * t + base[i] * (1 - t)) for i in range(3))
+
+
+def parse_echo_resistance_content(resistance, card_img):
+    """卡片底部「元素抗性」: 7 个按元素配色的芯片, 主抗性(hi)深色调底+亮边+亮色数值强调; 无数据跳过。"""
+    if not resistance:
+        return
+    draw = ImageDraw.Draw(card_img)
+    draw.text((48, 406), "元素抗性", SPECIAL_GOLD, waves_font_origin(24), "lm")
+    n = len(resistance)
+    margin, gap = 44, 12
+    cw = (1000 - margin * 2 - gap * (n - 1)) / n
+    y0, y1 = 426, 492
+    name_font = waves_font_origin(20)
+    val_font = waves_font_origin(26)
+    for i, r in enumerate(resistance):
+        x0 = int(margin + i * (cw + gap))
+        x1 = int(x0 + cw)
+        cx = (x0 + x1) // 2
+        col = _EL_RGB.get(r["name"], (194, 197, 205))
+        if r.get("hi"):
+            # 深色调底(元素色22%) + 亮元素边; 数值用亮元素色, 在深底上清晰可见
+            draw.rounded_rectangle([x0, y0, x1, y1], radius=14, fill=_res_mix(col, 0.22), outline=col, width=3)
+            draw.text((cx, 449), r["name"], (255, 255, 255), name_font, "mm")
+            draw.text((cx, 473), r["value"], col, val_font, "mm")
+        else:
+            draw.rounded_rectangle([x0, y0, x1, y1], radius=14, fill=(18, 19, 26), outline=_res_mix(col, 0.5), width=1)
+            draw.text((cx, 449), r["name"], (198, 200, 206), name_font, "mm")
+            draw.text((cx, 473), r["value"], (150, 152, 160), val_font, "mm")
+
+
 async def create_image(echo_id, echo_model: EchoModel):
     echo_image = Image.new("RGBA", (350, 400), (255, 255, 255, 0))
 
-    card_img = get_crop_waves_bg(1000, 420, "bg5")
+    # 技能面板到 y≈400; 固定 420 卡片会被 footer(高53,贴底) 压住 → 动态加高让 footer 落到内容下方
+    resistance = echo_model.get_resistance()
+    card_h = 560 if resistance else 470
+    card_img = get_crop_waves_bg(1000, card_h, "bg5")
     await parse_echo_base_content(echo_id, echo_model, echo_image, card_img)
     await parse_echo_statistic_content(echo_model, echo_image)
     await parse_echo_detail_content(echo_model, card_img)
     card_img.alpha_composite(echo_image, (0, 0))
+    parse_echo_resistance_content(resistance, card_img)
     card_img = add_footer(card_img, 800, 20, color="white")
     card_img = await convert_img(card_img)
     return card_img

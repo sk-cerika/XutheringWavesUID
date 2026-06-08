@@ -9,6 +9,7 @@ from .utils import (
     Glacio_Chafe_Role_Ids,
     Fusion_Burst_Role_Ids,
     Tune_Strain_Role_Ids,
+    Hack_Shifting_Role_Ids,
     temp_atk,
     temp_def,
     temp_life,
@@ -854,7 +855,7 @@ class Weapon_21020086(WeaponAbstract):
             dmg = f"{self.param(3)}"
             title = self.get_title()
             msg = f"目标受到霜渐效应伤害加深{dmg}"
-            attr.add_dmg_deepen(calc_percent_expression(dmg), title, msg)
+            attr.add_effect_dmg_deepen(calc_percent_expression(dmg), title, msg)
 
 
 class Weapon_21030011(WeaponAbstract):
@@ -1053,6 +1054,43 @@ class Weapon_21030053(WeaponAbstract):
     name = "戍关佩枪·平云"
 
 
+class Weapon_21030056(WeaponAbstract):
+    id = 21030056
+    type = 3
+    name = "蜃影"
+
+    # 攻击提升{0}。施放共鸣技能时，自身衍射伤害加成提升{1}，最多叠加{2}层，持续{3}秒。
+    # 每次为敌方怪物附加【骇破·偏移】后，重击伤害加深{4}，且重击伤害无视目标{5}%防御，持续{6}秒。
+    def cast_skill(self, attr: DamageAttribute, isGroup: bool = False):
+        """施放共鸣技能时，自身衍射伤害加成提升(叠2层)"""
+        if attr.char_attr != CHAR_ATTR_CELESTIAL:
+            return
+        dmg = f"{self.param(1)}*{self.param(2)}"
+        title = self.get_title()
+        msg = f"衍射加成提升{self.param(1)}*{self.param(2)}层"
+        attr.add_dmg_bonus(calc_percent_expression(dmg), title, msg)
+
+    def do_action(
+        self,
+        func_list: Union[List[str], str],
+        attr: DamageAttribute,
+        isGroup: bool = False,
+    ):
+        # 自身为敌方附加【骇破·偏移】后，重击加深 + 重击无视防御
+        if check_char_id(attr, Hack_Shifting_Role_Ids) and attr.char_damage == hit_damage:
+            dmg = f"{self.param(4)}"
+            title = self.get_title()
+            msg = f"附加【骇破·偏移】后重击加深{dmg}"
+            attr.add_dmg_deepen(calc_percent_expression(dmg), title, msg)
+
+            dmg = f"{self.param(5)}%"
+            title = self.get_title()
+            msg = f"附加【骇破·偏移】后重击无视目标{dmg}防御"
+            attr.add_defense_ignore(calc_percent_expression(dmg), title, msg)
+
+        super().do_action(func_list, attr, isGroup)
+
+
 class Weapon_21030064(WeaponAbstract):
     id = 21030064
     type = 3
@@ -1072,6 +1110,45 @@ class Weapon_21030064(WeaponAbstract):
         title = self.get_title()
         msg = f"角色冲刺或闪避时，攻击提升{dmg}"
         attr.add_atk_percent(calc_percent_expression(dmg), title, msg)
+
+
+class Weapon_21030066(WeaponAbstract):
+    id = 21030066
+    type = 3
+    name = "碎骨"
+
+    # 攻击提升{0}。施放变奏技能时，自身普攻伤害加成提升{1}，持续{2}秒。
+    # 附加【骇破·偏移】时，自身普攻伤害加成提升{3}，队伍中的角色攻击提升{5}，同名效果不可叠加。
+    def cast_variation(self, attr: DamageAttribute, isGroup: bool = False):
+        """施放变奏技能时，自身普攻伤害加成提升"""
+        if attr.char_damage != attack_damage:
+            return
+        dmg = f"{self.param(1)}"
+        title = self.get_title()
+        msg = f"施放变奏技能时，自身普攻伤害加成提升{dmg}"
+        attr.add_dmg_bonus(calc_percent_expression(dmg), title, msg)
+
+    def do_action(
+        self,
+        func_list: Union[List[str], str],
+        attr: DamageAttribute,
+        isGroup: bool = False,
+    ):
+        # 自身(持有者)为敌方附加【骇破·偏移】时, 自身普攻加成
+        if check_char_id(attr, Hack_Shifting_Role_Ids) and attr.char_damage == attack_damage:
+            dmg = f"{self.param(3)}"
+            title = self.get_title()
+            msg = f"附加【骇破·偏移】时普攻加成提升{dmg}"
+            attr.add_dmg_bonus(calc_percent_expression(dmg), title, msg)
+
+        # 队伍攻击提升: 队伍附加【骇破·偏移】(env)时全队生效, 由露西/丽贝卡 _do_buff 驱动到队友
+        if attr.env_hack_shifting and attr.char_template == temp_atk:
+            dmg = f"{self.param(5)}"
+            title = self.get_title()
+            msg = f"附加【骇破·偏移】时攻击提升{dmg}"
+            attr.add_atk_percent(calc_percent_expression(dmg), title, msg)
+
+        super().do_action(func_list, attr, isGroup)
 
 
 class Weapon_21030074(WeaponAbstract):
@@ -1318,7 +1395,7 @@ class Weapon_21040036(WeaponAbstract):
             dmg = f"{self.param(2)}"
             title = self.get_title()
             msg = f"自身直接造成的【光噪效应】伤害加深{dmg}"
-            attr.add_dmg_deepen(calc_percent_expression(dmg), title, msg)
+            attr.add_effect_dmg_deepen(calc_percent_expression(dmg), title, msg)
 
 
 class Weapon_21040043(WeaponAbstract):
@@ -1816,7 +1893,7 @@ class Weapon_21050046(WeaponAbstract):
         dmg = f"{self.param(4)}"
         title = self.get_title()
         msg = f"施放延奏技能时，使登场角色【光噪效应】伤害加深{dmg}"
-        attr.add_dmg_deepen(calc_percent_expression(dmg), title, msg)
+        attr.add_effect_dmg_deepen(calc_percent_expression(dmg), title, msg)
 
 
 class Weapon_21050053(WeaponAbstract):
@@ -1982,6 +2059,36 @@ class Weapon_21050084(WeaponAbstract):
         msg = f"施放共鸣技能时，获得{self.param(0)}点共鸣能量，且攻击提升{dmg}"
         attr.add_atk_percent(calc_percent_expression(dmg), title, msg)
         return True
+
+
+class Weapon_21050086(WeaponAbstract):
+    id = 21050086
+    type = 5
+    name = "存帧"
+
+    # 攻击提升{0}。附加霜渐效应时，自身冷凝伤害加成提升{1}，持续{2}秒；
+    # 队伍中的角色攻击提升{3}，持续{4}秒，同名效果之间不可叠加。
+    def do_action(
+        self,
+        func_list: Union[List[str], str],
+        attr: DamageAttribute,
+        isGroup: bool = False,
+    ):
+        # 自身(持有者)附加霜渐效应时, 自身冷凝加成
+        if check_char_id(attr, Glacio_Chafe_Role_Ids) and attr.char_attr == CHAR_ATTR_FREEZING:
+            dmg = f"{self.param(1)}"
+            title = self.get_title()
+            msg = f"附加霜渐效应时自身冷凝加成提升{dmg}"
+            attr.add_dmg_bonus(calc_percent_expression(dmg), title, msg)
+
+        # 队伍攻击提升: 队伍附加【霜渐效应】(env)时全队生效, 由洛瑟菈/绯雪 _do_buff 驱动到队友
+        if attr.env_glacio_chafe and attr.char_template == temp_atk:
+            dmg = f"{self.param(3)}"
+            title = self.get_title()
+            msg = f"附加霜渐效应时攻击提升{dmg}"
+            attr.add_atk_percent(calc_percent_expression(dmg), title, msg)
+
+        super().do_action(func_list, attr, isGroup)
 
 
 class Weapon_21050094(WeaponAbstract):

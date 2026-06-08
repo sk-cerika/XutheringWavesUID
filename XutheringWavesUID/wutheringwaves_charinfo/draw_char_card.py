@@ -1723,9 +1723,10 @@ def _wrap_plain(text: str, cjk_chars: int) -> List[str]:
     return [text[i:i + cjk_chars] for i in range(0, len(text), cjk_chars)]
 
 
-async def draw_char_optimize_img(ev: Event, uid: str, char: str, user_id: str, waves_id: Optional[str] = None, change_list_regex: Optional[str] = None):
+async def draw_char_optimize_img(ev: Event, uid: str, char: str, user_id: str, waves_id: Optional[str] = None, change_list_regex: Optional[str] = None, is_limit_query=False):
     """综合评分优化建议图: 复用无评分面板布局, 仅替换声骸评分槽/声骸卡和底部说明行.
-    支持替换指令(换角色X链/换声骸…), 优化结果基于替换后的配置."""
+    支持替换指令(换角色X链/换声骸…), 优化结果基于替换后的配置.
+    is_limit_query=True 时基于角色极限面板出优化建议, 不读账号/CK."""
     locale = await WavesLangSettings.get_lang(ev.user_id)
     user_pref = await get_hide_uid_pref(waves_id or uid, user_id, ev.bot_id)
 
@@ -1750,20 +1751,36 @@ async def draw_char_optimize_img(ev: Event, uid: str, char: str, user_id: str, w
     if waves_id:
         uid = waves_id
 
-    info, ck, _ = await base_info_cache.load_account_context(
-        uid, user_id, ev.bot_id, force_ck=bool(waves_id)
-    )
-    if isinstance(info, str):
-        # ck 也失败 → 返错误; ck 有效但 baseinfo 失败 → 降级出图
-        if not ck:
-            return info
-        account_info = None
+    ck = ""
+    force_resource_id = None
+    if not is_limit_query:
+        info, ck, _ = await base_info_cache.load_account_context(
+            uid, user_id, ev.bot_id, force_ck=bool(waves_id)
+        )
+        if isinstance(info, str):
+            # ck 也失败 → 返错误; ck 有效但 baseinfo 失败 → 降级出图
+            if not ck:
+                return info
+            account_info = None
+        else:
+            account_info = info
     else:
-        account_info = info
+        account_info = AccountBaseInfo.model_validate(
+            {
+                "name": "库洛交个朋友",
+                "id": uid,
+                "level": 100,
+                "worldLevel": 10,
+                "creatTime": 1739375719,
+            }
+        )
+        force_resource_id = char_id
 
     # ── 获取数据 ─────────────────────────────────────────────────────────
     avatar, role_detail = await get_role_need(
-        ev, char_id, ck, uid, char_name, waves_id, change_list_regex=change_list_regex
+        ev, char_id, ck, uid, char_name, waves_id,
+        force_resource_id=force_resource_id, is_limit_query=is_limit_query,
+        change_list_regex=change_list_regex,
     )
     if isinstance(role_detail, str):
         return role_detail

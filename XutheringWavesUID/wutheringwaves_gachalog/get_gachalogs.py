@@ -32,6 +32,8 @@ gacha_type_meta_data = {
     "新手自选唤取（感恩定向唤取）": "7",
     "角色新旅唤取": "8",
     "武器新旅唤取": "9",
+    "角色联动唤取": "10",
+    "武器联动唤取": "11",
 }
 
 gacha_type_meta_data_reverse = {v: k for k, v in gacha_type_meta_data.items()}
@@ -46,6 +48,8 @@ gachalogs_history_meta = {
     "新手自选唤取（感恩定向唤取）": [],
     "角色新旅唤取": [],
     "武器新旅唤取": [],
+    "角色联动唤取": [],
+    "武器联动唤取": [],
 }
 
 ERROR_MSG_INVALID_LINK = "当前抽卡链接已经失效，请重新导入抽卡链接"

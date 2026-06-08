@@ -287,8 +287,7 @@ filter_msg = [
 
 
 # 发送主人信息
-@timed_async_cache(300, lambda x: x)
-async def send_master_info(msg: str):
+async def _send_master_info_impl(msg: str):
     # 过滤
     for i in filter_msg:
         if i in msg:
@@ -297,10 +296,20 @@ async def send_master_info(msg: str):
     subscribes = await gs_subscribe.get_subscribe("联系主人")
     if not subscribes:
         return
-    if subscribes:
-        for sub in subscribes:
-            await sub.send(f"【联系主人】：{msg}")
-        return True
+    for sub in subscribes:
+        await sub.send(f"【联系主人】：{msg}")
+    return True
+
+
+@timed_async_cache(300, lambda x: x)
+async def send_master_info(msg: str):
+    return await _send_master_info_impl(msg)
+
+
+# 系统维护提示 cd 单独加长(1小时), 避免维护期间频繁打扰主人
+@timed_async_cache(3600, lambda x: x)
+async def send_master_info_maintenance(msg: str):
+    return await _send_master_info_impl(msg)
 
 
 def login_platform() -> str:

@@ -23,6 +23,8 @@ POOL_TYPE_MAP = {
     "新手自选唤取（感恩定向唤取）": "7",
     "角色新旅唤取": "8",
     "武器新旅唤取": "9",
+    "角色联动唤取": "10",
+    "武器联动唤取": "11",
 }
 
 FILLER_ITEM = {"resourceId": 21040023, "qualityLevel": 3, "resourceType": "武器", "name": "源能臂铠·测肆", "count": 1}

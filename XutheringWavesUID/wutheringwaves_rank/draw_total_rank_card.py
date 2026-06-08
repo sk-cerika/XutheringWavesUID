@@ -1,4 +1,3 @@
-import copy
 import time
 import asyncio
 from typing import Dict, Union, Optional
@@ -14,24 +13,16 @@ from gsuid_core.pool import to_thread
 from gsuid_core.utils.image.convert import convert_img
 
 from .rank_avatar import get_avatar
-from .rank_badge import draw_rank_badge
+from .rank_badge import draw_bot_name_badge, draw_rank_badge
 from ..utils.util import get_version, hide_uid
 from ..utils.image import (
     RED,
     GREY,
-    AMBER,
-    WAVES_VOID,
     SPECIAL_GOLD,
-    WAVES_MOLTEN,
-    WAVES_SIERRA,
-    WAVES_MOONLIT,
-    WAVES_FREEZING,
-    WAVES_LINGERING,
     get_ICON,
     add_footer,
     get_square_avatar,
     get_custom_waves_bg,
-    parse_bot_color_config,
 )
 from ..utils.api.wwapi import (
     GET_TOTAL_RANK_URL,
@@ -54,17 +45,6 @@ from ..utils.fonts.waves_fonts import (
 
 TEXT_PATH = Path(__file__).parent / "texture2d"
 char_mask = Image.open(TEXT_PATH / "char_mask.png")
-
-
-BOT_COLOR = [
-    WAVES_MOLTEN,
-    AMBER,
-    WAVES_VOID,
-    WAVES_SIERRA,
-    WAVES_FREEZING,
-    WAVES_LINGERING,
-    WAVES_MOONLIT,
-]
 
 
 async def get_rank(item: TotalRankRequest) -> Optional[TotalRankResponse]:
@@ -175,21 +155,16 @@ async def draw_total_rank(bot: Bot, ev: Event, pages: int) -> Union[str, bytes]:
         fetched = await asyncio.gather(*[get_square_avatar(cid) for cid in char_ids_to_fetch])
         char_avatar_map = dict(zip(char_ids_to_fetch, fetched))
 
-    bot_color_map = parse_bot_color_config(
-        WutheringWavesConfig.get_config("BotColorMap").data
-    )
-
     card_img = await _compose_total_rank(
         card_img, bar, details, results, char_avatar_map,
-        self_uid, header_height, item_spacing, width, bot_color_map,
+        self_uid, header_height, item_spacing, width,
     )
     return await convert_img(card_img)
 
 
 @to_thread
 def _compose_total_rank(card_img, bar, details, results, char_avatar_map,
-                        self_uid, header_height, item_spacing, width, bot_color_map):
-    bot_color = copy.deepcopy(BOT_COLOR)
+                        self_uid, header_height, item_spacing, width):
     for rank_temp_index, temp in enumerate(zip(details, results)):
         detail, role_avatar = temp
         y_pos = header_height + 130 + rank_temp_index * item_spacing
@@ -214,18 +189,7 @@ def _compose_total_rank(card_img, bar, details, results, char_avatar_map,
 
         botName = getattr(detail, "alias_name", None)
         if botName:
-            color = (54, 54, 54)
-            if botName in bot_color_map:
-                color = bot_color_map[botName]
-            elif bot_color:
-                color = bot_color.pop(0)
-                bot_color_map[botName] = color
-
-            info_block = Image.new("RGBA", (200, 30), color=(255, 255, 255, 0))
-            info_block_draw = ImageDraw.Draw(info_block)
-            info_block_draw.rounded_rectangle([0, 0, 200, 30], radius=6, fill=color + (int(0.6 * 255),))
-            info_block_draw.text((100, 15), f"bot: {botName}", "white", waves_font_18, "mm")
-            bar_bg.alpha_composite(info_block, (350, 66))
+            draw_bot_name_badge(bar_bg, getattr(detail, "background", ""), botName, (346, 61))
 
         bar_draw.text(
             (1180, 45),

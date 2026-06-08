@@ -22,18 +22,20 @@ guide_map = {
     "小羊早睡不遭罪": "XiaoYang",
     "吃我无痕": "WuHen",
     "巡游天国FM": "XFM",
+    "猫眼石攻略组": "Chrysoberyl",
 }
 
 guide_author_map = {v: k for k, v in guide_map.items()}
 
 
 async def get_guide(bot: Bot, ev: Event, char_name: str):
-    char_name = alias_to_char_name_optional(char_name)
-    
-    if not char_name:
-        msg = f"[鸣潮] 未找到指定角色, 请检查输入是否正确！"
-        return await bot.send(msg)
-    
+    is_dps = char_name.lower() == "dps"
+    if not is_dps:
+        char_name = alias_to_char_name_optional(char_name)
+        if not char_name:
+            msg = f"[鸣潮] 未找到指定角色, 请检查输入是否正确！"
+            return await bot.send(msg)
+
     logger.info(f"[鸣潮·百科攻略] 开始获取{char_name}图鉴")
 
     config = WutheringWavesConfig.get_config("WavesGuide").data
@@ -46,7 +48,7 @@ async def get_guide(bot: Bot, ev: Event, char_name: str):
         excluded_providers = get_excluded_providers(ev.group_id)
 
     imgs_result = []
-    pattern = re.compile(re.escape(char_name), re.IGNORECASE)
+    pattern = re.compile((r"^" if is_dps else "") + re.escape(char_name), re.IGNORECASE)
     if "all" in config:
         paths = sorted(
             GUIDE_PATH.iterdir(),

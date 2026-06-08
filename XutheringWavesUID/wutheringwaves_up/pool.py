@@ -24,11 +24,18 @@ from ..utils.image import (
 )
 from ..utils.api.wwapi import GET_POOL_LIST
 from ..utils.name_convert import char_name_to_char_id, easy_id_to_name, weapon_name_to_weapon_id
-from ..utils.fonts.waves_fonts import waves_font_30, waves_font_58
+from ..utils.fonts.waves_fonts import (
+    waves_font_22,
+    waves_font_26,
+    waves_font_30,
+    waves_font_58,
+)
 
 TEXT_PATH = Path(__file__).parent / "texture2d"
-bar = Image.open(TEXT_PATH / "bar.png")
+bar_short = Image.open(TEXT_PATH / "bar_short.png")
 avatar_mask = Image.open(TEXT_PATH / "avatar_mask.png")
+# 裁到圆形 bbox，缩放后正好填满头像框
+_avatar_circle = avatar_mask.crop(avatar_mask.split()[-1].getbbox())
 
 
 @timed_async_cache(expiration=3600, condition=lambda x: isinstance(x, list))
@@ -79,7 +86,7 @@ async def clean_pool_data():
 
         total_seconds = int((now - end_time).total_seconds())
 
-        if pool.pool_type == "角色活动唤取":
+        if pool.pool_type.startswith("角色"):
             if char_up_end_time is not None and total_seconds != char_up_end_time:
                 continue
 
@@ -145,7 +152,8 @@ async def get_pool_data_by_type(query_type: str, star: int):
     title_h = 500
     bar_star_h = 110
     totalNum = len(data_group)
-    h = title_h + totalNum * bar_star_h + 100
+    rows = (totalNum + 1) // 2
+    h = title_h + rows * bar_star_h + 100
 
     share_bg = await get_random_share_bg()
 
@@ -222,33 +230,32 @@ def _render_pool_card(
     return card_img
 
 
+def _make_role_avatar(pic: Image.Image, size: int) -> Image.Image:
+    mask = _avatar_circle.resize((size, size)).split()[-1]
+    avatar = pic.resize((size, size)).convert("RGBA")
+    frame = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    frame.paste(avatar, (0, 0), mask)
+    return frame
+
+
 def _draw_pool_char_sync(
     data_list,
     query_type: str,
     pic_cache: Dict[str, Image.Image],
     card_img: Image.Image,
 ):
+    bar_h = bar_short.height
+    avatar_size = 92
     for i, data in enumerate(data_list):
         resource_id = data[0]
         up_time = data[1]
         end_time = data[2]
 
-        bar_bg = bar.copy()
+        bar_bg = bar_short.copy()
         bar_star_draw = ImageDraw.Draw(bar_bg)
 
-        pic = pic_cache[resource_id]
-
-        pic_temp = Image.new("RGBA", pic.size)
-        pic_temp.paste(pic.resize((160, 160)), (10, 10))
-        pic_temp = pic_temp.resize((160, 160))
-
-        avatar_mask_temp = avatar_mask.copy()
-        mask_pic_temp = Image.new("RGBA", avatar_mask_temp.size)
-        mask_pic_temp.paste(avatar_mask_temp, (-20, -45), avatar_mask_temp)
-        mask_pic_temp = mask_pic_temp.resize((160, 160))
-        role_avatar = Image.new("RGBA", (180, 180))
-        role_avatar.paste(pic_temp, (0, 0), mask_pic_temp)
-        bar_bg.paste(role_avatar, (100, 0), role_avatar)
+        role_avatar = _make_role_avatar(pic_cache[resource_id], avatar_size)
+        bar_bg.paste(role_avatar, (4, (bar_h - avatar_size) // 2), role_avatar)
 
         color = "white"
         if end_time < 0:
@@ -256,18 +263,15 @@ def _draw_pool_char_sync(
 
         char_name = easy_id_to_name(resource_id)
         if char_name:
-            bar_star_draw.text((300, 50), char_name, color, waves_font_30, "mm")
+            bar_star_draw.text((110, 40), char_name, color, waves_font_26, "lm")
 
-        # up 次数
-        bar_star_draw.text((500, 50), f"UP次数: {up_time}", "white", waves_font_30, "mm")
+        bar_star_draw.text((110, 73), f"{seconds_to_human(end_time)}", color, waves_font_22, "lm")
 
-        # 倒计时
-        if end_time >= 0:
-            bar_star_draw.text((800, 50), f"{seconds_to_human(end_time)}", color, waves_font_30, "mm")
-        else:
-            bar_star_draw.text((800, 50), f"{seconds_to_human(end_time)}", color, waves_font_30, "mm")
+        bar_star_draw.text((472, 56), f"UP {up_time}次", "white", waves_font_22, "rm")
 
-        card_img.paste(bar_bg, (-20, i * 110 + 530), bar_bg)
+        col = i % 2
+        row = i // 2
+        card_img.paste(bar_bg, (8 + col * 522, row * 110 + 530), bar_bg)
 
 
 def seconds_to_human(seconds: int) -> str:

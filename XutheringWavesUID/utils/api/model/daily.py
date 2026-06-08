@@ -78,6 +78,21 @@ class WeeklyData(BaseModel):
 class WeeklyRougeData(BaseModel):
     """千道门扉的异想"""
 
+    name: Optional[str] = None
+    img: Optional[str] = None
+    key: Optional[str] = None
+    value: Optional[str] = None
+    status: Optional[int] = None
+    cur: Optional[int] = None
+    total: Optional[int] = None
+    refreshTimeStamp: Optional[int] = None
+    timePreDesc: Optional[str] = None
+    expireTimeStamp: Optional[int] = None
+
+
+class WeeklyFrameData(BaseModel):
+    """周度游历"""
+
     name: str
     img: Optional[str] = None
     key: Optional[str] = None
@@ -123,3 +138,4 @@ class DailyData(BaseModel):
     slashTowerData: Optional[SlashTowerData] = None
     weeklyData: Optional[WeeklyData] = None
     weeklyRougeData: Optional[WeeklyRougeData] = None
+    weeklyFrameData: Optional[WeeklyFrameData] = None

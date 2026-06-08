@@ -1,5 +1,4 @@
 import re
-import copy
 import json
 import math
 import time
@@ -21,21 +20,14 @@ from ..utils.util import get_version, hide_uid
 from ..utils.image import (
     RED,
     GREY,
-    AMBER,
-    WAVES_VOID,
-    WAVES_MOLTEN,
-    WAVES_SIERRA,
-    WAVES_MOONLIT,
-    WAVES_FREEZING,
-    WAVES_LINGERING,
     get_ICON,
     add_footer,
     get_waves_bg,
     get_square_avatar,
     pic_download_from_url,
-    parse_bot_color_config,
 )
-from .rank_badge import draw_rank_badge
+from .rank_badge import draw_bot_name_badge, draw_rank_badge
+from .slash_rank import is_limited_5star
 from .rank_avatar import get_avatar
 from ..utils.resource.RESOURCE_PATH import MATRIX_PATH
 from ..utils.api.model import MatrixDetail
@@ -47,7 +39,7 @@ from ..utils.api.wwapi import (
 )
 from ..utils.ascension.char import get_char_model
 from ..utils.database.models import WavesBind, WavesUser
-from ..utils.resource.constant import SPECIAL_CHAR_INT_ALL, NORMAL_LIST_IDS, randomize_special_char_id
+from ..utils.resource.constant import randomize_special_char_id
 from ..wutheringwaves_config import PREFIX, WutheringWavesConfig
 from ..utils.fonts.waves_fonts import (
     waves_font_12,
@@ -67,16 +59,6 @@ from ..wutheringwaves_abyss.period import (
 TEXT_PATH = Path(__file__).parent / "texture2d"
 
 CHINA_TZ = timezone(timedelta(hours=8))
-
-BOT_COLOR = [
-    WAVES_MOLTEN,
-    AMBER,
-    WAVES_VOID,
-    WAVES_SIERRA,
-    WAVES_FREEZING,
-    WAVES_LINGERING,
-    WAVES_MOONLIT,
-]
 
 
 
@@ -207,11 +189,6 @@ async def draw_all_matrix_rank_card(bot: Bot, ev: Event):
     tasks = [get_avatar(rank.user_id, getattr(rank, "sender_avatar", "")) for rank in rank_list]
     results = await asyncio.gather(*tasks)
 
-    bot_color_map = parse_bot_color_config(
-        WutheringWavesConfig.get_config("BotColorMap").data
-    )
-    bot_color = copy.deepcopy(BOT_COLOR)
-
     for rank_temp_index, temp in enumerate(zip(rank_list, results)):
         rank_temp: MatrixRank = temp[0]
         role_avatar: Image.Image = temp[1]
@@ -240,18 +217,7 @@ async def draw_all_matrix_rank_card(bot: Bot, ev: Event):
         # bot主人名字
         botName = rank_temp.alias_name if rank_temp.alias_name else ""
         if botName:
-            color = (54, 54, 54)
-            if botName in bot_color_map:
-                color = bot_color_map[botName]
-            elif bot_color:
-                color = bot_color.pop(0)
-                bot_color_map[botName] = color
-
-            info_block = Image.new("RGBA", (200, 30), color=(255, 255, 255, 0))
-            info_block_draw = ImageDraw.Draw(info_block)
-            info_block_draw.rounded_rectangle([0, 0, 200, 30], radius=6, fill=color + (int(0.6 * 255),))
-            info_block_draw.text((100, 15), f"bot: {botName}", "white", waves_font_18, "mm")
-            role_bg.alpha_composite(info_block, (330, 66))
+            draw_bot_name_badge(role_bg, getattr(rank_temp, "background", ""), botName, (326, 61))
 
         # 总分数 — 左移10px (矩阵分数比海墟多一位)
         score_color = get_score_color(rank_temp.score)
@@ -645,21 +611,19 @@ async def draw_matrix_rank_list(bot: Bot, ev: Event):
         rank_id = rank_temp_index + 1
         draw_rank_badge(role_bg, rank_id)
 
-        # 计算所有队伍出场限定角色的金数（去重，排除常驻和漂泊者）
         char_gold_total = 0
         seen_ids = set()
         for role_id in rankInfo.all_char_ids:
             if role_id in seen_ids:
                 continue
             seen_ids.add(role_id)
-            if role_id in SPECIAL_CHAR_INT_ALL or role_id in NORMAL_LIST_IDS:
+            if not is_limited_5star(role_id):
                 continue
-            char_model = get_char_model(role_id)
-            if char_model and char_model.starLevel == 5:
-                chain_count = await get_role_chain_count(rankInfo.uid, role_id)
-                char_gold_total += (chain_count + 1) if chain_count >= 0 else 0
+            chain_count = await get_role_chain_count(rankInfo.uid, role_id)
+            if chain_count >= 0:
+                char_gold_total += chain_count + 1
 
-        role_bg_draw.text((210, 40), f"限定角色金数: {char_gold_total}", "white", waves_font_18, "lm")
+        role_bg_draw.text((210, 40), f"角色限定{char_gold_total}金", "white", waves_font_18, "lm")
 
         # 特征码
         uid_color = "white"

@@ -1,6 +1,9 @@
 from typing import Dict, List, Literal, Optional
 
+import httpx
 from pydantic import Field, BaseModel
+
+from gsuid_core.logger import logger
 
 MAIN_URL = "https://wh.loping151.site"
 # MAIN_URL = "http://127.0.0.1:9001"
@@ -9,6 +12,7 @@ UPLOAD_URL = f"{MAIN_URL}/top/waves/upload"
 GET_RANK_URL = f"{MAIN_URL}/top/waves/rank"
 GET_TOTAL_RANK_URL = f"{MAIN_URL}/top/waves/total/rank"
 ONE_RANK_URL = f"{MAIN_URL}/top/waves/one"
+CHAR_RANK_OPTIONS_URL = f"{MAIN_URL}/top/waves/char/options"
 UPLOAD_ABYSS_RECORD_URL = f"{MAIN_URL}/top/waves/abyss/upload"
 GET_ABYSS_RECORD_URL = f"{MAIN_URL}/top/waves/abyss/record"
 GET_HOLD_RATE_URL = f"{MAIN_URL}/api/waves/hold/rates"
@@ -32,6 +36,9 @@ ABYSS_TYPE_MAP = {
 
 ABYSS_TYPE_MAP_REVERSE = {
     "l4": "残响之塔 - 4层",
+    "m1": "深境之塔 - 1层",
+    "m2": "深境之塔 - 2层",
+    "m3": "深境之塔 - 3层",
     "m4": "深境之塔 - 4层",
     "r4": "回音之塔 - 4层",
 }
@@ -43,6 +50,7 @@ class RankDetail(BaseModel):
     user_id: str
     username: str
     alias_name: str
+    background: Optional[str] = ""
     kuro_name: str
     waves_id: str
     char_id: int
@@ -78,6 +86,7 @@ class RankItem(BaseModel):
     rank_type: int
     waves_id: Optional[str] = ""
     version: str
+    modal: Optional[str] = ""
 
 
 # ------------------------------------------------------------
@@ -101,6 +110,7 @@ class TotalRankDetail(BaseModel):
     user_id: str
     username: str
     alias_name: str
+    background: Optional[str] = ""
     kuro_name: str
     waves_id: str
     total_score: float
@@ -142,7 +152,7 @@ class OneRankResponse(BaseModel):
 
 
 class AbyssDetail(BaseModel):
-    area_type: ABYSS_TYPE
+    area_type: str  # 形如 l4/m1/m2/m3/m4/r4 (中塔按层拆分)
     area_name: str
     floor: int
     char_ids: List[int]
@@ -252,6 +262,7 @@ class SlashRank(BaseModel):
     waves_id: str  # 鸣潮id
     kuro_name: str  # 库洛用户名
     alias_name: str  # 主人别名
+    background: Optional[str] = ""  # 主人背景
     sender_avatar: Optional[str] = ""
 
 
@@ -327,6 +338,7 @@ class MatrixRank(BaseModel):
     waves_id: str
     kuro_name: str
     alias_name: str
+    background: Optional[str] = ""
     sender_avatar: Optional[str] = ""
 
 
@@ -341,3 +353,35 @@ class MatrixRankRes(BaseModel):
     code: int
     message: str
     data: Optional[MatrixRankData] = None
+
+
+# ------------------------------------------------------------
+# 模态分榜可选项
+
+
+class CharRankOption(BaseModel):
+    key: str
+    name: str
+
+
+class CharRankOptionsResponse(BaseModel):
+    code: int
+    message: str
+    data: Optional[List[CharRankOption]] = None
+
+
+async def get_char_rank_options(char_id: int) -> List[CharRankOption]:
+    """该角色可选模态项 (WH 端按开关聚合上传数据); 无模态/失败返回 []。"""
+    async with httpx.AsyncClient() as client:
+        try:
+            res = await client.post(
+                CHAR_RANK_OPTIONS_URL,
+                json={"char_id": char_id},
+                headers={"Content-Type": "application/json"},
+                timeout=httpx.Timeout(10),
+            )
+            if res.status_code == 200:
+                return CharRankOptionsResponse.model_validate(res.json()).data or []
+        except Exception as e:
+            logger.exception(f"[鸣潮·模态选项] 获取失败: {e}")
+    return []

@@ -42,6 +42,7 @@ CONFIG_DEFAULT: Dict[str, GSC] = {
             "小沐XMu",
             "吃我无痕",
             "巡游天国FM",
+            "猫眼石攻略组",
             "社区攻略",
         ],
     ),
@@ -266,11 +267,6 @@ CONFIG_DEFAULT: Dict[str, GSC] = {
         "外置渲染服务的API地址，例如：http://127.0.0.1:3000/render",
         "http://127.0.0.1:3000/render",
         secret=True,
-    ),
-    "BotColorMap": GsStrConfig(
-        "排行榜Bot名称固定颜色",
-        "格式: 名称-(R,G,B)，颜色为RGB值(0-255)，多个用逗号分隔，如: 小维-(234,183,4),千咲-(0,128,255)",
-        "",
     ),
     "EnableLocalization": GsBoolConfig(
         "启用多语言本地化",

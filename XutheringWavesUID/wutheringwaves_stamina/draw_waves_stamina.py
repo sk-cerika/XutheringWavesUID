@@ -573,9 +573,10 @@ async def _render_stamina_card(
     boss_used = account_info.weeklyInstCount if account_info.weeklyInstCount else 0
     boss_left = max(0, boss_limit - boss_used)
 
-    # Rogue
-    rogue_cur = account_info.rougeScore if account_info.rougeScore else 0
-    rogue_total = account_info.rougeScoreLimit if account_info.rougeScoreLimit else 0
+    # 周度游历
+    frame_data = getattr(daily_info, "weeklyFrameData", None)
+    rogue_cur = (frame_data.cur or 0) if frame_data else 0
+    rogue_total = (frame_data.total or 0) if frame_data else 0
     
     # Tower (逆境深塔) - 完成条件: cur == 36
     tower_data = getattr(daily_info, 'towerData', None)
@@ -613,7 +614,7 @@ async def _render_stamina_card(
 
     # 我去，我真变态！
     show_sign_in = not from_sdk
-    show_rogue = account_info.rougeScore is not None or account_info.rougeScoreLimit is not None
+    show_rogue = frame_data is not None
     show_tower = tower_data is not None
     show_slash_tower = slash_data is not None
 
@@ -703,7 +704,7 @@ async def _render_stamina_card(
         "label_liveness": t("活跃度", locale),
         "label_weekly_boss": t("战歌重奏", locale),
         "label_battle_pass": t("先约电台", locale),
-        "label_rogue": t("千道门扉", locale),
+        "label_rogue": t("周度游历", locale),
         "label_tower": t("逆境深塔", locale),
         "label_slash_tower": t("冥歌海墟", locale),
     }
@@ -781,11 +782,14 @@ def _render_stamina_card_pil(
         "mm",
     )
 
-    color = RED if account_info.rougeScore != account_info.rougeScoreLimit else GREEN
-    title_bar_draw.text((810, 125), t("千道门扉的异想", locale), GREY, hud_label_font, "mm")
+    frame_data = getattr(daily_info, "weeklyFrameData", None)
+    frame_cur = (frame_data.cur or 0) if frame_data else 0
+    frame_total = (frame_data.total or 0) if frame_data else 0
+    color = RED if frame_cur != frame_total else GREEN
+    title_bar_draw.text((810, 125), t("周度游历", locale), GREY, hud_label_font, "mm")
     title_bar_draw.text(
         (810, 78),
-        f"{account_info.rougeScore}/{account_info.rougeScoreLimit}",
+        f"{frame_cur}/{frame_total}",
         color,
         waves_font_32,
         "mm",

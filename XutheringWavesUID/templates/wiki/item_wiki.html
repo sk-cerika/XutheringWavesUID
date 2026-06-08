@@ -386,6 +386,39 @@
             filter: brightness(0) invert(1);
             display: inline-block;
         }
+        .res-panel { position: relative; z-index: 2; margin: 8px 56px 58px; }
+        .res-head { display: flex; align-items: center; gap: 14px; margin-bottom: 18px; }
+        .res-tick { width: 4px; height: 24px; background: #e6c074; border-radius: 2px;
+            box-shadow: 0 0 14px rgba(230, 192, 116, 0.6); }
+        .res-label { font-size: 24px; font-weight: 800; letter-spacing: 5px; color: #f3e6c6; }
+        .res-sub { font-family: 'Oswald', sans-serif; font-size: 14px; font-weight: 500;
+            letter-spacing: 4px; color: rgba(230, 192, 116, 0.45); text-transform: uppercase; }
+        .res-rule { flex: 1; height: 1px; background: linear-gradient(90deg, rgba(230, 192, 116, 0.28), transparent); }
+        .res-track { display: flex; gap: 14px; align-items: stretch; }
+        .res-node { --el: #c2c5cd; --el-rgb: 194, 197, 205; flex: 1; position: relative;
+            display: flex; flex-direction: column; align-items: center; gap: 9px;
+            padding: 18px 8px 15px; border-radius: 16px;
+            background: rgba(14, 15, 21, 0.5); border: 1px solid rgba(255, 255, 255, 0.05); }
+        .res-node::before { content: ''; position: absolute; top: 0; left: 26%; right: 26%;
+            height: 2px; border-radius: 0 0 3px 3px; background: var(--el); opacity: 0.3; }
+        .rn-name { font-size: 18px; font-weight: 700; letter-spacing: 1px; color: rgba(255, 255, 255, 0.5); }
+        .rn-val { font-family: 'Oswald', sans-serif; font-size: 24px; font-weight: 700;
+            color: rgba(255, 255, 255, 0.36); font-variant-numeric: tabular-nums; }
+        .res-node.hi { background: linear-gradient(180deg, rgba(var(--el-rgb), 0.24), rgba(14, 15, 21, 0.6) 72%);
+            border: 1px solid rgba(var(--el-rgb), 0.65);
+            box-shadow: 0 0 0 1px rgba(var(--el-rgb), 0.18), 0 10px 30px rgba(var(--el-rgb), 0.32),
+                inset 0 1px 0 rgba(var(--el-rgb), 0.4);
+            transform: translateY(-8px) scale(1.05); }
+        .res-node.hi::before { opacity: 1; height: 3px; left: 20%; right: 20%; box-shadow: 0 0 12px var(--el); }
+        .res-node.hi .rn-name { color: #fff; }
+        .res-node.hi .rn-val { color: var(--el); font-size: 28px; text-shadow: 0 0 18px rgba(var(--el-rgb), 0.75); }
+        .res-phys { --el: #c2c5cd; --el-rgb: 194, 197, 205; }
+        .res-glacio { --el: #4cc8e8; --el-rgb: 76, 200, 232; }
+        .res-fusion { --el: #f15a3b; --el-rgb: 241, 90, 59; }
+        .res-electro { --el: #bb5ae8; --el-rgb: 187, 90, 232; }
+        .res-aero { --el: #3fd6a0; --el-rgb: 63, 214, 160; }
+        .res-spectro { --el: #f2cf45; --el-rgb: 242, 207, 69; }
+        .res-havoc { --el: #e15ab2; --el-rgb: 225, 90, 178; }
     </style>
 </head>
 <body>
@@ -478,6 +511,25 @@
             </div>
         </div>
         
+        {% if item_type == 'echo' and resistance %}
+        <div class="res-panel">
+            <div class="res-head">
+                <span class="res-tick"></span>
+                <span class="res-label">元素抗性</span>
+                <span class="res-sub">RESISTANCE</span>
+                <span class="res-rule"></span>
+            </div>
+            <div class="res-track">
+                {% for r in resistance %}
+                <div class="res-node res-{{ r.key }}{% if r.hi %} hi{% endif %}">
+                    <span class="rn-name">{{ r.name }}</span>
+                    <span class="rn-val">{{ r.value }}</span>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+
         {% if footer_url %}
         <div class="footer">
             <img src="{{ footer_url }}" alt="Footer">

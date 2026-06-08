@@ -116,13 +116,13 @@ https://blog.ovoii.io/posts/notes/wwbot
 本仓库仅允许正常、可沟通、具有良知的个体部署，原因：https://ngabbs.com/read.php?tid=45654606 以及：[link](./assets/0428.md)。
 
 ## 支持设备列表：
-win_amd64: python3.10-3.13<br>
+win_amd64: python3.10-3.14<br>
 win_arm64: not yet<br>
-linux_x86_64: python3.10-3.13<br>
-linux_aarch64: python3.10-3.13<br>
-macos_intel: python3.10-3.13<br>
-macos_apple: python3.10-3.13<br>
-android_termux: python3.10-3.13<br>
+linux_x86_64: python3.10-3.14<br>
+linux_aarch64: python3.10-3.14<br>
+macos_intel: python3.10-3.14<br>
+macos_apple: python3.10-3.14<br>
+android_termux: python3.10-3.14<br>
 
 **！本插件所含构建没有任何风险后门！本插件所含构建只读取gsuid_core目录下的文件，只请求非构建部分显示的域名！请随意进行流量检查和读写检查！**
 

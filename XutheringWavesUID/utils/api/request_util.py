@@ -16,6 +16,7 @@ from gsuid_core.logger import logger
 from ..util import (
     get_public_ip,
     send_master_info,
+    send_master_info_maintenance,
     generate_random_string,
 )
 
@@ -165,7 +166,13 @@ class KuroApiResp(BaseModel, Generic[T]):
     def _post_validate(self) -> "KuroApiResp[T]":
         if check_send_master_info(self.code, self.msg, self.data):
             try:
-                asyncio.get_running_loop().create_task(send_master_info(self.msg))
+                # 系统维护提示走单独的长 cd, 其余走默认 cd
+                sender = (
+                    send_master_info_maintenance
+                    if self.is_server_maintenance
+                    else send_master_info
+                )
+                asyncio.get_running_loop().create_task(sender(self.msg))
             except RuntimeError:
                 pass
         return self

@@ -1,4 +1,3 @@
-import copy
 import time
 import asyncio
 from typing import Union, Optional
@@ -13,29 +12,22 @@ from gsuid_core.models import Event
 from gsuid_core.utils.image.convert import convert_img
 
 from .rank_avatar import get_avatar
-from .rank_badge import draw_rank_badge
+from .rank_badge import draw_bot_name_badge, draw_rank_badge
 from ..utils.util import get_version, hide_uid
 from ..utils.image import (
     RED,
     GREY,
-    AMBER,
-    WAVES_VOID,
     CHAIN_COLOR,
     SPECIAL_GOLD,
-    WAVES_MOLTEN,
-    WAVES_SIERRA,
-    WAVES_MOONLIT,
-    WAVES_FREEZING,
-    WAVES_LINGERING,
     WEAPON_RESONLEVEL_COLOR,
     add_footer,
     get_attribute,
     crop_center_img,
     get_square_weapon,
+    get_sonata_label,
     get_custom_waves_bg,
-    get_attribute_effect,
     get_role_pile_default,
-    parse_bot_color_config,
+    get_sonata_effect_image,
 )
 from ..utils.api.wwapi import (
     GET_RANK_URL,
@@ -48,6 +40,8 @@ from ..utils.name_convert import alias_to_char_name, char_name_to_char_id
 from ..utils.ascension.char import get_char_model
 from ..utils.database.models import WavesBind
 from ..wutheringwaves_config import WutheringWavesConfig
+from ..utils.damage.modal import get_modal_options, get_role_modal
+from .draw_rank_card import find_role_detail
 from ..utils.ascension.weapon import get_weapon_model
 from ..utils.fonts.waves_fonts import (
     waves_font_14,
@@ -77,17 +71,6 @@ char_mask2 = char_mask2.resize((1300, char_mask2.size[1]))
 logo_img = Image.open(TEXT_PATH / "logo_small_2.png")
 
 
-BOT_COLOR = [
-    WAVES_MOLTEN,
-    AMBER,
-    WAVES_VOID,
-    WAVES_SIERRA,
-    WAVES_FREEZING,
-    WAVES_LINGERING,
-    WAVES_MOONLIT,
-]
-
-
 async def get_rank(item: RankItem) -> Optional[RankInfoResponse]:
     WavesToken = WutheringWavesConfig.get_config("WavesToken").data
 
@@ -114,7 +97,7 @@ async def get_rank(item: RankItem) -> Optional[RankInfoResponse]:
 
 
 # TODO: PIL 卸到线程池 (loop 内 await get_attribute / get_attribute_effect / get_square_weapon 多处, 需要批量预取重构)
-async def draw_all_rank_card(bot: Bot, ev: Event, char: str, rank_type: str, pages: int) -> Union[str, bytes]:
+async def draw_all_rank_card(bot: Bot, ev: Event, char: str, rank_type: str, pages: int, modal: str = "") -> Union[str, bytes]:
     is_self_ck = False
     self_uid = ""
     try:
@@ -138,6 +121,11 @@ async def draw_all_rank_card(bot: Bot, ev: Event, char: str, rank_type: str, pag
 
     rank_type_num = 2 if rank_type == "伤害" else 1
     page_num = 20
+    if not modal:
+        options = get_modal_options(int(char_id))
+        if options:
+            role = await find_role_detail(self_uid, char_id) if self_uid else None
+            modal = get_role_modal(role) if role else options[0]["key"]
     item = RankItem(
         char_id=int(char_id),
         page=pages,
@@ -145,6 +133,7 @@ async def draw_all_rank_card(bot: Bot, ev: Event, char: str, rank_type: str, pag
         rank_type=rank_type_num,
         waves_id=self_uid,
         version=get_version(dynamic=True, waves_id=self_uid, char_id=char_id, rank_type=rank_type, pages=pages),
+        modal=modal,
     )
 
     rankInfoList = await get_rank(item)
@@ -160,10 +149,10 @@ async def draw_all_rank_card(bot: Bot, ev: Event, char: str, rank_type: str, pag
     totalNum = len([rank for rank in rankInfoList.data.details if rank.rank > 0])
     title_h = 500
     bar_star_h = 110
-    text_bar_h = 130
+    modal_options = get_modal_options(int(char_id))
+    text_bar_h = 170 if modal_options else 130
     h = title_h + totalNum * bar_star_h + text_bar_h + 80
     card_img = get_custom_waves_bg(1300, h, "bg3")
-    # card_img_draw = ImageDraw.Draw(card_img)
 
     text_bar_img = Image.new("RGBA", (1300, text_bar_h), color=(0, 0, 0, 0))
     text_bar_draw = ImageDraw.Draw(text_bar_img)
@@ -177,15 +166,19 @@ async def draw_all_rank_card(bot: Bot, ev: Event, char: str, rank_type: str, pag
 
     # 左侧标题
     text_bar_draw.text((40, 60), "上榜条件", GREY, waves_font_28, "lm")
-    text_bar_draw.text((185, 50), "1. 声骸套装5件套", SPECIAL_GOLD, waves_font_20, "lm")
+    text_bar_draw.text((185, 50), "1. 声骸套装为常规套装", SPECIAL_GOLD, waves_font_20, "lm")
     text_bar_draw.text((185, 85), "2. 登录用户&刷新面板", SPECIAL_GOLD, waves_font_20, "lm")
+    if modal_options:
+        from ..wutheringwaves_config import PREFIX
+        names = "/".join(o["name"] for o in modal_options)
+        text_bar_draw.text((185, 120), f"支持模态: {PREFIX}{char}总排行 {names}", SPECIAL_GOLD, waves_font_20, "lm")
 
     # 备注
     if rank_type == "伤害":
         temp_notes = "排行标准：以期望伤害（计算暴击率的伤害，不代表实际伤害) 为排序的排名"
     else:
         temp_notes = "排行标准：以声骸分数（声骸评分高，不代表实际伤害高) 为排序的排名"
-    text_bar_draw.text((1260, 100), temp_notes, SPECIAL_GOLD, waves_font_16, "rm")
+    text_bar_draw.text((1260, text_bar_h - 30), temp_notes, SPECIAL_GOLD, waves_font_16, "rm")
 
     card_img.alpha_composite(text_bar_img, (0, title_h))
 
@@ -199,10 +192,6 @@ async def draw_all_rank_card(bot: Bot, ev: Event, char: str, rank_type: str, pag
     ]
     results = await asyncio.gather(*tasks)
 
-    bot_color = copy.deepcopy(BOT_COLOR)
-    bot_color_map = parse_bot_color_config(
-        WutheringWavesConfig.get_config("BotColorMap").data
-    )
     avg_num = 0
     damage_name = ""
     valid_pairs = [(rank, avatar) for rank, avatar in zip(rankInfoList.data.details, results) if rank.rank > 0]
@@ -248,10 +237,9 @@ async def draw_all_rank_card(bot: Bot, ev: Event, char: str, rank_type: str, pag
 
         # 合鸣效果
         if rank.sonata_name:
-            effect_image = await get_attribute_effect(rank.sonata_name)
-            effect_image = effect_image.resize((50, 50))
+            effect_image = await get_sonata_effect_image(rank.sonata_name, 50)
             bar_bg.alpha_composite(effect_image, (790, 15))
-            sonata_name = rank.sonata_name
+            sonata_name = get_sonata_label(rank.sonata_name)
         else:
             sonata_name = "合鸣效果"
 
@@ -321,18 +309,7 @@ async def draw_all_rank_card(bot: Bot, ev: Event, char: str, rank_type: str, pag
         # bot主人名字
         botName = rank.alias_name if rank.alias_name else ""
         if botName:
-            color = (54, 54, 54)
-            if botName in bot_color_map:
-                color = bot_color_map[botName]
-            elif bot_color:
-                color = bot_color.pop(0)
-                bot_color_map[botName] = color
-
-            info_block = Image.new("RGBA", (200, 30), color=(255, 255, 255, 0))
-            info_block_draw = ImageDraw.Draw(info_block)
-            info_block_draw.rounded_rectangle([0, 0, 200, 30], radius=6, fill=color + (int(0.6 * 255),))
-            info_block_draw.text((100, 15), f"bot: {botName}", "white", waves_font_18, "mm")
-            bar_bg.alpha_composite(info_block, (350, 65))
+            draw_bot_name_badge(bar_bg, getattr(rank, "background", ""), botName, (346, 60))
 
         # 贴到背景
         card_img.paste(bar_bg, (0, title_h + text_bar_h + index * bar_star_h), bar_bg)

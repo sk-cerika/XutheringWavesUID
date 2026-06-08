@@ -95,3 +95,50 @@ def get_sonata_detail(sonata_name: Optional[str]) -> WavesSonataResult:
         return result
 
     return WavesSonataResult(**sonata_id_data[sonata_key])
+
+
+# 组合套装规则: roleId -> 规则。某些角色(如洛可可)固定走 2+2 双套, 而非任一满件套。
+# match 关键字命中套装"2 件效果"(effect/desc) 即为候选; 命中 need 个各 >= pieces 件即成立。
+# 候选套装从 sonata 数据动态发现, 新增套装写进数据即自动纳入。
+COMBO_SONATA_RULES: Dict[int, Dict] = {
+    1606: {"label": "洛2+2", "match": ["湮灭", "攻击"], "pieces": 2, "need": 2},  # 洛可可
+    1506: {"label": "菲2+2", "match": ["衍射", "攻击"], "pieces": 2, "need": 2},  # 菲比
+}
+
+
+def get_2pc_sonata_names(keywords: List[str]) -> List[str]:
+    """返回具备 2 件效果、且 2 件 effect/desc 命中任一关键字的套装名 (排除 3 件/1 件套)。"""
+    ensure_data_loaded()
+    names = []
+    for data in sonata_id_data.values():
+        two = (data.get("set") or {}).get("2")
+        if not two:
+            continue
+        text = f"{two.get('effect', '')}{two.get('desc', '')}"
+        if any(k in text for k in keywords):
+            name = data.get("name")
+            if name:
+                names.append(name)
+    return names
+
+
+def detect_combo_sonata(role_id: Union[int, str], ph_detail: List[Dict]) -> Optional[str]:
+    """命中组合套装规则返回 '标签|套装A|套装B', 否则 None。"""
+    try:
+        rule = COMBO_SONATA_RULES.get(int(role_id))
+    except (TypeError, ValueError):
+        rule = None
+    if not rule:
+        return None
+    candidates = set(get_2pc_sonata_names(rule["match"]))
+    if not candidates:
+        return None
+    need_pieces = rule.get("pieces", 2)
+    matched: List[str] = []
+    for pd in ph_detail:
+        name = pd.get("ph_name")
+        if name in candidates and pd.get("ph_num", 0) >= need_pieces and name not in matched:
+            matched.append(name)
+    if len(matched) >= rule.get("need", 2):
+        return rule["label"] + "|" + "|".join(matched[: rule["need"]])
+    return None
