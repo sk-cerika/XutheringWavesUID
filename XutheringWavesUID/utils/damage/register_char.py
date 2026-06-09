@@ -1110,6 +1110,11 @@ class Char_1511(CharAbstract):
         # 突破协议: 标记目标降低5%防御
         attr.add_defense_reduction(0.05, f"{self.name}-欺骗程式·突破协议", "标记目标降低5%防御")
 
+        # 固有技能-进程破解【网络后门】: 丽贝卡在队伍中时同获网络后门 (条件型, 假定满2层)
+        if check_char_id(attr, 1308):
+            title = f"{self.name}-固有技能-网络后门"
+            attr.add_dmg_deepen(0.25, title, "丽贝卡同获满2层全伤害加深25%")
+
         # 四链-夜之城没有活着的传奇: 队伍附加【骇破·偏移】后(露西编队即满足),
         # 队伍中角色全属性伤害加成提升20%
         if chain >= 4:
