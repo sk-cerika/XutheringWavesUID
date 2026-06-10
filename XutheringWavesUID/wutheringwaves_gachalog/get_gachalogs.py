@@ -157,7 +157,7 @@ async def get_new_gachalog_for_file(
     new = {}
     new_count = {}
 
-    if str(full_data) == str(import_data):
+    if is_same_gachalogs(full_data, import_data):
         for gacha_name, logs in full_data.items():
             new[gacha_name] = list(logs)
             new_count[gacha_name] = 0
@@ -171,7 +171,9 @@ async def get_new_gachalog_for_file(
         gacha_log = [GachaLog(**log.model_dump()) for log in item]
         new_gacha_log = merge_gacha_logs_by_common_subarray(full_data[gacha_name], gacha_log)
         new[gacha_name] = new_gacha_log
-        new_count[gacha_name] = len(new_gacha_log)
+        full_logs = Counter(log.match_key() for log in full_data[gacha_name])
+        import_logs = Counter(log.match_key() for log in gacha_log)
+        new_count[gacha_name] = sum((import_logs - full_logs).values())
     return None, new, new_count
 
 
@@ -185,6 +187,18 @@ def count_new_gachalogs(
         import_logs = Counter(log.match_key() for log in import_data.get(gacha_name, []))
         new_count[gacha_name] = sum((import_logs - full_logs).values())
     return new_count
+
+
+def is_same_gachalogs(
+    full_data: Dict[str, List[GachaLog]],
+    import_data: Dict[str, List[GachaLog]],
+) -> bool:
+    for gacha_name in gacha_type_meta_data:
+        full_logs = Counter(log.match_key() for log in full_data.get(gacha_name, []))
+        import_logs = Counter(log.match_key() for log in import_data.get(gacha_name, []))
+        if full_logs != import_logs:
+            return False
+    return True
 
 
 def prune_gacha_backups(uid: str, type: str, limit: int = GACHA_BACKUP_LIMIT):

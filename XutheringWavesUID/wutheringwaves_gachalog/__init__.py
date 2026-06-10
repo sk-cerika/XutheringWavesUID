@@ -13,7 +13,12 @@ from gsuid_core.logger import logger
 
 from ..utils.single_flight import SingleFlightLock
 from ..utils.util import get_hide_uid_pref, hide_uid
-from .gacha_handler import fetch_mcgf_data, merge_gacha_data
+from .gacha_handler import (
+    fetch_mcgf_data,
+    fetch_xhh_data,
+    merge_gacha_data,
+    merge_xhh_data,
+)
 from .get_gachalogs import (
     save_gachalogs,
     export_gachalogs,
@@ -45,6 +50,13 @@ sv_delete_import_gacha_log = SV("waves删除抽卡导入", pm=0)
 sv_gacha_web = SV("waves抽卡网页")
 
 ERROR_MSG_NOTIFY = f"请给出正确的抽卡记录链接, 可发送【{PREFIX}抽卡帮助】"
+ERROR_MSG_IMPORT_TYPE = (
+    "请指定导入类型，支持的方式：\n"
+    f"{PREFIX}导入工坊抽卡记录+uid\n"
+    f"{PREFIX}导入小黑盒抽卡记录+uid\n"
+    "请将【+uid】替换为对应的9位数字UID"
+)
+IMPORT_UID_RE = re.compile(r"^\s*\+?\s*(\d{9})\s*$")
 
 
 def _migrate_legacy_gacha_backups():
@@ -118,9 +130,97 @@ _migrate_legacy_gacha_backups()
 
 # 导入抽卡记录的触发锁
 gacha_import_lock = SingleFlightLock()
+gacha_json_import_lock = SingleFlightLock()
 
 
-@sv_get_gachalog_by_link.on_command(("导入抽卡链接", "导入抽卡记录"), block=True)
+def _is_bot_self_event(ev: Event) -> bool:
+    bot_self_id = str(ev.bot_self_id or "")
+    if not bot_self_id:
+        return False
+
+    sender_ids = {str(ev.user_id or "")}
+    sender = getattr(ev, "sender", None) or {}
+    for key in ("user_id", "userId", "id", "sender_id", "uin", "open_id"):
+        value = sender.get(key)
+        if value:
+            sender_ids.add(str(value))
+
+    return bot_self_id in sender_ids
+
+
+def _parse_import_uid(text: str):
+    match = IMPORT_UID_RE.fullmatch(text)
+    return match.group(1) if match else None
+
+
+async def _merge_mcgf_gacha(bot: Bot, ev: Event, uid: str, target_uid: str):
+    try:
+        latest_data = await fetch_mcgf_data(target_uid)
+        if not latest_data:
+            return await bot.send("获取工坊数据失败或数据为空")
+
+        export_res = await export_gachalogs(uid)
+        original_data = {"info": {}, "list": []}
+
+        if export_res["retcode"] == "ok":
+            import aiofiles
+
+            async with aiofiles.open(export_res["url"], "r", encoding="utf-8") as f:
+                original_data = json.loads(await f.read())
+
+        if len(original_data.get("list", [])) == 0:
+            return await bot.send(
+                "当前抽卡记录无有效记录，无法对齐导入数据，请先用链接导入抽卡记录后再尝试合并！"
+            )
+
+        if not original_data["info"].get("uid") == latest_data["data"].get("uid"):
+            return await bot.send("导入数据UID与当前UID不匹配，无法合并！")
+        merged_data = await asyncio.to_thread(
+            merge_gacha_data, original_data, latest_data
+        )
+
+        merged_json_str = json.dumps(merged_data, ensure_ascii=False)
+        im = await import_gachalogs(
+            ev, merged_json_str, "json", uid, force_overwrite=True
+        )
+        if im.startswith("🌱"):
+            await bot.send(
+                "导入仅包含早于本地记录的部分，此后请使用链接导入更新数据，"
+                "或删除抽卡记录后再次链接导入+合并！"
+            )
+        return await bot.send(im)
+
+    except Exception as e:
+        logger.exception(f"[鸣潮·抽卡导入] 工坊合并失败 uid={uid}: {e}")
+        return await bot.send("处理过程中发生错误，请稍后重试")
+
+
+@sv_get_gachalog_by_link.on_command("导入抽卡记录", block=True)
+async def send_gacha_import_type(bot: Bot, ev: Event):
+    return await bot.send(ERROR_MSG_IMPORT_TYPE)
+
+
+@sv_get_gachalog_by_link.on_command("导入工坊抽卡记录", block=True)
+async def get_gacha_log_by_mcgf(bot: Bot, ev: Event):
+    uid = await WavesBind.get_uid_by_game(ev.user_id, ev.bot_id)
+    if not uid:
+        return await bot.send(ERROR_CODE[WAVES_CODE_103])
+
+    target_uid = _parse_import_uid(ev.text)
+    if not target_uid:
+        return await bot.send(
+            f"请带上UID，例如：{PREFIX}导入工坊抽卡记录123456789"
+        )
+
+    if not gacha_import_lock.acquire(f"{ev.user_id}_{uid}"):
+        return
+    try:
+        return await _merge_mcgf_gacha(bot, ev, uid, target_uid)
+    finally:
+        gacha_import_lock.release(f"{ev.user_id}_{uid}")
+
+
+@sv_get_gachalog_by_link.on_command("导入抽卡链接", block=True)
 async def get_gacha_log_by_link(bot: Bot, ev: Event):
     # 没有uid 就别导了吧
     uid = await WavesBind.get_uid_by_game(ev.user_id, ev.bot_id)
@@ -135,43 +235,6 @@ async def get_gacha_log_by_link(bot: Bot, ev: Event):
         raw = ev.text.strip()
         if not raw:
             return await bot.send(ERROR_MSG_NOTIFY)
-
-        # 检查是否为9位UID，若是则尝试从工坊获取并合并数据
-        if raw.isdigit() and len(raw) == 9:
-            target_uid = raw
-
-            try:
-                latest_data = await fetch_mcgf_data(target_uid)
-                if not latest_data:
-                    return await bot.send("获取工坊数据失败或数据为空")
-
-                export_res = await export_gachalogs(uid)
-                original_data = {"info": {}, "list": []}
-
-                if export_res["retcode"] == "ok":
-                    import aiofiles
-
-                    async with aiofiles.open(export_res["url"], "r", encoding="utf-8") as f:
-                        original_data = json.loads(await f.read())
-
-                if len(original_data.get("list", [])) == 0:
-                    return await bot.send("当前无抽卡记录，无法合并，请先用链接导入抽卡记录后再尝试合并！")
-
-                # 合并数据
-                if not original_data["info"].get("uid") == latest_data["data"].get("uid"):
-                    return await bot.send("导入数据UID与当前UID不匹配，无法合并！")
-                merged_data = await asyncio.to_thread(merge_gacha_data, original_data, latest_data)
-
-                # 导入合并后的数据
-                merged_json_str = json.dumps(merged_data, ensure_ascii=False)
-                im = await import_gachalogs(ev, merged_json_str, "json", uid, force_overwrite=True)
-                if im.startswith("🌱"):
-                    await bot.send("导入仅包含早于本地记录的部分，此后请使用链接导入更新数据，或删除抽卡记录后再次链接导入+合并！")
-                return await bot.send(im)
-
-            except Exception as e:
-                logger.exception(f"[鸣潮·抽卡导入] 工坊合并失败 uid={uid}: {e}")
-                return await bot.send("处理过程中发生错误，请稍后重试")
 
         text = re.sub(r'["\n\t ]+', "", raw)
         if "https://" in text:
@@ -214,6 +277,66 @@ async def get_gacha_log_by_link(bot: Bot, ev: Event):
                 await bot.send([im, MessageSegment.image(card_img)])
         else:
             await bot.send(im)
+    finally:
+        gacha_import_lock.release(f"{ev.user_id}_{uid}")
+
+
+@sv_get_gachalog_by_link.on_command("导入小黑盒抽卡记录", block=True)
+async def get_gacha_log_by_xhh(bot: Bot, ev: Event):
+    uid = await WavesBind.get_uid_by_game(ev.user_id, ev.bot_id)
+    if not uid:
+        return await bot.send(ERROR_CODE[WAVES_CODE_103])
+
+    heybox_id = _parse_import_uid(ev.text)
+    if not heybox_id:
+        return await bot.send(
+            f"请带上UID，例如：{PREFIX}导入小黑盒抽卡记录123456789"
+        )
+
+    if not gacha_import_lock.acquire(f"{ev.user_id}_{uid}"):
+        return
+    try:
+        xhh_data = await fetch_xhh_data(heybox_id)
+        if not xhh_data:
+            return await bot.send(
+                "获取小黑盒数据失败，请检查ID是否正确或该用户是否已导入鸣潮抽卡记录"
+            )
+
+        xhh_uid = str(xhh_data.get("user_info", {}).get("uid", ""))
+        if xhh_uid != uid:
+            return await bot.send(
+                f"小黑盒对应的鸣潮UID为{xhh_uid}，与当前绑定UID {uid}不匹配！"
+            )
+
+        export_res = await export_gachalogs(uid)
+        original_data = {"info": {}, "list": []}
+
+        if export_res["retcode"] == "ok":
+            import aiofiles
+
+            async with aiofiles.open(export_res["url"], "r", encoding="utf-8") as f:
+                original_data = json.loads(await f.read())
+
+        if len(original_data.get("list", [])) == 0:
+            return await bot.send(
+                "当前抽卡记录无有效记录，无法对齐导入数据，请先用链接导入抽卡记录后再尝试合并！"
+            )
+
+        merged_data = await asyncio.to_thread(merge_xhh_data, original_data, xhh_data)
+
+        merged_json_str = json.dumps(merged_data, ensure_ascii=False)
+        im = await import_gachalogs(
+            ev, merged_json_str, "json", uid, force_overwrite=True
+        )
+        if im.startswith("🌱"):
+            await bot.send(
+                "小黑盒导入仅补充早于本地记录的历史数据，不会覆盖已有记录！"
+            )
+        return await bot.send(im)
+
+    except Exception as e:
+        logger.exception(f"[鸣潮·小黑盒导入] 合并失败 uid={uid}: {e}")
+        return await bot.send("处理过程中发生错误，请稍后重试")
     finally:
         gacha_import_lock.release(f"{ev.user_id}_{uid}")
 
@@ -306,8 +429,14 @@ async def send_gacha_log_help(bot: Bot, ev: Event):
     await bot.send(im)
 
 
-@sv_import_gacha_log.on_file("json")
+@sv_import_gacha_log.on_file("json", prefix=False)
 async def get_gacha_log_by_file(bot: Bot, ev: Event):
+    if _is_bot_self_event(ev):
+        await bot.logger.info(
+            f"[鸣潮·JSON导入抽卡] 忽略机器人自身发送的JSON文件: {ev.file_name}"
+        )
+        return
+
     # 没有uid 就别导了吧
     uid = await WavesBind.get_uid_by_game(ev.user_id, ev.bot_id)
     if not uid:
@@ -318,7 +447,15 @@ async def get_gacha_log_by_file(bot: Bot, ev: Event):
         await bot.logger.info(f"[鸣潮·JSON导入抽卡] 用户 {ev.user_id} (UID:{uid}) 未登录或Cookie失效，忽略此次导入。这是为了避免被别人绑定uid后上传json覆盖真实玩家的抽卡数据")
         return
 
-    if not gacha_import_lock.acquire(f"{ev.user_id}_{uid}"):
+    json_lock_key = f"json_{uid}"
+    user_lock_key = f"{ev.user_id}_{uid}"
+    if not gacha_json_import_lock.acquire(json_lock_key):
+        await bot.logger.info(
+            f"[鸣潮·JSON导入抽卡] UID:{uid} 正在导入JSON文件，忽略并发文件: {ev.file_name}"
+        )
+        return
+    if not gacha_import_lock.acquire(user_lock_key):
+        gacha_json_import_lock.release(json_lock_key)
         return
     try:
         if ev.file and ev.file_type:
@@ -329,7 +466,8 @@ async def get_gacha_log_by_file(bot: Bot, ev: Event):
         else:
             return await bot.send("导入抽卡记录异常...")
     finally:
-        gacha_import_lock.release(f"{ev.user_id}_{uid}")
+        gacha_import_lock.release(user_lock_key)
+        gacha_json_import_lock.release(json_lock_key)
 
 
 @sv_export_json_gacha_log.on_fullmatch(("导出抽卡记录"))

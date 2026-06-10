@@ -1,8 +1,10 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 class GachaLog(BaseModel):
     """抽卡记录"""
+
+    model_config = ConfigDict(extra="allow")
 
     cardPoolType: str
     resourceId: int

@@ -1,6 +1,6 @@
 from typing import List
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 """
 {
@@ -35,6 +35,8 @@ class WWUIDGachaInfo(BaseModel):
 
 
 class WWUIDGachaItem(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
     cardPoolType: str
     resourceId: int
     qualityLevel: int
