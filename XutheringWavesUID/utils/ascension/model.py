@@ -85,7 +85,6 @@ class CharacterModel(BaseModel):
         # Updated configuration keys for Pydantic v2
         populate_by_name = True  # Replaces `allow_population_by_field_name`
         str_strip_whitespace = True  # Replaces `anystr_strip_whitespace`
-        str_min_length = 1  # Replaces `min_anystr_length`
 
     def get_max_level_stat(self) -> Stats:
         return self.stats["6"]["90"]

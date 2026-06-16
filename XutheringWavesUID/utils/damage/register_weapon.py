@@ -8,6 +8,7 @@ from .utils import (
     Spectro_Frazzle_Role_Ids,
     Glacio_Chafe_Role_Ids,
     Fusion_Burst_Role_Ids,
+    Tune_Rupture_Role_Ids,
     Tune_Strain_Role_Ids,
     Hack_Shifting_Role_Ids,
     temp_atk,
@@ -803,8 +804,8 @@ class Weapon_21020076(WeaponAbstract):
         isGroup: bool = False,
     ):
 
-        # 附加震谐·偏移或聚爆效应时
-        if attr.env_tune_rupture or attr.env_fusion_burst:
+        # 附加震谐·偏移或聚爆效应时 (持有者能附加震谐/聚爆)
+        if check_char_id(attr, Tune_Rupture_Role_Ids) or check_char_id(attr, Fusion_Burst_Role_Ids):
             if attr.char_damage == liberation_damage:
                 dmg = f"{self.param(1)}"
                 title = self.get_title()
@@ -1042,7 +1043,9 @@ class Weapon_21030046(WeaponAbstract):
         attr.add_dmg_bonus(calc_percent_expression(dmg), title, msg)
 
     def env_tune_shifting(self, attr: DamageAttribute, isGroup: bool = False):
-        """震谐·偏移"""
+        """震谐·偏移 (持有者为琳奈; 团队场景放行, 经琳奈 _do_buff 给队友)"""
+        if not (isGroup or (attr.role and attr.role.role.roleId == 1509)):
+            return
         dmg = f"{self.param(3)}*{self.param(4)}"
         title = self.get_title()
         msg = f"普攻期间附加【震谐/集谐·偏移】时，全队伤害提高{dmg}"
@@ -1506,8 +1509,8 @@ class Weapon_21040056(WeaponAbstract):
             msg = f"造成普攻伤害后，衍射伤害加成提升{dmg}"
             attr.add_dmg_bonus(calc_percent_expression(dmg), title, msg)
 
-        # 每次为敌方怪物附加【集谐·偏移】后，普攻伤害加深，且普攻伤害无视目标防御
-        if attr.env_tune_strain and attr.char_damage == attack_damage:
+        # 每次为敌方怪物附加【集谐·偏移】后，普攻伤害加深，且普攻伤害无视目标防御 (持有者能附加集谐)
+        if check_char_id(attr, Tune_Strain_Role_Ids) and attr.char_damage == attack_damage:
             dmg = f"{self.param(3)}"
             title = self.get_title()
             msg = f"附加【集谐·偏移】后，普攻伤害加深{dmg}"

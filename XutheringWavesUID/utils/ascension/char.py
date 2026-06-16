@@ -198,4 +198,9 @@ def get_char_model(char_id: Union[str, int]) -> Optional[CharacterModel]:
     ensure_data_loaded()
     if str(char_id) not in char_id_data:
         return None
-    return CharacterModel(**char_id_data[str(char_id)])
+    model = CharacterModel(**char_id_data[str(char_id)])
+    if not model.name:
+        from ..name_convert import easy_id_to_name
+
+        model.name = easy_id_to_name(str(char_id))
+    return model

@@ -22,7 +22,7 @@ from .expression_ctx import WavesCharRank, get_waves_char_rank, _compute_one_cha
 from ..wutheringwaves_config import PREFIX, WutheringWavesConfig
 from .resource.RESOURCE_PATH import PLAYER_PATH, CACHE_PATH
 from .char_info_utils import get_all_roleid_detail_info_int
-from .char_state import record_refresh_batch, bump_single_refresh, reset_single_refresh
+from .char_state import record_refresh_batch
 from .api.model import AccountBaseInfo as _AccountBaseInfo
 
 _BG_TASKS: set = set()
@@ -34,6 +34,35 @@ async def refresh_lock(uid: str, scope: str):
     lock = _refresh_locks.setdefault((uid, scope), asyncio.Lock())
     async with lock:
         yield
+
+
+def schedule_silent_diff_refresh(
+    ev: Event,
+    uid: str,
+    user_id: str,
+    ck: str,
+    is_self_ck: bool,
+    is_self: bool,
+    role_ids: List[int],
+):
+    """后台静默补全本地缺失角色面板, 走正常保存+上传链路"""
+
+    async def _silent_refresh():
+        try:
+            async with refresh_lock(uid, "single"):
+                await refresh_char(
+                    ev, uid, user_id, ck=ck,
+                    is_self_ck=is_self_ck,
+                    refresh_type=[str(rid) for rid in role_ids],
+                    is_self=is_self,
+                    is_silent_diff=True,
+                )
+        except Exception as e:
+            logger.warning(f"[鸣潮·角色状态] 静默补全刷新失败 uid={uid}: {e}")
+
+    task = asyncio.create_task(_silent_refresh())
+    _BG_TASKS.add(task)
+    task.add_done_callback(_BG_TASKS.discard)
 
 
 async def save_base_info_cache(uid: str, account_info: _AccountBaseInfo):
@@ -368,6 +397,7 @@ async def refresh_char(
     is_self_ck: bool = False,
     refresh_type: Union[str, List[str]] = "all",
     is_self: bool = True,
+    is_silent_diff: bool = False,
 ) -> Union[str, List]:
     waves_datas = []
     if not ck:
@@ -399,7 +429,8 @@ async def refresh_char(
         elif str(refresh_type).isdigit():
             request_role_ids = [int(refresh_type)]
 
-    if request_role_ids:
+    silent_diff_ids: List[int] = []
+    if request_role_ids and not is_silent_diff:
         local_roles = await get_all_roleid_detail_info_int(uid)
         has_local_role = bool(local_roles and any(rid in local_roles for rid in request_role_ids))
         if not has_local_role and is_self_ck:
@@ -408,7 +439,18 @@ async def refresh_char(
                 return owned_role_info.throw_msg()
             owned_role_info = OwnedRoleInfoResponse.model_validate(owned_role_info.data)
             owned_role_ids = {r.roleId for r in owned_role_info.roleInfoList}
+            local_role_ids = set(local_roles) if local_roles else set()
+            silent_diff_ids = [
+                rid for rid in owned_role_ids
+                if rid not in local_role_ids
+                and rid not in request_role_ids
+                and rid not in SPECIAL_CHAR_INT_ALL
+            ]
             if not any(rid in owned_role_ids for rid in request_role_ids):
+                if silent_diff_ids:
+                    schedule_silent_diff_refresh(
+                        ev, uid, user_id, ck, is_self_ck, is_self, silent_diff_ids
+                    )
                 return error_reply(code=-110, msg="未拥有该角色，无法刷新面板")
 
     semaphore = await semaphore_manager.get_semaphore()
@@ -520,32 +562,8 @@ async def refresh_char(
         is_self=is_self,
     )
 
-    if is_self and refresh_type != "all" and waves_datas:
-        try:
-            n = await bump_single_refresh(uid)
-            if n > 0 and n % 50 == 0:
-                async def _auto_full_refresh():
-                    try:
-                        async with refresh_lock(uid, "all"):
-                            await refresh_char(
-                                ev, uid, user_id, ck=ck,
-                                is_self_ck=is_self_ck, refresh_type="all", is_self=is_self,
-                            )
-                        from ..wutheringwaves_charinfo.draw_refresh_char_card import (
-                            set_cache_refresh_card,
-                        )
-                        set_cache_refresh_card(user_id, uid, is_single_refresh=False)
-                    except Exception as e:
-                        logger.warning(f"[鸣潮·角色状态] 自动全量刷新失败 uid={uid}: {e}")
-
-                asyncio.create_task(_auto_full_refresh())
-        except Exception as e:
-            logger.warning(f"[鸣潮·角色状态] 单刷计数失败 uid={uid}: {e}")
-    elif is_self and refresh_type == "all" and waves_datas:
-        try:
-            await reset_single_refresh(uid)
-        except Exception as e:
-            logger.warning(f"[鸣潮·角色状态] 单刷计数重置失败 uid={uid}: {e}")
+    if silent_diff_ids and waves_datas:
+        schedule_silent_diff_refresh(ev, uid, user_id, ck, is_self_ck, is_self, silent_diff_ids)
 
     if not waves_datas:
         if refresh_type == "all":

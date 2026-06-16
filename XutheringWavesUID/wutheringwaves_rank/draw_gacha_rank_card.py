@@ -55,15 +55,18 @@ class GachaRankCard:
         # 总抽数
         self.total_count = char_pool.get("total", 0) + weapon_pool.get("total", 0)
 
-        # 获取角色金数和武器金数（直接从 gachaStats 中读取，不加权）
+        # 角色/武器金数（含歪到常驻，仅展示用）
         self.char_gold = char_pool.get("char_gold", 0)
         self.weapon_gold = weapon_pool.get("weapon_gold", 0)
         self.gold_total = self.char_gold + self.weapon_gold
 
-        # 计算加权抽数：使用实际投入加权公式
-        denominator = 81 * self.char_gold + 54 * self.weapon_gold
+        # 限定金数（UP金），加权按每UP期望抽数(角色81/武器54)计
+        self.char_up = char_pool.get("up_count", 0)
+        self.weapon_up = weapon_pool.get("up_count", 0)
+
+        denominator = 81 * self.char_up + 54 * self.weapon_up
         if denominator > 0:
-            self.weighted = (self.char_avg * self.char_gold + self.weapon_avg * self.weapon_gold) / denominator * 100
+            self.weighted = (self.char_avg * self.char_up + self.weapon_avg * self.weapon_up) / denominator * 100
         else:
             self.weighted = 1000
 

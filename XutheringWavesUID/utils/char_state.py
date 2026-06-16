@@ -104,29 +104,6 @@ async def record_refresh_batch(uid: str, changed_ids, unchanged_ids) -> bool:
     return await save_state(uid, state)
 
 
-async def bump_single_refresh(uid: str) -> int:
-    """累计 per-uid 单角色刷新次数, 返回最新值; 失败返回 -1。"""
-    state = await load_state(uid)
-    if state is None:
-        return -1
-    n = int(state.get("single_refresh_total", 0)) + 1
-    state["single_refresh_total"] = n
-    if not await save_state(uid, state):
-        return -1
-    return n
-
-
-async def reset_single_refresh(uid: str) -> bool:
-    """全量刷新后重置单刷计数; 失败返回 False。"""
-    state = await load_state(uid)
-    if state is None:
-        return False
-    if not state.get("single_refresh_total"):
-        return True
-    state["single_refresh_total"] = 0
-    return await save_state(uid, state)
-
-
 # ─── 跨函数透传 advice 文本 (key=id(ev), pop-once) ────────────────────
 
 _PENDING_ADVICE: Dict[int, str] = {}

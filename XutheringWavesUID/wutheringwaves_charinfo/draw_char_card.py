@@ -236,6 +236,7 @@ async def ph_card_draw(
     phantom_temp.alpha_composite(banner3, dest=(0, 0))
 
     from .role_info_change import ensure_default_modal
+    from ..utils.damage.modal import get_role_modal
     ensure_default_modal(role_detail)
 
     ph_0 = Image.open(TEXT_PATH / "ph_0.png")
@@ -252,6 +253,7 @@ async def ph_card_draw(
             calc.phantom_card,
             role_detail.role.roleName,
             role_detail.role.roleId,
+            get_role_modal(role_detail),
         )
 
         for i, _phantom in enumerate(equipPhantomList):

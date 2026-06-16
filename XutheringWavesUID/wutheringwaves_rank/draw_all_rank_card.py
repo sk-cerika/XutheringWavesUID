@@ -60,6 +60,7 @@ from ..utils.fonts.waves_fonts import (
 )
 from ..utils.resource.constant import ATTRIBUTE_ID_MAP, SPECIAL_CHAR_NAME
 from ..utils.imagetool import get_weapon_icon_bg
+from ..utils.score import get_panel_score_grade
 
 TEXT_PATH = Path(__file__).parent / "texture2d"
 TITLE_I = Image.open(TEXT_PATH / "title.png")
@@ -277,7 +278,8 @@ async def draw_all_rank_card(bot: Bot, ev: Event, char: str, rank_type: str, pag
         _score_val = rank.overall_score if rank_type == "综合评分" else rank.phantom_score
         _score_label = "综合评分" if rank_type == "综合评分" else "声骸分数"
         if _score_val > 0.0:
-            score_bg = Image.open(TEXT_PATH / f"score_{rank.phantom_score_bg}.png")
+            _score_grade = get_panel_score_grade(_score_val) if rank_type == "综合评分" else rank.phantom_score_bg
+            score_bg = Image.open(TEXT_PATH / f"score_{_score_grade}.png")
             bar_bg.alpha_composite(score_bg, (545, 2))
             bar_star_draw.text(
                 (707, 45),

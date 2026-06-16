@@ -53,8 +53,8 @@ ERROR_MSG_NOTIFY = f"请给出正确的抽卡记录链接, 可发送【{PREFIX}�
 ERROR_MSG_IMPORT_TYPE = (
     "请指定导入类型，支持的方式：\n"
     f"{PREFIX}导入工坊抽卡记录+uid\n"
-    f"{PREFIX}导入小黑盒抽卡记录+uid\n"
-    "请将【+uid】替换为对应的9位数字UID"
+    f"{PREFIX}导入小黑盒抽卡记录+小黑盒ID\n"
+    "请将【+uid】替换为对应的9位数字UID，或将【+小黑盒ID】替换为对应的小黑盒ID"
 )
 IMPORT_UID_RE = re.compile(r"^\s*\+?\s*(\d{9})\s*$")
 
@@ -287,10 +287,10 @@ async def get_gacha_log_by_xhh(bot: Bot, ev: Event):
     if not uid:
         return await bot.send(ERROR_CODE[WAVES_CODE_103])
 
-    heybox_id = _parse_import_uid(ev.text)
+    heybox_id = ev.text.strip()
     if not heybox_id:
         return await bot.send(
-            f"请带上UID，例如：{PREFIX}导入小黑盒抽卡记录123456789"
+            f"请带上小黑盒ID，例如：{PREFIX}导入小黑盒抽卡记录12345678"
         )
 
     if not gacha_import_lock.acquire(f"{ev.user_id}_{uid}"):
