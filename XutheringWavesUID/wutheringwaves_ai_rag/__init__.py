@@ -227,13 +227,13 @@ def _register_weapons(aliases: Dict[str, List[str]]) -> List[Tuple]:
 
         param = d.get("param") or []
         if param and isinstance(param, list):
-            parts.append("\n## 精炼数值表（精炼 1 → 5）")
+            parts.append("\n## 谐振数值表（谐振 1 → 5）")
             for i, row in enumerate(param):
                 if isinstance(row, list) and row:
                     parts.append(f"- 参数{i}: {' / '.join(str(x) for x in row)}")
 
         ai_entity(_kp(f"ww_weapon_{wid}", f"{name} 武器", "\n".join(parts),
-                      tags + ["精炼", "数值表"]))
+                      tags + ["谐振", "数值表"]))
         summary.append((wid, name, star, wtype))
     return summary
 

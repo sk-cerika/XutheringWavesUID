@@ -29,9 +29,10 @@ from ..utils.image import (
     get_waves_bg,
     get_event_avatar,
     get_square_avatar_path,
+    get_skill_branch_emblem_b64,
     CHAIN_COLOR,
 )
-from ..utils.char_info_utils import get_all_roleid_detail_info, lookup_chain
+from ..utils.char_info_utils import get_all_roleid_detail_info, get_rover_detail_map, lookup_chain_with_rover
 from .period import get_tower_period_number
 from .draw_abyss_card_pil import (
     draw_abyss_img as draw_abyss_img_pil,
@@ -101,6 +102,7 @@ async def draw_abyss_img(ev: Event, uid: str, user_id: str) -> Union[bytes, str]
         avatar_url = pil_to_b64(avatar, quality=75)
 
         role_detail_info_map = await get_all_roleid_detail_info(uid)
+        rover_map = await get_rover_detail_map(uid)
 
         role_info_res = await waves_api.get_role_info(uid, ck)
         role_info_list = []
@@ -142,7 +144,7 @@ async def draw_abyss_img(ev: Event, uid: str, user_id: str) -> Union[bytes, str]
                         if role:
                             role_level = role.level
 
-                        chain_num, chain_name = lookup_chain(role_detail_info_map, _role.roleId)
+                        chain_num, chain_name, hide_detail = lookup_chain_with_rover(role_detail_info_map, rover_map, _role.roleId)
 
                         role_icon_b64 = img_to_b64(get_square_avatar_path(_role.roleId), quality=75, bake=True, cover_size=(128, 128))
 
@@ -152,7 +154,9 @@ async def draw_abyss_img(ev: Event, uid: str, user_id: str) -> Union[bytes, str]
                             "star": star_level,
                             "chain_num": chain_num,
                             "chain_name": chain_name,
+                            "hide_detail": hide_detail,
                             "icon_url": role_icon_b64,
+                            "branch_icon": get_skill_branch_emblem_b64(_role.roleId, _role.skillBranchIndex),
                         })
 
                 floors_data.append({

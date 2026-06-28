@@ -13,7 +13,7 @@ from gsuid_core.utils.image.convert import convert_img
 
 from .rank_avatar import get_avatar
 from .rank_badge import draw_bot_name_badge, draw_rank_badge
-from ..utils.util import get_version, hide_uid
+from ..utils.util import get_version, hide_uid, build_uid_masker
 from ..utils.image import (
     RED,
     GREY,
@@ -244,6 +244,10 @@ async def draw_all_rank_card(bot: Bot, ev: Event, char: str, rank_type: str, pag
     ]
     results = await asyncio.gather(*tasks)
 
+    _mask_uid = None
+    if is_group:
+        _mask_uid = await build_uid_masker([(d.waves_id, d.user_id) for d in details], ev.bot_id)
+
     avg_num = 0
     damage_name = ""
     valid_pairs = [(rank, avatar) for rank, avatar in zip(details, results) if rank.rank > 0]
@@ -330,7 +334,7 @@ async def draw_all_rank_card(bot: Bot, ev: Event, char: str, rank_type: str, pag
         _y = 120
         wrc_fill = WEAPON_RESONLEVEL_COLOR[rank.weapon_reson_level] + (int(0.8 * 255),)
         weapon_bg_temp_draw.rounded_rectangle([_x - 15, _y - 15, _x + 50, _y + 15], radius=7, fill=wrc_fill)
-        weapon_bg_temp_draw.text((_x, _y), f"精{rank.weapon_reson_level}", "white", waves_font_24, "lm")
+        weapon_bg_temp_draw.text((_x, _y), f"{rank.weapon_reson_level}阶", "white", waves_font_24, "lm")
 
         weapon_bg_temp.alpha_composite(weapon_icon_bg, dest=(45, 0))
 
@@ -359,7 +363,11 @@ async def draw_all_rank_card(bot: Bot, ev: Event, char: str, rank_type: str, pag
         uid_color = "white"
         if is_self_ck and self_uid == rank.waves_id:
             uid_color = RED
-        bar_star_draw.text((350, 40), f"特征码: {hide_uid(rank.waves_id)}", uid_color, waves_font_20, "lm")
+        if is_group:
+            _uid_text = _mask_uid(rank.waves_id, rank.user_id)
+        else:
+            _uid_text = hide_uid(rank.waves_id, user_pref="on" if rank.hide_uid else "")
+        bar_star_draw.text((350, 40), f"特征码: {_uid_text}", uid_color, waves_font_20, "lm")
 
         # bot主人名字
         botName = rank.alias_name if rank.alias_name else ""

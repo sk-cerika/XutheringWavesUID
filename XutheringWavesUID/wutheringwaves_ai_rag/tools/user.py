@@ -5,10 +5,8 @@
 - 磁盘: `PLAYER_PATH/<uid>/rawData.json` (角色展柜) / `charListData.json` (评分缓存) / `baseInfo.json` (账号总览)
 """
 
-import json
 from typing import Any, List, Optional
 
-import aiofiles
 from pydantic_ai import RunContext
 
 from gsuid_core.logger import logger
@@ -58,15 +56,8 @@ async def _resolve_user_default_uid(ev) -> Optional[str]:
 async def _read_player_json(uid, filename: str) -> Optional[Any]:
     if not _validate_uid(uid):
         return None
-    path = PLAYER_PATH / str(uid) / filename
-    if not path.exists():
-        return None
-    try:
-        async with aiofiles.open(path, "r", encoding="utf-8") as f:
-            return json.loads(await f.read())
-    except Exception as e:
-        logger.warning(f"[鸣潮·AI工具] read {path}: {e}")
-        return None
+    from ...utils.player_store import read_player_json
+    return await read_player_json(PLAYER_PATH / str(uid) / filename)
 
 
 def _score_rating(score: float) -> str:
@@ -134,7 +125,7 @@ async def get_user_wuwa_char_list(
     logger.info(
         f"[鸣潮·AI工具] get_user_wuwa_char_list 入口 uid={uid!r} target_user_id={target_user_id!r}"
     )
-    """查询某 UID 的鸣潮角色列表（已在展柜或绑定 cookie 拉取过），含等级/共鸣链/武器/精炼。
+    """查询某 UID 的鸣潮角色列表（已在展柜或绑定 cookie 拉取过），含等级/共鸣链/武器/谐振。
 
     数据来自 PLAYER_PATH/<uid>/rawData.json（XW 缓存）。
     用于回答「我有哪些角色 / 我练到哪几个了 / 列出我的角色」。
@@ -144,7 +135,7 @@ async def get_user_wuwa_char_list(
         target_user_id: 可选，目标用户 user_id（QQ 号）。和 uid 二选一即可，uid 优先。
 
     Returns:
-        角色 Markdown 表格 (名字 / 等级 / 共鸣链 / 武器 + 精炼)。
+        角色 Markdown 表格 (名字 / 等级 / 共鸣链 / 武器 + 谐振)。
     """
     ev = ctx.deps.ev if ctx and ctx.deps else None
     target_uid = uid
@@ -175,14 +166,14 @@ async def get_user_wuwa_char_list(
         )
 
     parts = [f"UID {target_uid} 共 {len(role_map)} 个角色:"]
-    parts.append("| 角色 | 等级 | 共鸣链 | 武器 | 精炼 |")
+    parts.append("| 角色 | 等级 | 共鸣链 | 武器 | 谐振 |")
     parts.append("|---|---|---|---|---|")
     items = sorted(role_map.values(), key=lambda r: r.level, reverse=True)
     for r in items:
         chain_num = r.get_chain_num()
         weapon = r.weaponData.weapon.weaponName if r.weaponData and r.weaponData.weapon else "-"
         reson = r.weaponData.resonLevel if r.weaponData else None
-        reson_str = f"精{reson}" if reson else "-"
+        reson_str = f"{reson}阶" if reson else "-"
         parts.append(f"| {r.role.roleName} | Lv{r.level} | {chain_num}链 | {weapon} | {reson_str} |")
     return "\n".join(parts)
 
@@ -198,7 +189,7 @@ async def get_user_wuwa_char_detail(
     logger.info(
         f"[鸣潮·AI工具] get_user_wuwa_char_detail 入口 char_name={char_name!r} uid={uid!r}"
     )
-    """查询某 UID 某角色的完整面板详情（等级 / 共鸣链 / 武器精炼 / 技能等级 / 装备的 5 个声骸）。
+    """查询某 UID 某角色的完整面板详情（等级 / 共鸣链 / 武器谐振 / 技能等级 / 装备的 5 个声骸）。
 
     用于回答「我的长离是几链 / 长离武器是啥 / 长离技能等级」。
 
@@ -247,7 +238,7 @@ async def get_user_wuwa_char_detail(
         w = target.weaponData.weapon
         lines.append(
             f"- 武器: {w.weaponName} (Lv{target.weaponData.level}, "
-            f"突破{target.weaponData.breach or '?'}, 精{target.weaponData.resonLevel or '?'})"
+            f"突破{target.weaponData.breach or '?'}, {target.weaponData.resonLevel or '?'}阶)"
         )
     skill_parts = []
     for skill_data in target.get_skill_list():

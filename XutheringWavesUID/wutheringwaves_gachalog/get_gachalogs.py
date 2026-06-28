@@ -8,7 +8,8 @@ from pathlib import Path
 from datetime import datetime
 
 import msgspec
-import aiofiles
+import aiohttp
+from aiohttp import TCPConnector
 
 from gsuid_core.logger import logger
 from gsuid_core.models import Event
@@ -20,6 +21,7 @@ from ..utils.util import get_hide_uid_pref, hide_uid
 from ..utils.waves_api import waves_api
 from .model_for_waves_plugin import WavesPluginGacha
 from ..utils.resource.RESOURCE_PATH import GACHA_BACKUP_PATH, PLAYER_PATH
+from ..utils.player_store import read_player_json, write_player_json, player_json_exists, write_gz_json
 
 GACHA_BACKUP_LIMIT = 10
 
@@ -28,13 +30,15 @@ gacha_type_meta_data = {
     "武器精准调谐": "2",
     "角色调谐（常驻池）": "3",
     "武器调谐（常驻池）": "4",
+    "角色忆旅唤取": "12",
+    "武器忆旅唤取": "13",
+    "角色联动唤取": "10",
+    "武器联动唤取": "11",
     "新手调谐": "5",
     "新手自选唤取": "6",
     "新手自选唤取（感恩定向唤取）": "7",
     "角色新旅唤取": "8",
     "武器新旅唤取": "9",
-    "角色联动唤取": "10",
-    "武器联动唤取": "11",
 }
 
 gacha_type_meta_data_reverse = {v: k for k, v in gacha_type_meta_data.items()}
@@ -44,13 +48,15 @@ gachalogs_history_meta = {
     "武器精准调谐": [],
     "角色调谐（常驻池）": [],
     "武器调谐（常驻池）": [],
+    "角色忆旅唤取": [],
+    "武器忆旅唤取": [],
+    "角色联动唤取": [],
+    "武器联动唤取": [],
     "新手调谐": [],
     "新手自选唤取": [],
     "新手自选唤取（感恩定向唤取）": [],
     "角色新旅唤取": [],
     "武器新旅唤取": [],
-    "角色联动唤取": [],
-    "武器联动唤取": [],
 }
 
 ERROR_MSG_INVALID_LINK = "当前抽卡链接已经失效，请重新导入抽卡链接"
@@ -206,7 +212,7 @@ def prune_gacha_backups(uid: str, type: str, limit: int = GACHA_BACKUP_LIMIT):
     if not backup_dir.exists():
         return
     files = sorted(
-        backup_dir.glob(f"{type}_gacha_logs_*.json"),
+        [*backup_dir.glob(f"{type}_gacha_logs_*.json"), *backup_dir.glob(f"{type}_gacha_logs_*.json.gz")],
         key=lambda p: p.stat().st_mtime,
         reverse=True,
     )
@@ -220,9 +226,8 @@ def prune_gacha_backups(uid: str, type: str, limit: int = GACHA_BACKUP_LIMIT):
 async def backup_gachalogs(uid: str, gachalogs_history: Dict, type: str):
     backup_dir = GACHA_BACKUP_PATH / str(uid)
     backup_dir.mkdir(parents=True, exist_ok=True)
-    backup_path = backup_dir / f"{type}_gacha_logs_{datetime.now().strftime('%Y-%m-%d.%H%M%S')}.json"
-    async with aiofiles.open(backup_path, "w", encoding="UTF-8") as file:
-        await file.write(json.dumps(gachalogs_history, ensure_ascii=False))
+    backup_path = backup_dir / f"{type}_gacha_logs_{datetime.now().strftime('%Y-%m-%d.%H%M%S')}.json.gz"
+    await write_gz_json(backup_path, gachalogs_history)
     prune_gacha_backups(uid, type)
 
 
@@ -239,8 +244,7 @@ async def save_link_source_gachalogs(uid: str, record_id: str, data: Dict[str, L
         "data": {gacha_name: [log.model_dump() for log in logs] for gacha_name, logs in data.items()},
     }
 
-    async with aiofiles.open(path / "link_gacha_logs.json", "w", encoding="UTF-8") as file:
-        await file.write(json.dumps(content, ensure_ascii=False, indent=2))
+    await write_player_json(path / "link_gacha_logs.json", content)
 
 
 async def save_gachalogs(
@@ -259,17 +263,13 @@ async def save_gachalogs(
     gachalogs_path = path / "gacha_logs.json"
 
     temp_gachalogs_history = {}
-    if gachalogs_path.exists():
-        with Path.open(gachalogs_path, encoding="UTF-8") as f:
-            gachalogs_history: Dict = json.load(f)
-
-        # import 时备份
+    gachalogs_history = await read_player_json(gachalogs_path)
+    if gachalogs_history is None and player_json_exists(gachalogs_path):
+        return "[鸣潮] 抽卡记录读取失败，已中止以防覆盖，请稍后重试"
+    if gachalogs_history is not None:
         if not record_id:
             await backup_gachalogs(uid, gachalogs_history, type="import")
-
-        # update 时备份
         temp_gachalogs_history = copy.deepcopy(gachalogs_history)
-
         gachalogs_history = gachalogs_history["data"]
     else:
         gachalogs_history = copy.deepcopy(gachalogs_history_meta)
@@ -353,8 +353,7 @@ async def save_gachalogs(
     }
 
     vo = msgspec.to_builtins(result)
-    async with aiofiles.open(gachalogs_path, "w", encoding="UTF-8") as file:
-        await file.write(json.dumps(vo, ensure_ascii=False))
+    await write_player_json(gachalogs_path, vo)
 
     # 失效 stats 缓存：下次抽卡记录/抽卡排行查询时 lazy 重建
     (path / "gachaStats.json").unlink(missing_ok=True)
@@ -386,6 +385,26 @@ async def import_gachalogs(ev: Event, history_url: str, type: str, uid: str, for
     history_data: Dict = {}
     if type == "json":
         history_data = json.loads(history_url)
+    elif type == "url":
+        try:
+            async with aiohttp.ClientSession(connector=TCPConnector(ssl=False)) as session:
+                async with session.get(history_url, timeout=30) as response:
+                    if response.status != 200:
+                        return f"下载文件失败，HTTP状态码: {response.status}"
+                    content_type = response.headers.get("Content-Type", "")
+                    if "application/json" in content_type:
+                        history_data = await response.json()
+                    else:
+                        data_bytes = await response.read()
+                        try:
+                            history_data = json.loads(data_bytes.decode("utf-8"))
+                        except UnicodeDecodeError:
+                            try:
+                                history_data = json.loads(data_bytes.decode("gbk"))
+                            except UnicodeDecodeError:
+                                return "无法解码文件内容，请检查文件编码格式"
+        except Exception as e:
+            return f"下载文件失败: {str(e)}"
     else:
         data_bytes = base64.b64decode(history_url)
         try:
@@ -444,10 +463,8 @@ async def export_gachalogs(uid: str) -> dict:
 
     # 抽卡记录json路径
     gachalogs_path = path / "gacha_logs.json"
-    if gachalogs_path.exists():
-        async with aiofiles.open(gachalogs_path, "r", encoding="UTF-8") as f:
-            raw_data = json.loads(await f.read())
-
+    raw_data = await read_player_json(gachalogs_path)
+    if raw_data is not None:
         result = {
             "info": {
                 "export_time": current_time,
@@ -463,15 +480,13 @@ async def export_gachalogs(uid: str) -> dict:
         for name, gachalogs in gachalogs_history.items():
             result["list"].extend(gachalogs)
 
-        async with aiofiles.open(path / f"export_{uid}.json", "w", encoding="UTF-8") as file:
-            await file.write(json.dumps(result, ensure_ascii=False, indent=4))
-
+        # async with aiofiles.open(path / f"export_{uid}.json", "w", encoding="UTF-8") as file:
+        #     await file.write(json.dumps(result, ensure_ascii=False, indent=4))
         logger.success("[鸣潮·导出抽卡记录] 导出成功!")
         im = {
             "retcode": "ok",
-            "data": "导出成功!",
+            "json": result,
             "name": f"export_{uid}.json",
-            "url": str((path / f"export_{uid}.json").absolute()),
         }
     else:
         logger.error("[鸣潮·导出抽卡记录] 没有找到抽卡记录!")

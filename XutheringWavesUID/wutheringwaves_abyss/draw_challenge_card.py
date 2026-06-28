@@ -27,7 +27,7 @@ from ..utils.image import (
     get_square_avatar_path,
     CHAIN_COLOR,
 )
-from ..utils.char_info_utils import get_all_roleid_detail_info, lookup_chain
+from ..utils.char_info_utils import get_all_roleid_detail_info, get_rover_detail_map, lookup_chain_with_rover
 from .draw_challenge_card_pil import (
     draw_challenge_img as draw_challenge_img_pil,
     ERROR_UNLOCK,
@@ -72,6 +72,7 @@ async def draw_challenge_img(ev: Event, uid: str, user_id: str) -> Union[bytes, 
 
         # 获取角色详细信息（用于获取共鸣链）
         role_detail_info_map = await get_all_roleid_detail_info(uid)
+        rover_map = await get_rover_detail_map(uid)
 
         # 构建挑战数据
         challenges_list = []
@@ -113,7 +114,7 @@ async def draw_challenge_img(ev: Event, uid: str, user_id: str) -> Union[bytes, 
                         except Exception:
                             pass
 
-                    chain_num, chain_name = lookup_chain(role_detail_info_map, role_id)
+                    chain_num, chain_name, hide_detail = lookup_chain_with_rover(role_detail_info_map, rover_map, role_id)
 
                     # 使用本地头像（和PIL版本一致）
                     role_icon_b64 = img_to_b64(get_square_avatar_path(role_id), quality=75, bake=True, cover_size=(128, 128))
@@ -124,6 +125,7 @@ async def draw_challenge_img(ev: Event, uid: str, user_id: str) -> Union[bytes, 
                         "star": star_level,
                         "chain_num": chain_num,
                         "chain_name": chain_name,
+                        "hide_detail": hide_detail,
                         "icon_url": role_icon_b64,
                     })
 

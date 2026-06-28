@@ -61,6 +61,8 @@ from .api import (
     MATRIX_INDEX_URL,
     MATRIX_DETAIL_URL,
     VERSION_LIST_URL,
+    SKIN_DATA_URL,
+    MOTOR_DATA_URL,
     CALABASH_DATA_URL,
     GACHA_NET_LOG_URL,
     MORE_ACTIVITY_URL,
@@ -506,6 +508,60 @@ class WavesApi:
         else:
             calabash_data = await self._waves_request(CALABASH_DATA_URL, "POST", header, data=data)
         return calabash_data
+
+    async def get_skin_data(self, roleId: str, token: str, serverId: Optional[str] = None):
+        """服饰"""
+        header = await get_base_header()
+        used_headers = await self.get_used_headers(cookie=token, uid=roleId)
+        header.update(used_headers)
+
+        data = {
+            "gameId": WAVES_GAME_ID,
+            "serverId": self.get_server_id(roleId, serverId),
+            "roleId": roleId,
+        }
+        if WutheringWavesConfig.get_config("CacheEverything").data:
+            try:
+                skin_data = await self._waves_request(SKIN_DATA_URL, "POST", header, data=data)
+                skin_data_path = CACHE_PATH / "skin_data"
+                skin_data_path.mkdir(parents=True, exist_ok=True)
+                with open(skin_data_path / f"{roleId}.json", "w", encoding="utf-8") as f:
+                    f.write(json.dumps(skin_data.model_dump(), ensure_ascii=False, indent=4))
+            except Exception as e:
+                logger.error(f"[鸣潮·API] 获取服饰失败，返回缓存数据 {e}")
+                with open(CACHE_PATH / "skin_data" / f"{roleId}.json", "r", encoding="utf-8") as f:
+                    skin_data = json.load(f)
+                skin_data = KuroApiResp(**skin_data)
+        else:
+            skin_data = await self._waves_request(SKIN_DATA_URL, "POST", header, data=data)
+        return skin_data
+
+    async def get_motor_data(self, roleId: str, token: str, serverId: Optional[str] = None):
+        """科考摩托"""
+        header = await get_base_header()
+        used_headers = await self.get_used_headers(cookie=token, uid=roleId)
+        header.update(used_headers)
+
+        data = {
+            "gameId": WAVES_GAME_ID,
+            "serverId": self.get_server_id(roleId, serverId),
+            "roleId": roleId,
+        }
+        if WutheringWavesConfig.get_config("CacheEverything").data:
+            try:
+                motor_data = await self._waves_request(MOTOR_DATA_URL, "POST", header, data=data)
+                motor_data_path = CACHE_PATH / "motor_data"
+                motor_data_path.mkdir(parents=True, exist_ok=True)
+                with open(motor_data_path / f"{roleId}.json", "w", encoding="utf-8") as f:
+                    f.write(json.dumps(motor_data.model_dump(), ensure_ascii=False, indent=4))
+            except Exception as e:
+                logger.error(f"[鸣潮·API] 获取摩托失败，返回缓存数据 {e}")
+                with open(CACHE_PATH / "motor_data" / f"{roleId}.json", "r", encoding="utf-8") as f:
+                    motor_data = json.load(f)
+                motor_data = KuroApiResp(**motor_data)
+        else:
+            motor_data = await self._waves_request(MOTOR_DATA_URL, "POST", header, data=data)
+        return motor_data
 
     async def get_explore_data(
         self,

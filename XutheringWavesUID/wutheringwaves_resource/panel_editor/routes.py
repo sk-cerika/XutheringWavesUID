@@ -5,6 +5,9 @@
 
 from __future__ import annotations
 
+import asyncio
+import os
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from io import BytesIO
 from pathlib import Path
 from typing import List, Optional
@@ -145,10 +148,14 @@ async def api_login(_: None = Depends(require_auth)):
 
 
 @app.get("/waves/panel-edit/api/folders")
-async def api_folders(type: str, _: str = Depends(auth_or_guest)):
+async def api_folders(type: str, role: str = Depends(auth_or_guest)):
     if not st.is_valid_type(type):
         raise HTTPException(400, "invalid type")
     folders = st.list_folders(type)
+    if role == "admin":
+        counts = st.pending_counts(type)
+        for f in folders:
+            f["pending"] = counts.get(f["char_id"], 0)
     return {"type": type, "folders": folders}
 
 
@@ -375,10 +382,14 @@ async def api_tmp_restore(payload: dict, _: None = Depends(require_auth)):
     current, original = st.find_tmp_files(token)
     if current is None or original is None:
         raise HTTPException(404, "tmp not found")
-    current.write_bytes(original.read_bytes())
-    with Image.open(current) as im:
+    # 连后缀一并回退: compress 可能把 current 改成了 .webp, 避免还原后扩展名与内容错配。
+    restored = current.with_suffix(original.suffix)
+    if restored != current:
+        current.unlink(missing_ok=True)
+    restored.write_bytes(original.read_bytes())
+    with Image.open(restored) as im:
         w, h = im.size
-    return {"token": token, "width": w, "height": h, "size": current.stat().st_size}
+    return {"token": token, "width": w, "height": h, "size": restored.stat().st_size, "suffix": restored.suffix}
 
 
 def _save_resized(p: Path, im: Image.Image) -> None:
@@ -395,7 +406,9 @@ def _save_resized(p: Path, im: Image.Image) -> None:
 
 @app.post("/waves/panel-edit/api/tmp/resize")
 async def api_tmp_resize(payload: dict, _: None = Depends(require_auth)):
-    """按 scale 倍率等比缩放 tmp 图; current 与 original 同步缩放。"""
+    """按 scale 倍率等比缩放 tmp 图; current 与 original 同步缩放。
+    compress=true 时额外把 current 转 webp(q80, 同「压缩面板图」), original 保留原格式供再裁剪。
+    """
     token = payload.get("token")
     if not st.is_safe_token(token):
         raise HTTPException(400, "invalid token")
@@ -405,6 +418,7 @@ async def api_tmp_resize(payload: dict, _: None = Depends(require_auth)):
         raise HTTPException(400, "scale required")
     if not (0.05 <= scale <= 8.0):
         raise HTTPException(400, "scale out of range (0.05 - 8.0)")
+    compress = bool(payload.get("compress"))
 
     current, original = st.find_tmp_files(token)
     if current is None or original is None:
@@ -421,13 +435,30 @@ async def api_tmp_resize(payload: dict, _: None = Depends(require_auth)):
         _save_resized(p, resized)
         return nw, nh
 
-    ow, oh = _scale(original)
-    cw, ch = _scale(current)
+    if abs(scale - 1.0) > 1e-6:
+        ow, oh = _scale(original)
+        cw, ch = _scale(current)
+    else:
+        with Image.open(original) as im:
+            ow, oh = im.size
+        with Image.open(current) as im:
+            cw, ch = im.size
+
+    if compress and current.suffix.lower() != ".webp":
+        webp = current.with_suffix(".webp")
+        with Image.open(current) as im:
+            im.load()
+            im.save(webp, "WEBP", quality=80, method=6)
+        if webp != current:
+            current.unlink(missing_ok=True)
+        current = webp
+
     return {
         "token": token,
         "width": cw, "height": ch,
         "source_width": ow, "source_height": oh,
         "size": current.stat().st_size,
+        "suffix": current.suffix,
     }
 
 
@@ -443,14 +474,68 @@ async def api_tmp_discard(payload: dict, _: None = Depends(require_auth)):
 # ------------------------- 确认入库 / 编辑现有 -------------------------
 
 
+# 与待审核(pending)图比对: 阈值更高, 且允许并存 2 张, 命中 ≥3 张才阻止 (避免误判)。
+_PENDING_DUP_THRESHOLD = 0.95
+_PENDING_DUP_BLOCK_AT = 3
+
+
+def _dup_matches(dups, pending: bool) -> List[dict]:
+    return [
+        {"name": p.name, "hash_id": st.hash_id_for(p.name), "sim": round(float(sim), 3), "pending": pending}
+        for p, sim in dups
+    ]
+
+
+async def _check_duplicates(t: str, char_id: str, image: Path) -> Optional[dict]:
+    """与目标目录已有图 + 待审核图查重 (复用指令侧 ORB)。
+    - 已有图: 任一 sim≥ORB_BLOCK_THRESHOLD 即阻止 (matches 含全部 ≥WARN 项)。
+    - 待审核图: 阈值更高(_PENDING_DUP_THRESHOLD), 命中 ≥_PENDING_DUP_BLOCK_AT 张才阻止。
+    阻止时返回 {matches:[{name,hash_id,sim,pending}]}; 否则 None。cv2 缺失静默放行。
+    pending 图实时扫描不缓存 ORB, 删除/过审后自动移出匹配池。
+    """
+    try:
+        from ...wutheringwaves_charinfo.card_utils import (
+            ORB_BLOCK_THRESHOLD,
+            cv2,
+            duplicates_for_single,
+        )
+    except Exception:
+        return None
+    if cv2 is None:
+        return None
+
+    matches: List[dict] = []
+    blocked = False
+
+    char_dir = st.safe_char_dir(t, char_id)
+    if char_dir is not None and char_dir.exists():
+        dups = await asyncio.to_thread(duplicates_for_single, char_dir, image, as_type=t)
+        if any(sim >= ORB_BLOCK_THRESHOLD for _, sim in dups):
+            blocked = True
+        matches += _dup_matches(dups, pending=False)
+
+    pending_dir = st.PANEL_EDIT_PENDING / t / char_id
+    if pending_dir.exists():
+        pdups = await asyncio.to_thread(
+            duplicates_for_single, pending_dir, image, _PENDING_DUP_THRESHOLD, as_type=t
+        )
+        if len(pdups) >= _PENDING_DUP_BLOCK_AT:
+            blocked = True
+        matches += _dup_matches(pdups, pending=True)
+
+    return {"matches": matches} if blocked else None
+
+
 @app.post("/waves/panel-edit/api/confirm")
 async def api_confirm(payload: dict, _: None = Depends(require_auth)):
     """确认 tmp 文件入库。
-    payload: { token, type, char_id }
+    payload: { token, type, char_id, force? }
+    force 缺省时先查重, 命中疑似重复返回 {duplicate:true, matches}, 不入库。
     """
     token = payload.get("token")
     target_type = payload.get("type")
     char_id = payload.get("char_id")
+    force = bool(payload.get("force"))
     if not st.is_safe_token(token):
         raise HTTPException(400, "invalid token")
     if not st.is_valid_type(target_type or ""):
@@ -461,6 +546,11 @@ async def api_confirm(payload: dict, _: None = Depends(require_auth)):
     current, original = st.find_tmp_files(token)
     if current is None:
         raise HTTPException(404, "tmp not found")
+
+    if not force:
+        dup = await _check_duplicates(target_type, char_id, current)
+        if dup:
+            return {"ok": False, "duplicate": True, **dup}
 
     final = st.relocate_to_target(target_type, char_id, current, suffix_hint=current.suffix)
     _try_update_orb_cache(final)
@@ -519,6 +609,124 @@ async def api_delete(payload: dict, _: None = Depends(require_auth)):
     _try_delete_orb_cache(target)
     target.unlink()
     _index_remove(target_type, char_id, target)
+    return {"ok": True}
+
+
+# ------------------------- 全库查重 -------------------------
+
+
+_dup_scan_lock = asyncio.Lock()
+
+
+def _scan_all_duplicates(threshold: float) -> List[dict]:
+    """遍历所有自定义图角色目录, 各目录内分组查重 (复用 find_duplicate_groups_in_dir)。"""
+    from ...utils.name_convert import easy_id_to_name
+    from ...wutheringwaves_charinfo.card_hash_index import compute_hash
+    from ...wutheringwaves_charinfo.card_utils import find_duplicate_groups_in_dir
+
+    char_dirs = [
+        (t, d)
+        for t, base in st.TYPE_PATHS.items() if base.exists()
+        for d in sorted(base.iterdir(), key=lambda p: p.name) if d.is_dir()
+    ]
+    use_cores = max((os.cpu_count() or 1) - 2, 1)
+    out: List[dict] = []
+    with ThreadPoolExecutor(max_workers=use_cores) as ex:
+        futs = {ex.submit(find_duplicate_groups_in_dir, d, threshold): (t, d) for t, d in char_dirs}
+        for fut in as_completed(futs):
+            t, d = futs[fut]
+            char_id = d.name
+            char_name = easy_id_to_name(char_id, char_id)
+            for group, sim_map in fut.result():
+                gs = sorted(group, key=lambda p: p.name)
+                images = [{
+                    "type": t, "char_id": char_id, "char_name": char_name,
+                    "name": p.name, "hash_id": compute_hash(p.name),
+                } for p in gs]
+                pairs = []
+                for i in range(len(gs)):
+                    for j in range(i + 1, len(gs)):
+                        s = sim_map.get((gs[i], gs[j])) or sim_map.get((gs[j], gs[i]))
+                        if s is not None:
+                            pairs.append({
+                                "a": compute_hash(gs[i].name),
+                                "b": compute_hash(gs[j].name),
+                                "sim": round(float(s), 3),
+                            })
+                out.append({"images": images, "pairs": pairs})
+    out.sort(key=lambda g: len(g["images"]), reverse=True)
+    return out
+
+
+@app.get("/waves/panel-edit/api/duplicates")
+async def api_duplicates(threshold: float = 0.7, _: None = Depends(require_auth)):
+    try:
+        from ...wutheringwaves_charinfo.card_utils import cv2
+    except Exception:
+        raise HTTPException(500, "charinfo 不可用")
+    if cv2 is None:
+        raise HTTPException(400, "未安装 opencv-python, 无法查重")
+    if not (0.5 <= threshold <= 1.0):
+        threshold = 0.7
+    if _dup_scan_lock.locked():
+        raise HTTPException(429, "查重进行中, 请稍候")
+    async with _dup_scan_lock:
+        groups = await asyncio.to_thread(_scan_all_duplicates, threshold)
+    return {"threshold": threshold, "groups": groups}
+
+
+# ------------------------- 待审核储存 -------------------------
+
+
+@app.get("/waves/panel-edit/api/pending/list")
+async def api_pending_list(_: None = Depends(require_auth)):
+    return {"groups": st.list_pending()}
+
+
+@app.get("/waves/panel-edit/api/pending/image")
+async def api_pending_image(type: str, char_id: str, name: str, _: None = Depends(require_auth)):
+    target = st.safe_pending_image(type, char_id, name)
+    if target is None or not target.is_file():
+        raise HTTPException(404, "pending not found")
+    return FileResponse(target, headers={"Cache-Control": "no-store"})
+
+
+@app.get("/waves/panel-edit/api/pending/thumb")
+async def api_pending_thumb(
+    type: str, char_id: str, name: str, size: int = 360, crop: int = 0,
+    _: None = Depends(require_auth),
+):
+    # 默认按原图缩略(待审核浏览看完整内容); crop=1 时裁到角色卡可见区(查重展示与已入库图同口径)。
+    if size not in _THUMB_SIZES:
+        size = 360
+    target = st.safe_pending_image(type, char_id, name)
+    if target is None or not target.is_file():
+        raise HTTPException(404, "pending not found")
+    cache = st.get_or_make_thumb(target, size, type if crop else None)
+    if cache is None:
+        return FileResponse(target)
+    return FileResponse(cache, media_type="image/webp", headers={"Cache-Control": "max-age=86400"})
+
+
+@app.post("/waves/panel-edit/api/pending/stage")
+async def api_pending_stage(payload: dict, _: None = Depends(require_auth)):
+    """把待审核图复制进 tmp, 返回 token, 之后复用裁剪/确认流程。"""
+    st.gc_tmp()
+    item = st.stage_pending(
+        payload.get("type") or "", payload.get("char_id") or "", payload.get("name") or "",
+    )
+    if item is None:
+        raise HTTPException(404, "pending not found")
+    return item
+
+
+@app.post("/waves/panel-edit/api/pending/delete")
+async def api_pending_delete(payload: dict, _: None = Depends(require_auth)):
+    t = payload.get("type")
+    char_id = payload.get("char_id")
+    name = payload.get("name")
+    if not st.delete_pending(t or "", char_id or "", name or ""):
+        raise HTTPException(404, "pending not found")
     return {"ok": True}
 
 
@@ -603,9 +811,17 @@ async def api_preview_tmp(
 # ------------------------- 元数据: 类型 / 角色名 -------------------------
 
 
+def _orb_available() -> bool:
+    try:
+        from ...wutheringwaves_charinfo.card_utils import cv2
+        return cv2 is not None
+    except Exception:
+        return False
+
+
 @app.get("/waves/panel-edit/api/meta")
 async def api_meta(role: str = Depends(auth_or_guest)):
-    """前端启动时拉取: 类型 / id->name / 当前角色 (admin|guest)。"""
+    """前端启动时拉取: 类型 / id->name / 当前角色 (admin|guest) / 待审核数 / 查重可用性。"""
     from ...utils.name_convert import ensure_data_loaded, id2name
     try:
         ensure_data_loaded()
@@ -621,4 +837,6 @@ async def api_meta(role: str = Depends(auth_or_guest)):
         "role": role,
         "guest_view_enabled": is_guest_view_enabled(),
         "thumb_ver": st._THUMB_VERSION,
+        "pending_count": st.pending_count() if role == "admin" else 0,
+        "orb_available": _orb_available(),
     }

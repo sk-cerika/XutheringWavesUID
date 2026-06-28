@@ -19,7 +19,7 @@ from ..utils.image import (
     pic_download_from_url,
 )
 from ..utils.api.model import RoleList, ChallengeArea, AccountBaseInfo
-from ..utils.imagetool import draw_pic, draw_pic_with_ring
+from ..utils.imagetool import draw_pic, draw_pic_with_ring, draw_base_info_bg
 from ..utils.waves_api import waves_api
 from ..utils.error_reply import WAVES_CODE_102
 from ..utils.name_convert import char_name_to_char_id
@@ -27,7 +27,6 @@ from ..utils.fonts.waves_fonts import (
     waves_font_18,
     waves_font_20,
     waves_font_24,
-    waves_font_25,
     waves_font_26,
     waves_font_30,
     waves_font_42,
@@ -82,10 +81,11 @@ async def draw_challenge_img(ev: Event, uid: str, user_id: str) -> Union[bytes, 
     card_img = get_waves_bg(1560, h, "bg8")
 
     # 基础信息 名字 特征码
-    base_info_bg = Image.open(TEXT_PATH / "base_info_bg.png")
-    base_info_draw = ImageDraw.Draw(base_info_bg)
-    base_info_draw.text((275, 120), f"{account_info.name[:10]}", "white", waves_font_30, "lm")
-    base_info_draw.text((226, 173), f"特征码:  {hide_uid(account_info.id, user_pref=user_pref)}", GOLD, waves_font_25, "lm")
+    base_info_bg = draw_base_info_bg(
+        f"{account_info.name[:10]}",
+        f"特征码:  {hide_uid(account_info.id, user_pref=user_pref)}",
+        TEXT_PATH,
+    )
     card_img.paste(base_info_bg, (15, 20), base_info_bg)
 
     # 头像 头像环

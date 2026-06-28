@@ -11,7 +11,6 @@ from gsuid_core.utils.image.image_tools import crop_center_img
 from ..utils.hint import error_reply
 from ..utils.util import hide_uid, get_hide_uid_pref
 from ..utils.image import (
-    GOLD,
     GREY,
     CHAIN_COLOR,
     SPECIAL_GOLD,
@@ -39,7 +38,6 @@ from ..utils.fonts.waves_fonts import (
     waves_font_20,
     waves_font_22,
     waves_font_24,
-    waves_font_25,
     waves_font_26,
     waves_font_30,
     waves_font_38,
@@ -49,7 +47,7 @@ from ..utils.fonts.waves_fonts import (
 from ..utils.resource.constant import NORMAL_LIST, NORMAL_LIST_IDS, SPECIAL_CHAR_NAME
 from ..utils.refresh_char_detail import refresh_char, refresh_lock
 from ..utils.resource.download_file import get_skill_img
-from ..utils.imagetool import get_weapon_icon_bg
+from ..utils.imagetool import get_weapon_icon_bg, draw_base_info_bg
 
 TEXT_PATH = Path(__file__).parent / "texture2d"
 
@@ -312,12 +310,12 @@ def _render_bar(asset) -> Image.Image:
 
     weapon_bg_temp.alpha_composite(weapon_icon_bg, dest=(45, 0))
 
-    # 精X 打在武器图右下角: 彩色圆角块+白字; 亮底(精5 AMBER)压暗以保证白字清晰
+    # N阶 打在武器图右下角: 彩色圆角块+白字; 亮底(5阶 AMBER)压暗以保证白字清晰
     rc = WEAPON_RESONLEVEL_COLOR[weaponData.resonLevel]
     if 0.299 * rc[0] + 0.587 * rc[1] + 0.114 * rc[2] > 135:
         rc = tuple(int(c * 0.6) for c in rc)
     weapon_bg_temp_draw.rounded_rectangle([110, 102, 168, 132], radius=8, fill=rc + (int(0.85 * 255),))  # type: ignore
-    weapon_bg_temp_draw.text((139, 117), f"精{weaponData.resonLevel}", "white", waves_font_24, "mm")
+    weapon_bg_temp_draw.text((139, 117), f"{weaponData.resonLevel}阶", "white", waves_font_24, "mm")
 
     bar_star.alpha_composite(weapon_bg_temp.resize((260, 130)), dest=(710, 25))
 
@@ -350,10 +348,11 @@ def _compose_char_list(
     bar_star_h = 110
     n = len(char_assets)
     if two_col:
-        width = 2000
-        header_h = 330
+        col_w = 920
+        width = col_w + 1000
+        header_h = 280
         rows = (n + 1) // 2
-        h = header_h + rows * bar_star_h + 80
+        h = header_h + rows * bar_star_h + 130
     else:
         width = 1000
         header_h = 230 + 260
@@ -361,10 +360,11 @@ def _compose_char_list(
     card_img = get_custom_waves_bg(width, h, "bg3")
 
     # 基础信息 名字 特征码
-    base_info_bg = Image.open(TEXT_PATH / "base_info_bg.png")
-    base_info_draw = ImageDraw.Draw(base_info_bg)
-    base_info_draw.text((275, 120), f"{account_info.name[:10]}", "white", waves_font_30, "lm")
-    base_info_draw.text((226, 173), f"特征码:  {hide_uid(account_info.id, user_pref=user_pref)}", GOLD, waves_font_25, "lm")
+    base_info_bg = draw_base_info_bg(
+        f"{account_info.name[:10]}",
+        f"特征码:  {hide_uid(account_info.id, user_pref=user_pref)}",
+        TEXT_PATH,
+    )
     card_img.paste(base_info_bg, (15, 20), base_info_bg)
 
     avatar_ring = Image.open(TEXT_PATH / "avatar_ring.png")
@@ -386,10 +386,7 @@ def _compose_char_list(
     # 角色数量统计: 双列时横排到右侧, 单列时在头像下方
     info_bg = _draw_info_bg(stats)
     if two_col:
-        card_img.paste(info_bg, (1000, 35), info_bg)
-        hint_draw = ImageDraw.Draw(card_img)
-        hint = f"可指定  {PREFIX}练度统计 五星/四星/全部"
-        hint_draw.text((width // 2, header_h - 30), hint, SPECIAL_GOLD, waves_font_24, "mm")
+        card_img.paste(info_bg, (col_w, 35), info_bg)
     else:
         card_img.paste(info_bg, (0, 230), info_bg)
 
@@ -399,12 +396,17 @@ def _compose_char_list(
         if two_col:
             col = 0 if index < rows else 1
             row = index if col == 0 else index - rows
-            _x = col * 1000
+            _x = col * col_w
             _y = header_h + row * bar_star_h
         else:
             _x = 0
             _y = header_h + index * bar_star_h
         card_img.paste(bar_star, (_x, _y), bar_star)
+
+    if two_col:
+        hint_draw = ImageDraw.Draw(card_img)
+        hint = f"可指定  {PREFIX}练度统计 五星/四星/全部"
+        hint_draw.text((width // 2, header_h + rows * bar_star_h + 35), hint, SPECIAL_GOLD, waves_font_24, "mm")
 
     card_img = add_footer(card_img)
     return card_img

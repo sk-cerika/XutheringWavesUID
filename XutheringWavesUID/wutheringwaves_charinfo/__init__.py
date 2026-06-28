@@ -384,6 +384,17 @@ async def _forward_upload_to_master(bot: Bot, ev: Event):
                 f"[鸣潮]【{char_name}】{prefix_msg}全部疑似重复: {'；'.join(block_msgs)}，已拒绝转交主人审核"
             )
 
+        if WutheringWavesConfig.get_config("WavesUploadAuditKeepLocal").data:
+            try:
+                from ..wutheringwaves_resource.panel_editor import storage as _pe_st
+                for b in image_bytes:
+                    _pe_st.save_pending(
+                        target_type, char_id, b,
+                        user_id=ev.user_id, group_id=ev.group_id,
+                    )
+            except Exception as e:
+                logger.warning(f"[鸣潮·上传审核] 储存待审核图失败: {e}")
+
         subs = await gs_subscribe.get_subscribe("联系主人")
         logger.info(f"[鸣潮·上传审核] 取到 {len(subs) if subs else 0} 个主人订阅")
         if not subs:

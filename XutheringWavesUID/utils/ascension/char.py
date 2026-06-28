@@ -117,7 +117,7 @@ def extract_param_index(skill_desc: str, search_pattern: str) -> Optional[int]:
 def get_char_detail(char_id: Union[str, int], level: int, breach: Union[int, None] = None) -> WavesCharResult:
     """
     breach 突破
-    resonLevel 精炼
+    resonLevel 谐振
     """
     ensure_data_loaded()
     result = WavesCharResult()
@@ -185,13 +185,22 @@ def get_char_detail2(role) -> WavesCharResult:
 
 def get_char_id(char_name, loose: bool = False) -> Optional[str]:
     ensure_data_loaded()
-    if not loose:
-        return next((_id for _id, value in char_id_data.items() if value["name"] == char_name), None)
-    else:
-        for _id, value in char_id_data.items():
-            if char_name in value["name"] or value["name"] in char_name:
-                return _id
-        return None
+    exact = next((_id for _id, value in char_id_data.items() if value["name"] == char_name), None)
+    if exact is not None or not loose:
+        return exact
+    # 子串兜底取公共名最长的候选, 避免撞名 (如 秧秧 / 秧秧·玄翎) 受遍历顺序影响取错头像
+    best_id = None
+    best_len = -1
+    for _id, value in sorted(char_id_data.items()):
+        name = value["name"]
+        if not name:
+            continue
+        if char_name in name or name in char_name:
+            overlap = min(len(char_name), len(name))
+            if overlap > best_len:
+                best_len = overlap
+                best_id = _id
+    return best_id
 
 
 def get_char_model(char_id: Union[str, int]) -> Optional[CharacterModel]:

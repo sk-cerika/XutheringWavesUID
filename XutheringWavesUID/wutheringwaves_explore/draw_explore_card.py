@@ -27,7 +27,7 @@ from ..utils.image import (
     WAVES_LINGERING,
     pil_to_b64,
     rgb_to_hex,
-    get_custom_waves_bg,
+    get_waves_bg,
     get_event_avatar,
 )
 
@@ -169,7 +169,7 @@ async def draw_explore_img(ev: Event, uid: str, user_id: str):
                 "incomplete_sub_areas": incomplete_sub_areas
             })
 
-        bg_img = get_custom_waves_bg(bg="bg3", crop=False)
+        bg_img = get_waves_bg(bg="bg3", crop=False)
         bg_url = pil_to_b64(bg_img, quality=75)
 
         context = {

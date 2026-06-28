@@ -1,10 +1,8 @@
-import json
 import time
 import asyncio
 from typing import Dict, List, Tuple, Union, Optional
 from pathlib import Path
 
-import aiofiles
 from PIL import Image, ImageDraw
 from pydantic import BaseModel
 
@@ -17,6 +15,7 @@ from gsuid_core.utils.image.convert import convert_img
 from .rank_avatar import get_avatar
 from .rank_badge import draw_rank_badge
 from ._permissions import get_rank_token_condition, filter_active_group_users
+from ..utils.util import build_uid_masker
 from ..utils.image import (
     RED,
     GREY,
@@ -88,12 +87,8 @@ async def save_char_list_data(uid: str, char_list_data: Dict):
         char_list_data: 角色评分字典，格式为 {roleId: score}
     """
     try:
-        _dir = PLAYER_PATH / uid
-        _dir.mkdir(parents=True, exist_ok=True)
-        path = _dir / "charListData.json"
-
-        async with aiofiles.open(path, "w", encoding="utf-8") as file:
-            await file.write(json.dumps(char_list_data, ensure_ascii=False))
+        from ..utils.player_store import write_player_json
+        await write_player_json(PLAYER_PATH / uid / "charListData.json", char_list_data)
     except Exception as e:
         logger.debug(f"[鸣潮·练度排行] 保存 charListData.json 失败 uid={uid}: {e}")
 
@@ -107,17 +102,8 @@ async def load_char_list_data(uid: str) -> Optional[Dict]:
     Returns:
         角色评分字典，格式为 {roleId: score}，如果文件不存在返回None
     """
-    try:
-        path = PLAYER_PATH / uid / "charListData.json"
-        if not path.exists():
-            return None
-
-        async with aiofiles.open(path, mode="r", encoding="utf-8") as f:
-            char_list_data = json.loads(await f.read())
-            return char_list_data
-    except Exception as e:
-        logger.debug(f"[鸣潮·练度排行] 读取 charListData.json 失败 uid={uid}: {e}")
-        return None
+    from ..utils.player_store import read_player_json
+    return await read_player_json(PLAYER_PATH / uid / "charListData.json")
 
 
 TEXT_PATH = Path(__file__).parent / "texture2d"
@@ -298,6 +284,8 @@ async def draw_rank_list(bot: Bot, ev: Event, threshold: int = 175) -> Union[str
         rankInfoList_display.append(rankInfo)
         display_rank_ids.append(rankId)
 
+    _mask_uid = await build_uid_masker([(ri.uid, ri.qid) for ri in rankInfoList_display], ev.bot_id)
+
     # 获取等级标签 (S/A/SS)
     threshold_label = "S"  # 默认值
     if threshold == 195:
@@ -371,7 +359,7 @@ async def draw_rank_list(bot: Bot, ev: Event, threshold: int = 175) -> Union[str
 
     card_img = await _compose_rank_list(
         card_img, bar, rankInfoList_display, display_rank_ids, results, char_avatar_map,
-        self_uid, threshold_label, header_height, item_spacing, width,
+        self_uid, threshold_label, header_height, item_spacing, width, _mask_uid,
     )
     card_img = await convert_img(card_img)
 
@@ -380,7 +368,7 @@ async def draw_rank_list(bot: Bot, ev: Event, threshold: int = 175) -> Union[str
 
 @to_thread
 def _compose_rank_list(card_img, bar, rankInfoList_display, display_rank_ids, results, char_avatar_map,
-                      self_uid, threshold_label, header_height, item_spacing, width):
+                      self_uid, threshold_label, header_height, item_spacing, width, mask_uid=None):
     from ..utils.calc import WuWaCalc
     for rank_temp_index, temp in enumerate(zip(rankInfoList_display, results)):
         rankInfo = temp[0]
@@ -397,7 +385,7 @@ def _compose_rank_list(card_img, bar, rankInfoList_display, display_rank_ids, re
         uid_color = "white"
         if rankInfo.uid == self_uid:
             uid_color = RED
-        bar_draw.text((210, 40), f"{rankInfo.uid}", uid_color, waves_font_20, "lm")
+        bar_draw.text((210, 40), f"{mask_uid(rankInfo.uid, rankInfo.qid)}", uid_color, waves_font_20, "lm")
 
         char_count = len(rankInfo.role_details)
         bar_draw.text((210, 75), f"{threshold_label}角色数: {char_count}", "white", waves_font_18, "lm")
@@ -480,6 +468,8 @@ def _compose_rank_list(card_img, bar, rankInfoList_display, display_rank_ids, re
     title_text = "#练度群排行"
     title_bg_draw = ImageDraw.Draw(title_bg)
     title_bg_draw.text((220, 290), title_text, "white", waves_font_58, "lm")
+    date_text = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+    title_bg_draw.text((225, 360), date_text, GREY, waves_font_20, "lm")
 
     char_mask_img = Image.open(TEXT_PATH / "char_mask.png").convert("RGBA")
     char_mask_img = char_mask_img.resize((width, char_mask_img.height * width // char_mask_img.width))

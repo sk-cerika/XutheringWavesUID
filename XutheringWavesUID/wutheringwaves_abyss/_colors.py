@@ -19,8 +19,8 @@ GOLD_LINE = (212, 177, 99, 150)
 CRYSTAL_SENTINEL = (-1, -1, -1)
 
 MATRIX_SCORE_TIERS = (
-    (200000, "score-rainbow", CRYSTAL_SENTINEL),
-    (150000, "score-red", (255, 82, 82)),
+    (100000, "score-rainbow", CRYSTAL_SENTINEL),
+    (58000, "score-red", (255, 82, 82)),
     (45000, "score-gold", (255, 213, 79)),
     (21000, "score-purple", (206, 147, 216)),
     (12000, "score-blue", (100, 200, 255)),

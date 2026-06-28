@@ -9,25 +9,23 @@ from gsuid_core.utils.image.convert import convert_img
 from .period import get_tower_period_number
 from ..utils.hint import error_reply
 from ..utils.util import get_version, hide_uid, get_hide_uid_pref
-from ..utils.image import GOLD, GREY, add_footer, get_waves_bg
+from ..utils.image import GREY, CHAIN_COLOR, add_footer, get_waves_bg, paste_skill_branch_emblem
 from ..utils.api.model import (
     RoleList,
     AbyssFloor,
     AbyssChallenge,
-    RoleDetailData,
     AccountBaseInfo,
 )
 from ..utils.api.wwapi import ABYSS_TYPE_MAP, AbyssItem, AbyssDetail
-from ..utils.imagetool import draw_pic, draw_pic_with_ring
+from ..utils.imagetool import draw_pic, draw_pic_with_ring, draw_base_info_bg
 from ..utils.waves_api import waves_api
 from ..utils.error_reply import WAVES_CODE_102
 from ..utils.queues.const import QUEUE_ABYSS_RECORD
 from ..utils.queues.queues import push_item
-from ..utils.char_info_utils import get_all_roleid_detail_info
+from ..utils.char_info_utils import get_all_roleid_detail_info, get_rover_detail_map, lookup_chain_with_rover
 from ..wutheringwaves_config import PREFIX
 from ..utils.fonts.waves_fonts import (
     waves_font_18,
-    waves_font_25,
     waves_font_26,
     waves_font_30,
     waves_font_32,
@@ -140,10 +138,11 @@ async def draw_abyss_img(ev: Event, uid: str, user_id: str) -> Union[bytes, str]
     card_img = get_waves_bg(950, h, "bg4")
 
     # 基础信息 名字 特征码
-    base_info_bg = Image.open(TEXT_PATH / "base_info_bg.png")
-    base_info_draw = ImageDraw.Draw(base_info_bg)
-    base_info_draw.text((275, 120), f"{account_info.name[:10]}", "white", waves_font_30, "lm")
-    base_info_draw.text((226, 173), f"特征码:  {hide_uid(account_info.id, user_pref=user_pref)}", GOLD, waves_font_25, "lm")
+    base_info_bg = draw_base_info_bg(
+        f"{account_info.name[:10]}",
+        f"特征码:  {hide_uid(account_info.id, user_pref=user_pref)}",
+        TEXT_PATH,
+    )
     card_img.paste(base_info_bg, (15, 20), base_info_bg)
 
     # 头像 头像环
@@ -169,6 +168,7 @@ async def draw_abyss_img(ev: Event, uid: str, user_id: str) -> Union[bytes, str]
 
     # 根据面板数据获取详细信息
     role_detail_info_map = await get_all_roleid_detail_info(uid)
+    rover_map = await get_rover_detail_map(uid)
 
     # frame
     frame = Image.open(TEXT_PATH / "frame.png")
@@ -237,22 +237,25 @@ async def draw_abyss_img(ev: Event, uid: str, user_id: str) -> Union[bytes, str]
 
                         avatar = await draw_pic(role.roleId)
                         char_bg = Image.open(TEXT_PATH / f"char_bg{role.starLevel}.png")
-                        char_bg_draw = ImageDraw.Draw(char_bg)
-                        char_bg_draw.text((90, 150), f"{role.roleName}", "white", waves_font_18, "mm")
-                        char_bg.paste(avatar, (0, 0), avatar)
-                        if role_detail_info_map and str(role.roleId) in role_detail_info_map:
-                            temp: RoleDetailData = role_detail_info_map[str(role.roleId)]
+                        slot = Image.new("RGBA", char_bg.size, (255, 255, 255, 0))
+                        slot.paste(avatar, (0, 0), avatar)
+                        slot.alpha_composite(char_bg)
+                        char_bg = slot
+                        chain_num, chain_name, _ = lookup_chain_with_rover(role_detail_info_map, rover_map, role.roleId)
+                        if chain_name:
                             info_block = Image.new("RGBA", (40, 20), color=(255, 255, 255, 0))
                             info_block_draw = ImageDraw.Draw(info_block)
-                            info_block_draw.rectangle([0, 0, 40, 20], fill=(96, 12, 120, int(0.9 * 255)))
+                            info_block_draw.rectangle([0, 0, 40, 20], fill=CHAIN_COLOR[chain_num] + (int(0.9 * 255),))
                             info_block_draw.text(
                                 (2, 10),
-                                f"{temp.get_chain_name()}",
+                                f"{chain_name}",
                                 "white",
                                 waves_font_18,
                                 "lm",
                             )
-                            char_bg.paste(info_block, (110, 35), info_block)
+                            char_bg.paste(info_block, (121, 30), info_block)
+
+                        paste_skill_branch_emblem(char_bg, role.roleId, _role.skillBranchIndex, (138, 130))
 
                         abyss_bg_temp.alpha_composite(char_bg, (300 + role_index * 150, -20))
 

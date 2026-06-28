@@ -79,6 +79,7 @@
             z-index: 2;
             justify-content: center;
             flex: 1;
+            min-width: 0;
             padding-left: 10px;
         }
 
@@ -89,6 +90,7 @@
             text-shadow: 0 4px 15px rgba(0,0,0,0.9);
             margin-bottom: 5px;
             color: #fff;
+            white-space: nowrap;
         }
 
         .rarity-row {
@@ -585,14 +587,27 @@
                 const parent = el.parentElement;
                 let fontSize = 13;
                 el.style.fontSize = fontSize + 'px';
-                const maxWidth = parent.offsetWidth - 4; 
+                const maxWidth = parent.offsetWidth - 4;
                 while (el.offsetWidth > maxWidth && fontSize > 8) {
                     fontSize -= 0.5;
                     el.style.fontSize = fontSize + 'px';
                 }
             });
         }
-        window.onload = adjustFontSize;
+        function fitCharName() {
+            const el = document.querySelector('.char-name');
+            if (!el) return;
+            let fontSize = 80;
+            el.style.fontSize = fontSize + 'px';
+            while (el.scrollWidth > el.clientWidth && fontSize > 36) {
+                fontSize -= 2;
+                el.style.fontSize = fontSize + 'px';
+            }
+        }
+        window.onload = function () {
+            adjustFontSize();
+            fitCharName();
+        };
     </script>
 </body>
 </html>

@@ -6,12 +6,15 @@ from gsuid_core.models import Event
 from ..utils.hint import error_reply
 from ..utils.at_help import ruser_id, is_intl_uid, intl_unavailable_msg
 from .draw_role_info import draw_role_img
+from .draw_skin_info import draw_skin_img
 from .draw_reward_card import draw_reward_img
 from ..utils.waves_api import waves_api
 from ..utils.error_reply import WAVES_CODE_102, WAVES_CODE_103
 from ..utils.database.models import WavesBind
 
 waves_role_info = SV("waves查询信息")
+# 收藏图鉴优先级前置于百科图鉴(鸣潮攻略 priority=10), 避免"收藏图鉴"被 <名>图鉴 正则抢匹配
+waves_skin_info = SV("waves收藏图鉴", priority=2)
 
 
 @waves_role_info.on_fullmatch(
@@ -43,6 +46,39 @@ async def send_role_info(bot: Bot, ev: Event):
         return
 
     im = await draw_role_img(uid, ck, ev)
+    await bot.send(im)  # type: ignore
+
+
+@waves_skin_info.on_fullmatch(
+    ("图鉴", "服饰", "皮肤", "收藏", "收藏图鉴", "皮肤图鉴", "服饰图鉴", "饰品", "饰品图鉴",
+     "摩托", "摩托饰品", "涂装", "车架模组", "车架"),
+    block=True,
+    to_ai="""查询自己的鸣潮收藏图鉴（共鸣者服饰 / 服饰饰品 / 武器投影 / 声骸换影 / 终端替换 / 涂装 / 车架模组 / 摩托饰品）。
+
+当用户问「我的服饰 / 皮肤图鉴 / 收藏了哪些外观 / 摩托涂装」时调用。需绑定 cookie。
+
+Args:
+    text: 无需参数，留空即可。
+""",
+)
+async def send_skin_info(bot: Bot, ev: Event):
+    logger.info("[鸣潮·服饰] 开始执行[收藏图鉴]")
+    user_id = ruser_id(ev)
+    uid = await WavesBind.get_uid_by_game(user_id, ev.bot_id)
+    logger.info(f"[鸣潮·服饰] user_id: {user_id} UID: {uid}")
+    if not uid:
+        await bot.send(error_reply(WAVES_CODE_103))
+        return
+    if is_intl_uid(uid):
+        await bot.send(intl_unavailable_msg(uid))
+        return
+
+    _, ck = await waves_api.get_ck_result(uid, user_id, ev.bot_id)
+    if not ck:
+        await bot.send(error_reply(WAVES_CODE_102))
+        return
+
+    im = await draw_skin_img(uid, ck, ev)
     await bot.send(im)  # type: ignore
 
 

@@ -597,10 +597,12 @@
                                 {% for role in challenge.roles %}
                                 <div class="role-mini" data-star="{{ role.star }}">
                                     <img src="{{ role.icon_url }}" alt="Role">
+                                    {% if not role.hide_detail %}
                                     <div class="role-mini-level">Lv.{{ role.level }}</div>
+                                    {% endif %}
                                     {% if role.chain_name %}
                                     <div class="role-chain chain-{{ role.chain_num }}">{{ role.chain_name }}</div>
-                                    {% else %}
+                                    {% elif not role.hide_detail %}
                                     <div class="role-chain chain-0">零链</div>
                                     {% endif %}
                                 </div>

@@ -68,6 +68,22 @@ class WavesGachaCloud(BaseModel, table=True):
         return result.scalars().first()
 
     @classmethod
+    @with_session
+    async def select_latest_valid_by_uid(
+        cls: Type[T_WavesGachaCloud],
+        session: AsyncSession,
+        uid: str,
+    ) -> Optional[T_WavesGachaCloud]:
+        """按 uid 取最近一次有效云登录记录(忽略 user_id/bot_id)。"""
+        sql = (
+            select(cls)
+            .where(cls.uid == uid, col(cls.is_valid).is_(True))
+            .order_by(col(cls.last_used_time).desc())
+        )
+        result = await session.execute(sql)
+        return result.scalars().first()
+
+    @classmethod
     async def upsert(
         cls: Type[T_WavesGachaCloud],
         user_id: str,

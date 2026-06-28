@@ -84,7 +84,7 @@ def get_weapon_detail(
 ) -> WavesWeaponResult:
     """
     breach 突破
-    resonLevel 精炼
+    resonLevel 谐振
     """
     ensure_data_loaded()
     result = WavesWeaponResult()

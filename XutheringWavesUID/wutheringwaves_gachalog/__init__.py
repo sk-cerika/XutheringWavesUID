@@ -36,6 +36,7 @@ from ..utils.error_reply import ERROR_CODE, WAVES_CODE_102, WAVES_CODE_103
 from ..utils.database.models import WavesBind
 from ..wutheringwaves_config import PREFIX
 from ..utils.resource.RESOURCE_PATH import GACHA_BACKUP_PATH, PLAYER_PATH
+from ..utils.player_store import resolve_player_path, resolve_readable_player_path
 from ..wutheringwaves_rank.draw_gacha_rank_card import draw_gacha_rank_card
 
 sv_gacha_log = SV("waves抽卡记录")
@@ -163,10 +164,7 @@ async def _merge_mcgf_gacha(bot: Bot, ev: Event, uid: str, target_uid: str):
         original_data = {"info": {}, "list": []}
 
         if export_res["retcode"] == "ok":
-            import aiofiles
-
-            async with aiofiles.open(export_res["url"], "r", encoding="utf-8") as f:
-                original_data = json.loads(await f.read())
+            original_data = export_res["json"]
 
         if len(original_data.get("list", [])) == 0:
             return await bot.send(
@@ -312,10 +310,7 @@ async def get_gacha_log_by_xhh(bot: Bot, ev: Event):
         original_data = {"info": {}, "list": []}
 
         if export_res["retcode"] == "ok":
-            import aiofiles
-
-            async with aiofiles.open(export_res["url"], "r", encoding="utf-8") as f:
-                original_data = json.loads(await f.read())
+            original_data = export_res["json"]
 
         if len(original_data.get("list", [])) == 0:
             return await bot.send(
@@ -483,8 +478,8 @@ async def send_export_gacha_info(bot: Bot, ev: Event):
     export = await export_gachalogs(uid)
     if export["retcode"] == "ok":
         file_name = export["name"]
-        file_path = export["url"]
-        await bot.send(MessageSegment.file(file_path, file_name))
+        file_bytes = json.dumps(export["json"], ensure_ascii=False, indent=4).encode("utf-8")
+        await bot.send(MessageSegment.file(file_bytes, file_name))
         await bot.send("✅导出抽卡记录成功！")
     else:
         await bot.send("导出抽卡记录失败...")
@@ -505,20 +500,26 @@ async def delete_gacha_history(bot: Bot, ev: Event):
         return await bot.send(f"UID{hide_uid(uid, user_pref)}抽卡导入正在进行，请稍后再试")
     try:
         player_dir = PLAYER_PATH / uid
-        gacha_log_file = player_dir / "gacha_logs.json"
-        if not gacha_log_file.exists():
+        logical = player_dir / "gacha_logs.json"
+        gacha_log_file = resolve_readable_player_path(logical) or resolve_player_path(logical)
+        if gacha_log_file is None:
             return await bot.send(f"UID{hide_uid(uid, user_pref)}暂无抽卡记录文件")
 
         backup_dir = GACHA_BACKUP_PATH / uid
         backup_dir.mkdir(parents=True, exist_ok=True)
-        dst_file = backup_dir / f"delete_gacha_logs_{datetime.now().strftime('%Y-%m-%d.%H%M%S')}.json"
+        dst_name = f"delete_gacha_logs_{datetime.now().strftime('%Y-%m-%d.%H%M%S')}.json"
+        if gacha_log_file.suffix == ".gz":
+            dst_name += ".gz"
+        dst_file = backup_dir / dst_name
 
         try:
             shutil.move(str(gacha_log_file), dst_file)
         except Exception as e:
             logger.exception(f"[鸣潮·抽卡删除] 移动失败 uid={uid}: {e}")
             return await bot.send("移动抽卡记录失败，请稍后重试")
-        # 同步失效 stats 缓存，避免抽卡排行读到已删数据
+        # 清理同名残留(明文/gz 共存)+ 失效 stats 缓存
+        (player_dir / "gacha_logs.json").unlink(missing_ok=True)
+        (player_dir / "gacha_logs.json.gz").unlink(missing_ok=True)
         (player_dir / "gachaStats.json").unlink(missing_ok=True)
         prune_gacha_backups(uid, "delete")
 
@@ -530,18 +531,36 @@ async def delete_gacha_history(bot: Bot, ev: Event):
 @sv_delete_import_gacha_log.on_command(("删除抽卡导入", "删除导入记录", "删除导入抽卡"), block=True)
 async def delete_import_gacha_files(bot: Bot, ev: Event):
     delete_count = 0
+    freed = 0
     if GACHA_BACKUP_PATH.exists():
         for uid_dir in GACHA_BACKUP_PATH.iterdir():
             if not uid_dir.is_dir():
                 continue
             for file_path in uid_dir.glob("import_gacha_logs_*.json"):
                 try:
+                    freed += file_path.stat().st_size
                     file_path.unlink()
                     delete_count += 1
                 except Exception as e:
                     await bot.logger.warning(f"[鸣潮·抽卡] 删除导入记录失败 {file_path}: {e}")
+    # 导出产物 + link 源快照可再生, 一并清理
+    if PLAYER_PATH.exists():
+        for uid_dir in PLAYER_PATH.iterdir():
+            if not uid_dir.is_dir():
+                continue
+            targets = list(uid_dir.glob("export_*.json"))
+            targets += [uid_dir / "link_gacha_logs.json", uid_dir / "link_gacha_logs.json.gz"]
+            for file_path in targets:
+                if not file_path.exists():
+                    continue
+                try:
+                    freed += file_path.stat().st_size
+                    file_path.unlink()
+                    delete_count += 1
+                except Exception as e:
+                    await bot.logger.warning(f"[鸣潮·抽卡] 删除文件失败 {file_path}: {e}")
 
-    await bot.send(f"删除导入记录{delete_count}个")
+    await bot.send(f"删除导入记录 {delete_count} 个, 释放 {freed / 1048576:.1f}MB")
 
 
 @sv_gacha_rank.on_command(

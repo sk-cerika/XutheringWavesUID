@@ -185,7 +185,7 @@ def _compose_total_rank(card_img, bar, details, results, char_avatar_map,
         uid_color = "white"
         if detail.waves_id == self_uid:
             uid_color = RED
-        bar_draw.text((350, 40), f"特征码: {hide_uid(detail.waves_id)}", uid_color, waves_font_20, "lm")
+        bar_draw.text((350, 40), f"特征码: {hide_uid(detail.waves_id, user_pref='on' if detail.hide_uid else '')}", uid_color, waves_font_20, "lm")
 
         botName = getattr(detail, "alias_name", None)
         if botName:

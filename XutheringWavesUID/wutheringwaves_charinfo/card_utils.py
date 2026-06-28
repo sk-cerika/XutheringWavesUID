@@ -400,10 +400,11 @@ def delete_orb_cache(image_path: Path) -> None:
             logger.warning(f"[鸣潮·卡片工具] 删除ORB缓存失败: {cache_path}")
 
 
-def _compute_orb_features(image_path: Path):
+def _compute_orb_features(image_path: Path, t: Optional[str] = None):
     if cv2 is None:
         return None
-    t = card_hash_index.detect_type(image_path)
+    if t is None:
+        t = card_hash_index.detect_type(image_path)
     if t == "card":
         try:
             with Image.open(image_path) as im:
@@ -425,15 +426,19 @@ def _compute_orb_features(image_path: Path):
     return pts, descriptors
 
 
-def get_orb_features(image_path: Path):
-    cached = _load_orb_cache(image_path)
-    if cached is not None:
-        return cached
-    computed = _compute_orb_features(image_path)
+def get_orb_features(image_path: Path, t: Optional[str] = None):
+    # t 显式指定且与路径真实类型不一致时(如 tmp/pending 图按 card 预处理), 跳过按路径缓存。
+    use_cache = t is None or t == card_hash_index.detect_type(image_path)
+    if use_cache:
+        cached = _load_orb_cache(image_path)
+        if cached is not None:
+            return cached
+    computed = _compute_orb_features(image_path, t)
     if computed is None:
         return None
     pts, des = computed
-    _save_orb_cache(image_path, pts, des)
+    if use_cache:
+        _save_orb_cache(image_path, pts, des)
     return pts, des
 
 
@@ -564,17 +569,18 @@ def find_duplicates_for_new_images(
     dir_path: Path,
     new_images: List[Path],
     threshold: float = ORB_THRESHOLD,
+    as_type: Optional[str] = None,
 ) -> Dict[Path, List[Tuple[Path, float]]]:
     existing = [p for p in _iter_images(dir_path) if p not in new_images]
     existing_feats = {}
     for p in existing:
-        feat = get_orb_features(p)
+        feat = get_orb_features(p, as_type)
         if feat is not None:
             existing_feats[p] = feat
 
     result: Dict[Path, List[Tuple[Path, float]]] = {}
     for new_path in new_images:
-        feat_new = get_orb_features(new_path)
+        feat_new = get_orb_features(new_path, as_type)
         if feat_new is None:
             continue
         dup_list: List[Tuple[Path, float]] = []
@@ -585,6 +591,18 @@ def find_duplicates_for_new_images(
         if dup_list:
             result[new_path] = dup_list
     return result
+
+
+def duplicates_for_single(
+    target_dir: Path,
+    image_path: Path,
+    threshold: float = ORB_THRESHOLD,
+    as_type: Optional[str] = None,
+) -> List[Tuple[Path, float]]:
+    """单张图与 target_dir 内已有图的相似项, 按相似度降序。
+    as_type 指定时按该类型统一做 ORB 预处理(如 card 裁到面板可见区), 使 tmp/pending 图与已入库图同尺度。cv2 缺失时返回空。"""
+    dup = find_duplicates_for_new_images(target_dir, [image_path], threshold, as_type).get(image_path, [])
+    return sorted(dup, key=lambda x: -x[1])
 
 
 async def send_repeated_custom_cards(

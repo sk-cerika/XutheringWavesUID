@@ -17,7 +17,7 @@ from ..utils.image import (
     pic_download_from_url,
 )
 from ..utils.api.model import MoreActivity, AccountBaseInfo
-from ..utils.imagetool import draw_pic_with_ring
+from ..utils.imagetool import draw_pic_with_ring, draw_base_info_bg
 from ..utils.waves_api import waves_api
 from ..utils.error_reply import WAVES_CODE_102
 from ..utils.fonts.waves_fonts import (
@@ -139,10 +139,11 @@ def _compose_poker_img(
     card_img = get_waves_bg(1000, h, "bg11")
 
     # 绘制个人信息
-    base_info_bg = Image.open(TEXT_PATH / "base_info_bg.png")
-    base_info_draw = ImageDraw.Draw(base_info_bg)
-    base_info_draw.text((275, 120), f"{account_info.name[:10]}", "white", waves_font_30, "lm")
-    base_info_draw.text((226, 173), f"特征码:  {hide_uid(account_info.id, user_pref=user_pref)}", GOLD, waves_font_25, "lm")
+    base_info_bg = draw_base_info_bg(
+        f"{account_info.name[:10]}",
+        f"特征码:  {hide_uid(account_info.id, user_pref=user_pref)}",
+        TEXT_PATH,
+    )
     card_img.paste(base_info_bg, (15, 20), base_info_bg)
 
     card_img.paste(avatar, (25, 70), avatar)

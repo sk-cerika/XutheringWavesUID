@@ -18,6 +18,8 @@ from gsuid_core.utils.image.image_tools import crop_center_img
 
 from ..utils import hint
 from ..utils.util import hide_uid, get_hide_uid_pref
+from ..utils.player_store import read_player_json, player_json_exists
+from ..utils.imagetool import draw_base_info_bg
 from ..utils.image import (
     GOLD,
     add_footer,
@@ -43,6 +45,7 @@ from ..utils.fonts.waves_fonts import (
 )
 from ..utils.resource.constant import NORMAL_LIST
 from ..utils.resource.RESOURCE_PATH import PLAYER_PATH
+from .get_gachalogs import gacha_type_meta_data
 
 TEXT_PATH = Path(__file__).parent / "texture2d"
 HOMO_TAG = ["非到极致", "运气不好", "平稳保底", "小欧一把", "欧狗在此"]
@@ -59,7 +62,22 @@ gacha_type_meta_rename = {
     "武器新旅唤取": "武器新旅唤取",
     "角色联动唤取": "角色联动唤取",
     "武器联动唤取": "武器联动唤取",
+    "角色忆旅唤取": "角色忆旅唤取",
+    "武器忆旅唤取": "武器忆旅唤取",
 }
+
+MINI_POOLS = (
+    "新手调谐",
+    "新手自选唤取",
+    "新手自选唤取（感恩定向唤取）",
+    "角色新旅唤取",
+    "武器新旅唤取",
+)
+NEWBIE_CARD_W = 250
+NEWBIE_CARD_H = 360
+NEWBIE_GAP = 30
+NEWBIE_ROW_GAP = 8
+NEWBIE_PER_ROW = 3
 
 
 def get_num_h(num: int, column: int):
@@ -112,29 +130,23 @@ async def draw_card_help():
         ]
     )
 
-    # pc = "\n".join(
-    #     [
-    #         "PC获取方式（已失效，建议使用上方两种获取方式）",
-    #         "1.打开游戏抽卡界面，点开换取记录",
-    #         "2.在鸣潮安装的目录下进入目录：`Wuthering Waves\\Wuthering Waves Game\\Client\\Saved\\Logs`",
-    #         "3.找到文件`Client.log`并用记事本打开",
-    #         "4.搜索关键字：aki-gm-resources.aki-game",
-    #         "5.复制一整行链接"
-    #     ]
-    # )
+    pc = "\n".join(
+        [
+            "PC获取方式",
+            "1.打开游戏抽卡界面，点开唤取记录后确保显示了想要导入的记录",
+            "2.下载抽卡助手：https://ww3.loping151.cn/XutheringWavesUID/resource/gacha/gacha-helper.zip",
+            "3.点击获取抽卡记录链接",
+        ]
+    )
 
-    android = "\n".join(
+    mobile = "\n".join(
         [
             "安卓手机获取链接方式",
             "1.打开游戏抽卡界面",
             "2.关闭网络或打开飞行模式",
             "3.点开换取记录",
-            "4.长按左上角区域，全选，复制"
-        ]
-    )
-
-    ios = "\n".join(
-        [
+            "4.长按左上角区域，全选，复制",
+            "",
             "苹果手机获取方式",
             "1.使用Stream抓包（详细教程网上搜索）",
             "2.关键字搜索:[game2]的请求",
@@ -153,12 +165,16 @@ async def draw_card_help():
         ]
     )
 
-    msg = [text, yun, android, ios, wechat]
+    msg = [text, yun, pc, mobile, wechat]
     return msg
 
 
 def _compute_pool_stats(gachalogs: Dict) -> Dict:
     """对每个卡池计算 total/avg/avg_up/remain/r_num/up_list/rank_s_list/level/time_range."""
+    gachalogs = {
+        **{n: gachalogs[n] for n in gacha_type_meta_data if n in gachalogs},
+        **{n: v for n, v in gachalogs.items() if n not in gacha_type_meta_data},
+    }
     total_data = {}
     for gacha_name in gachalogs:
         total_data[gacha_name] = {
@@ -234,7 +250,7 @@ async def get_gacha_stats(uid: str) -> Dict:
 
     gacha_log_path = _dir / "gacha_logs.json"
     stats_path = _dir / "gachaStats.json"
-    if gacha_log_path.exists() and stats_path.exists():
+    if player_json_exists(gacha_log_path) and stats_path.exists():
         try:
             async with aiofiles.open(stats_path, "r", encoding="utf-8") as f:
                 cached = json.loads(await f.read())
@@ -248,13 +264,11 @@ async def get_gacha_stats(uid: str) -> Dict:
         except Exception:
             pass
 
-    if not gacha_log_path.exists():
+    raw_data = await read_player_json(gacha_log_path)
+    if raw_data is None:
         return {}
 
     try:
-        async with aiofiles.open(gacha_log_path, "r", encoding="utf-8") as f:
-            raw_data = json.loads(await f.read())
-
         total_data = _compute_pool_stats(raw_data.get("data", {}))
         stats_data = _total_to_stats(total_data)
         await save_gacha_stats(uid, total_data)
@@ -299,10 +313,9 @@ async def save_gacha_stats(uid: str, total_data: Dict):
 async def draw_card(uid: str, ev: Event):
     # 获取数据
     gacha_log_path = PLAYER_PATH / str(uid) / "gacha_logs.json"
-    if not gacha_log_path.exists():
+    raw_data = await read_player_json(gacha_log_path)
+    if raw_data is None:
         return f"[鸣潮] 你还没有抽卡记录噢!\n 请查看 {PREFIX}抽卡帮助 中的提示导入!"
-    async with aiofiles.open(gacha_log_path, "r", encoding="UTF-8") as f:
-        raw_data: Dict = json.loads(await f.read())
 
     gachalogs = raw_data["data"]
     title_num = len([1 for i in gachalogs.keys() if "新手" not in i])
@@ -349,11 +362,12 @@ def _render_gacha_card(
     footer = 50
 
     # 仅展示有抽卡记录（总抽数 > 0）的卡池
-    show_main = [n for n in total_data if "新手" not in n and total_data[n]["total"] > 0]
-    show_newbie = [n for n in total_data if "新手" in n and total_data[n]["total"] > 0]
-    drawable_newbie = [n for n in show_newbie if total_data[n]["rank_s_list"]]
+    show_main = [n for n in total_data if n not in MINI_POOLS and total_data[n]["total"] > 0]
+    show_mini = [n for n in total_data if n in MINI_POOLS and total_data[n]["total"] > 0]
+    mini_cells = [(n, gold) for n in show_mini for gold in reversed(total_data[n]["rank_s_list"])]
     title_num = len(show_main)
-    _newbielen = 395 if drawable_newbie else 0
+    mini_rows = get_num_h(len(mini_cells), NEWBIE_PER_ROW)
+    _newbielen = mini_rows * NEWBIE_CARD_H + max(0, mini_rows - 1) * NEWBIE_ROW_GAP + 35 if mini_cells else 0
 
     def _content_h(col: int) -> int:
         body = 0
@@ -690,17 +704,12 @@ def _render_gacha_card(
         else:
             y += get_num_h(len(s_list), column) * row_h
 
-    newbie_card_w = 250
-    newbie_card_h = 360
-    newbie_gap = 30
-    newbie_total_w = len(drawable_newbie) * newbie_card_w + max(0, len(drawable_newbie) - 1) * newbie_gap
-    newbie_start_x = max(10, (w - newbie_total_w) // 2)
-    nindex = 0
-    for gacha_name in drawable_newbie:
-        gacha_data = total_data[gacha_name]
-
-        s_list = gacha_data["rank_s_list"]
-        item_bg = draw_pic(s_list[0])
+    newbie_card_w = NEWBIE_CARD_W
+    newbie_card_h = NEWBIE_CARD_H
+    newbie_gap = NEWBIE_GAP
+    mini_base_y = _header + y + gindex * oset + 35
+    for nindex, (gacha_name, gold_item) in enumerate(mini_cells):
+        item_bg = draw_pic(gold_item)
 
         newbie_bg_cp = Image.new("RGBA", (newbie_card_w, newbie_card_h), (0, 0, 0, 0))
         newbie_shadow = Image.new("RGBA", newbie_bg_cp.size, (0, 0, 0, 0))
@@ -743,12 +752,7 @@ def _render_gacha_card(
             stroke_width=1,
             stroke_fill=(0, 0, 22, 130),
         )
-        if gacha_data["time_range"]:
-            time_range = (
-                gacha_data["time_range"].split("~")[1] if "~" in gacha_data["time_range"] else gacha_data["time_range"]
-            )
-        else:
-            time_range = "暂未抽过卡!"
+        time_range = gold_item.get("time") or "暂未抽过卡!"
         newbie_bg_cp_draw.rounded_rectangle(
             [28, 82, newbie_card_w - 28, 110],
             radius=14,
@@ -771,12 +775,19 @@ def _render_gacha_card(
         )
         newbie_bg_cp.paste(item_bg, ((newbie_card_w - 167) // 2, 142), item_bg)
 
+        row = nindex // NEWBIE_PER_ROW
+        col = nindex % NEWBIE_PER_ROW
+        row_count = min(NEWBIE_PER_ROW, len(mini_cells) - row * NEWBIE_PER_ROW)
+        row_w = row_count * newbie_card_w + max(0, row_count - 1) * newbie_gap
+        row_start_x = max(10, (w - row_w) // 2)
         card_img.paste(
             newbie_bg_cp,
-            (newbie_start_x + nindex * (newbie_card_w + newbie_gap), _header + y + gindex * oset + 35),
+            (
+                row_start_x + col * (newbie_card_w + newbie_gap),
+                mini_base_y + row * (newbie_card_h + NEWBIE_ROW_GAP),
+            ),
             newbie_bg_cp,
         )
-        nindex += 1
 
     return card_img
 
@@ -835,10 +846,11 @@ async def draw_uid_avatar(uid, ev, card_img):
             return f"用户未展示数据, 请尝试【{PREFIX}登录】"
         account_info = AccountBaseInfo.model_validate(account_info.data)
 
-        base_info_bg = Image.open(TEXT_PATH / "base_info_bg.png")
-        base_info_draw = ImageDraw.Draw(base_info_bg)
-        base_info_draw.text((275, 120), f"{account_info.name[:10]}", "white", waves_font_30, "lm")
-        base_info_draw.text((226, 173), f"特征码:  {hide_uid(account_info.id, user_pref=user_pref)}", GOLD, waves_font_25, "lm")
+        base_info_bg = draw_base_info_bg(
+            f"{account_info.name[:10]}",
+            f"特征码:  {hide_uid(account_info.id, user_pref=user_pref)}",
+            TEXT_PATH,
+        )
         base_info_bg = base_info_bg.resize((900, 450))
         card_img.alpha_composite(base_info_bg, (110, 30))
         #

@@ -10,7 +10,6 @@ from gsuid_core.utils.image.convert import convert_img
 
 from ..utils.util import hide_uid, get_hide_uid_pref
 from ..utils.image import (
-    GOLD,
     GREY,
     SPECIAL_GOLD,
     add_footer,
@@ -26,13 +25,12 @@ from ..utils.api.model import (
     RoleDetailData,
 )
 from ..utils.calculate import get_calc_map, get_valid_color, calc_phantom_score
-from ..utils.imagetool import draw_pic_with_ring
+from ..utils.imagetool import draw_pic_with_ring, draw_base_info_bg
 from ..utils.char_info_utils import get_all_role_detail_info
 from ..wutheringwaves_charinfo import base_info_cache
 from ..wutheringwaves_config import PREFIX
 from ..utils.fonts.waves_fonts import (
     waves_font_24,
-    waves_font_25,
     waves_font_26,
     waves_font_28,
     waves_font_30,
@@ -187,10 +185,11 @@ def _compose_echo_list(
     img.paste(avatar, (45, 20), avatar)
     img.paste(avatar_ring, (55, 30), avatar_ring)
 
-    base_info_bg = Image.open(TEXT_PATH / "base_info_bg.png")
-    base_info_draw = ImageDraw.Draw(base_info_bg)
-    base_info_draw.text((275, 120), f"{account_info.name[:10]}", "white", waves_font_30, "lm")
-    base_info_draw.text((226, 173), f"特征码:  {hide_uid(account_info.id, user_pref=user_pref)}", GOLD, waves_font_25, "lm")
+    base_info_bg = draw_base_info_bg(
+        f"{account_info.name[:10]}",
+        f"特征码:  {hide_uid(account_info.id, user_pref=user_pref)}",
+        TEXT_PATH,
+    )
     img.paste(base_info_bg, (35, -30), base_info_bg)
 
     if page > 1:

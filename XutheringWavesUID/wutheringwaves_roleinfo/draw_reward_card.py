@@ -23,7 +23,7 @@ from ..utils.resource.RESOURCE_PATH import waves_templates
 from ..utils.image import (
     pil_to_b64,
     img_to_b64,
-    get_custom_waves_bg,
+    get_waves_bg,
     get_event_avatar,
     get_square_avatar_path,
     get_square_weapon_path,
@@ -221,7 +221,7 @@ async def draw_reward_img(uid: str, ck: str, ev: Event):
     avatar_url = pil_to_b64(avatar, quality=75)
 
     # 准备背景
-    bg_img = get_custom_waves_bg(bg="bg3", crop=False)
+    bg_img = get_waves_bg(bg="bg", crop=False)
     bg_url = pil_to_b64(bg_img, quality=75)
 
     # 准备模板数据

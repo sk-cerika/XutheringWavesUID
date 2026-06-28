@@ -27,7 +27,7 @@ from ..utils.image import (
     add_footer,
     get_waves_bg,
 )
-from ..utils.imagetool import draw_pic_with_ring
+from ..utils.imagetool import draw_pic_with_ring, draw_base_info_bg
 
 
 TEXT_PATH = Path(__file__).parent / "texture2d"
@@ -100,15 +100,10 @@ def _draw_header(
     account_info: AccountBaseInfo = score_data["account_info"]
 
     try:
-        base_info_bg = Image.open(TEXT_PATH / "base_info_bg.png").convert("RGBA")
-        base_info_draw = ImageDraw.Draw(base_info_bg, "RGBA")
-        base_info_draw.text((275, 120), f"{account_info.name[:10]}", "white", waves_font_30, "lm")
-        base_info_draw.text(
-            (226, 173),
+        base_info_bg = draw_base_info_bg(
+            f"{account_info.name[:10]}",
             f"特征码:  {score_data['display_uid']}",
-            GOLD,
-            waves_font_25,
-            "lm",
+            TEXT_PATH,
         )
         card.paste(base_info_bg, (35, 0), base_info_bg)
     except Exception:

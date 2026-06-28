@@ -1,5 +1,4 @@
 import re
-import json
 import time
 import asyncio
 from typing import Dict, List, Tuple, Optional
@@ -7,7 +6,6 @@ from pathlib import Path
 from datetime import datetime, timezone, timedelta
 
 import httpx
-import aiofiles
 from PIL import Image, ImageDraw
 
 from gsuid_core.bot import Bot
@@ -15,10 +13,12 @@ from gsuid_core.logger import logger
 from gsuid_core.models import Event
 from gsuid_core.utils.image.convert import convert_img
 
-from ..utils.util import get_version, hide_uid
+from ..utils.util import get_version, hide_uid, build_uid_masker
+from ..utils.player_store import read_player_json
 from ..utils.image import (
     RED,
     GREY,
+    CHAIN_COLOR,
     get_ICON,
     add_footer,
     get_waves_bg,
@@ -230,7 +230,7 @@ async def draw_all_slash_rank_card(bot: Bot, ev: Event):
         uid_color = "white"
         if rank_temp.waves_id == item.waves_id:
             uid_color = RED
-        role_bg_draw.text((350, 40), f"特征码: {hide_uid(rank_temp.waves_id)}", uid_color, waves_font_20, "lm")
+        role_bg_draw.text((350, 40), f"特征码: {hide_uid(rank_temp.waves_id, user_pref='on' if rank_temp.hide_uid else '')}", uid_color, waves_font_20, "lm")
 
         # bot主人名字
         botName = rank_temp.alias_name if rank_temp.alias_name else ""
@@ -270,7 +270,7 @@ async def draw_all_slash_rank_card(bot: Bot, ev: Event):
                 if char_chain != -1:
                     info_block = Image.new("RGBA", (20, 20), color=(255, 255, 255, 0))
                     info_block_draw = ImageDraw.Draw(info_block)
-                    info_block_draw.rectangle([0, 0, 20, 20], fill=(96, 12, 120, int(0.9 * 255)))
+                    info_block_draw.rectangle([0, 0, 20, 20], fill=CHAIN_COLOR[char_chain] + (int(0.9 * 255),))
                     info_block_draw.text(
                         (8, 8),
                         f"{char_chain}",
@@ -363,12 +363,10 @@ async def get_all_slash_rank_info(
                     continue
             # 从本地读取该用户的无尽数据
             try:
-                slash_data_path = Path(PLAYER_PATH / uid / "slashData.json")
-                if not slash_data_path.exists():
+                slash_data_path = PLAYER_PATH / uid / "slashData.json"
+                slash_raw = await read_player_json(slash_data_path)
+                if slash_raw is None:
                     continue
-
-                async with aiofiles.open(slash_data_path, mode="r", encoding="utf-8") as f:
-                    slash_raw = json.loads(await f.read())
 
                 record_time = None
                 slash_data = slash_raw
@@ -399,25 +397,23 @@ async def get_all_slash_rank_info(
 
 
 async def get_role_chain_count(uid: str, role_id: int) -> int:
-    """从rawData.json获取角色共鸣链数量"""
+    """获取角色共鸣链数量, 漂泊者走 rover.json"""
     from ..utils.resource.RESOURCE_PATH import PLAYER_PATH
+    from ..utils.resource.constant import SPECIAL_CHAR, SPECIAL_CHAR_RANK_MAP
+    from ..utils.char_info_utils import get_rover_detail_map
 
     try:
-        raw_data_path = Path(PLAYER_PATH / str(uid) / "rawData.json")
-        if not raw_data_path.exists():
+        if str(role_id) in SPECIAL_CHAR:
+            temp = (await get_rover_detail_map(uid)).get(SPECIAL_CHAR_RANK_MAP[str(role_id)])
+            return temp.get_chain_num() if temp else -1
+
+        raw_data = await read_player_json(PLAYER_PATH / str(uid) / "rawData.json")
+        if raw_data is None:
             return -1
-
-        async with aiofiles.open(raw_data_path, mode="r", encoding="utf-8") as f:
-            raw_data = json.loads(await f.read())
-
-        # rawData是一个列表，包含每个角色的详细信息
         if isinstance(raw_data, list):
             for role_data in raw_data:
                 if role_data.get("role", {}).get("roleId") == role_id:
-                    # 获取chainList长度
-                    chain_list = role_data.get("chainList", [])
-                    unlocked_chains = [c for c in chain_list if c.get("unlocked", False)]
-                    return len(unlocked_chains)
+                    return len([c for c in role_data.get("chainList", []) if c.get("unlocked", False)])
         return -1
     except Exception as e:
         logger.debug(f"[鸣潮·冥海排行] 获取角色 roleId={role_id} 共鸣链失败: {e}")
@@ -429,12 +425,10 @@ async def get_five_star_chain_total(uid: str) -> int:
     from ..utils.resource.RESOURCE_PATH import PLAYER_PATH
 
     try:
-        raw_data_path = Path(PLAYER_PATH / str(uid) / "rawData.json")
-        if not raw_data_path.exists():
+        raw_data_path = PLAYER_PATH / str(uid) / "rawData.json"
+        raw_data = await read_player_json(raw_data_path)
+        if raw_data is None:
             return 0
-
-        async with aiofiles.open(raw_data_path, mode="r", encoding="utf-8") as f:
-            raw_data = json.loads(await f.read())
 
         total_gold = 0
         if isinstance(raw_data, list):
@@ -510,6 +504,8 @@ async def draw_slash_rank_list(bot: Bot, ev: Event):
     if rankId and rankInfo and rankId > rank_length:
         rankInfoList_display.append(rankInfo)
 
+    _mask_uid = await build_uid_masker([(ri.uid, ri.user_id) for ri in rankInfoList_display], ev.bot_id)
+
     # 设置图像尺寸
     width = 1000
     item_spacing = 120
@@ -535,13 +531,14 @@ async def draw_slash_rank_list(bot: Bot, ev: Event):
     title_text = "#无尽群排行"
     title_bg_draw = ImageDraw.Draw(title_bg)
     title_bg_draw.text((220, 290), title_text, "white", waves_font_58, "lm")
-    title_bg_draw.text(
-        (225, 360),
-        f"第{get_slash_period_number()}期",
-        GREY,
-        waves_font_20,
-        "lm",
-    )
+    period_label = f"第{get_slash_period_number()}期"
+    title_bg_draw.text((225, 360), period_label, GREY, waves_font_20, "lm")
+    date_text = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+    try:
+        period_width = title_bg_draw.textlength(period_label, font=waves_font_20)
+    except Exception:
+        period_width = waves_font_20.getsize(period_label)[0]
+    title_bg_draw.text((225 + period_width + 16, 360), date_text, GREY, waves_font_20, "lm")
 
     # 遮罩
     char_mask = Image.open(TEXT_PATH / "char_mask.png").convert("RGBA")
@@ -597,7 +594,7 @@ async def draw_slash_rank_list(bot: Bot, ev: Event):
         uid_color = "white"
         if rankInfo.uid == self_uid:
             uid_color = RED
-        role_bg_draw.text((210, 70), f"{rankInfo.uid}", uid_color, waves_font_20, "lm")
+        role_bg_draw.text((210, 70), f"{_mask_uid(rankInfo.uid, rankInfo.user_id)}", uid_color, waves_font_20, "lm")
 
         # 总分数 (左移5px)
         role_bg_draw.text(
@@ -630,7 +627,7 @@ async def draw_slash_rank_list(bot: Bot, ev: Event):
                                 if chain_count != -1:
                                     info_block = Image.new("RGBA", (20, 20), color=(255, 255, 255, 0))
                                     info_block_draw = ImageDraw.Draw(info_block)
-                                    info_block_draw.rectangle([0, 0, 20, 20], fill=(96, 12, 120, int(0.9 * 255)))
+                                    info_block_draw.rectangle([0, 0, 20, 20], fill=CHAIN_COLOR[chain_count] + (int(0.9 * 255),))
                                     info_block_draw.text(
                                         (8, 8),
                                         f"{chain_count}",

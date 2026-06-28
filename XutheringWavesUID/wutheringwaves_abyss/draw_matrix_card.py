@@ -1,10 +1,8 @@
-import json
 import time
 from typing import Union
 from pathlib import Path
 from datetime import datetime, timezone, timedelta
 
-import aiofiles
 from PIL import Image
 
 from gsuid_core.logger import logger
@@ -18,12 +16,12 @@ from ..utils.error_reply import WAVES_CODE_102
 from ..utils.api.model import MatrixDetail, AccountBaseInfo
 from ..utils.api.wwapi import MatrixDetailRequest, MatrixTeamDetail
 from ..utils.avatar_match import match_role_icons_to_char_ids
-from ..utils.char_info_utils import get_all_roleid_detail_info, lookup_chain
-from ..utils.resource.constant import SPECIAL_CHAR_INT_ALL
+from ..utils.char_info_utils import get_all_roleid_detail_info, get_rover_detail_map, lookup_chain_with_rover
+from ..utils.player_store import write_player_json
 from ..utils.queues.const import QUEUE_MATRIX_RECORD
 from ..utils.queues.queues import push_item
 from ..utils.resource.RESOURCE_PATH import PLAYER_PATH, MATRIX_PATH, waves_templates
-from ..utils.image import pil_to_b64, get_waves_bg, get_event_avatar, CHAIN_COLOR
+from ..utils.image import pil_to_b64, get_waves_bg, get_event_avatar, CHAIN_COLOR, get_skill_branch_emblem_b64
 from ._colors import get_matrix_score_class
 from .period import get_matrix_period_number
 from .draw_matrix_card_pil import (
@@ -77,32 +75,10 @@ async def get_matrix_data(uid: str, ck: str, is_self_ck: bool) -> Union[MatrixDe
         return MatrixDetail.model_validate(matrix_data)
 
 
-async def _resolve_special_chars(uid: str, char_ids_map: dict) -> dict:
-    """将特殊角色ID解析为用户实际持有的形态
-
-    头像匹配可能匹配到1501(光主男)，但用户实际持有1502(光主女)，
-    通过读取用户面板数据确定正确的角色ID。
-    """
-    try:
-        role_detail_map = await get_all_roleid_detail_info(uid)
-    except Exception:
-        role_detail_map = None
-    if not role_detail_map:
-        return char_ids_map
-
-    for key, char_ids in char_ids_map.items():
-        for i, cid in enumerate(char_ids):
-            if cid in SPECIAL_CHAR_INT_ALL:
-                # 漂泊者的所有形态头像可能互相匹配，遍历全部6个ID
-                for form_id in SPECIAL_CHAR_INT_ALL:
-                    if str(form_id) in role_detail_map:
-                        char_ids[i] = form_id
-                        break
-    return char_ids_map
-
-
 async def match_all_char_ids(matrix_data: MatrixDetail) -> dict:
-    """对所有模式的所有队伍做一次 roleIcons → char_ids 匹配
+    """获取所有模式所有队伍的 char_ids (与 roleIcons 同序)
+
+    优先用接口自带的 roleList.roleId，缺失时才回退到头像相似度匹配。
 
     Returns:
         {(modeId, team_index): [char_id, ...], ...}
@@ -112,7 +88,9 @@ async def match_all_char_ids(matrix_data: MatrixDetail) -> dict:
         if not mode.hasRecord or not mode.teams:
             continue
         for idx, team in enumerate(mode.teams):
-            if team.roleIcons:
+            if team.roleList:
+                char_ids = [r.roleId for r in team.roleList]
+            elif team.roleIcons:
                 try:
                     char_ids = await match_role_icons_to_char_ids(
                         team.roleIcons, MATRIX_PATH
@@ -148,8 +126,7 @@ async def save_matrix_record(
             "matrix_data": matrix_dict,
             "matched_char_ids": matched,
         }
-        async with aiofiles.open(path, "w", encoding="utf-8") as file:
-            await file.write(json.dumps(record_payload, ensure_ascii=False))
+        await write_player_json(path, record_payload)
     except Exception as e:
         logger.warning(f"[鸣潮·矩阵保存] 失败 uid={uid} error={e}")
 
@@ -160,7 +137,10 @@ async def upload_matrix_record(
     matrix_data: MatrixDetail,
     char_ids_map: dict,
     sender_avatar: str = "",
+    user_id: str = "",
+    bot_id: str = "",
 ):
+    from ..utils.util import resolve_hide_uid
     WavesToken = WutheringWavesConfig.get_config("WavesToken").data
     if not WavesToken:
         return
@@ -206,6 +186,7 @@ async def upload_matrix_record(
         teamCount=len(mode.teams),
         teams=teams,
         sender_avatar=sender_avatar,
+        hide_uid=await resolve_hide_uid(waves_id, user_id, bot_id),
     )
     push_item(QUEUE_MATRIX_RECORD, matrix_item.model_dump())
 
@@ -260,10 +241,6 @@ async def draw_matrix_img(ev: Event, uid: str, user_id: str) -> Union[bytes, str
     # 匹配角色ID (一次匹配，save + upload 共用)
     char_ids_map = await match_all_char_ids(matrix_detail) if is_self_ck else {}
 
-    # 解析特殊角色(光主/暗主/风主): 确定用户实际持有的形态
-    if char_ids_map and is_self_ck:
-        char_ids_map = await _resolve_special_chars(uid, char_ids_map)
-
     sender_avatar = safe_sender_avatar(ev)
 
     if is_self_ck:
@@ -284,7 +261,7 @@ async def draw_matrix_img(ev: Event, uid: str, user_id: str) -> Union[bytes, str
 
     if isinstance(result, bytes):
         await save_matrix_record(uid, matrix_detail, char_ids_map)
-        await upload_matrix_record(is_self_ck, uid, matrix_detail, char_ids_map, sender_avatar)
+        await upload_matrix_record(is_self_ck, uid, matrix_detail, char_ids_map, sender_avatar, user_id, ev.bot_id)
     return result
 
 
@@ -363,6 +340,7 @@ async def _draw_matrix_detail_pil(
             return account_info
 
         role_detail_info_map = await get_all_roleid_detail_info(uid)
+        rover_map = await get_rover_detail_map(uid)
         return await draw_matrix_detail_img_pil(
             ev,
             account_info,
@@ -372,6 +350,7 @@ async def _draw_matrix_detail_pil(
             role_detail_info_map or {},
             target_mode_id,
             char_ids_map,
+            rover_map,
         )
     except Exception as e:
         logger.exception(f"[鸣潮·矩阵渲染] PIL Detail 失败: {e}")
@@ -466,6 +445,7 @@ async def _draw_matrix_detail_html(
 
         # 根据面板数据获取共鸣链详细信息 (与外层 match_all_char_ids 共用一次)
         role_detail_info_map = await get_all_roleid_detail_info(uid) or {}
+        rover_map = await get_rover_detail_map(uid)
         _char_ids_map = char_ids_map or {}
 
         # 只展示目标模式
@@ -499,14 +479,15 @@ async def _draw_matrix_detail_html(
                         except Exception:
                             pass
 
-                    # 通过匹配的 char_id 查共鸣链 (特殊角色已在 _resolve_special_chars 中修正)
                     char_id = team_char_ids[role_idx] if role_idx < len(team_char_ids) else None
-                    chain_num, chain_name = lookup_chain(role_detail_info_map, char_id)
+                    chain_num, chain_name, _ = lookup_chain_with_rover(role_detail_info_map, rover_map, char_id)
 
+                    _r = team.roleList[role_idx] if role_idx < len(team.roleList) else None
                     roles_data.append({
                         "icon_url": role_b64,
                         "chain": chain_num,
                         "chain_name": chain_name,
+                        "branch_icon": get_skill_branch_emblem_b64(_r.roleId, _r.skillBranchIndex) if _r else "",
                     })
 
                 # 不足3人时补占位

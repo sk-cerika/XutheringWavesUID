@@ -1,11 +1,8 @@
-import json
 from typing import Any, Dict, Union, Generator
 
-import aiofiles
-
-from gsuid_core.logger import logger
-
 from .api.model import RoleDetailData
+from .player_store import read_player_json
+from .resource.constant import SPECIAL_CHAR, SPECIAL_CHAR_RANK_MAP
 from .resource.RESOURCE_PATH import PLAYER_PATH
 
 PATTERN = r"[\u4e00-\u9fa5a-zA-Z0-9\U0001F300-\U0001FAFF\U00002600-\U000027BF\U00002B00-\U00002BFF\U00003200-\U000032FF-—·()（）]{1,15}"
@@ -14,14 +11,8 @@ async def get_all_role_detail_info_list(
     uid: str,
 ) -> Union[Generator[RoleDetailData, Any, None], None]:
     path = PLAYER_PATH / uid / "rawData.json"
-    if not path.exists():
-        return None
-    try:
-        async with aiofiles.open(path, mode="r", encoding="utf-8") as f:
-            player_data = json.loads(await f.read())
-    except Exception as e:
-        logger.exception(f"[鸣潮·角色信息] get role detail info failed {path}:", e)
-        path.unlink(missing_ok=True)
+    player_data = await read_player_json(path)
+    if not player_data:
         return None
 
     return iter(RoleDetailData(**r) for r in player_data)
@@ -52,12 +43,38 @@ async def get_all_roleid_detail_info_int(
     return {r.role.roleId: r for r in _all}
 
 
+async def get_rover_detail_map(uid: str) -> Dict[str, RoleDetailData]:
+    """读 rover.json → {canonical_id: RoleDetailData}。"""
+    data = await read_player_json(PLAYER_PATH / uid / "rover.json")
+    if not data:
+        return {}
+    out: Dict[str, RoleDetailData] = {}
+    for k, v in data.items():
+        try:
+            out[str(k)] = RoleDetailData(**v)
+        except Exception:
+            continue
+    return out
+
+
 def lookup_chain(role_detail_info_map, role_id) -> tuple[int, str]:
     """从 role_detail_info_map 取角色共鸣链 (num, name)，无数据返回 (0, '')"""
     if role_detail_info_map and str(role_id) in role_detail_info_map:
         temp: RoleDetailData = role_detail_info_map[str(role_id)]
         return temp.get_chain_num(), temp.get_chain_name()
     return 0, ""
+
+
+def lookup_chain_with_rover(rawdata_map, rover_map, role_id) -> tuple[int, str, bool]:
+    """共鸣链 (num, name, hide)。漂泊者按 canonical 查 rover_map，缺失则 hide=True。"""
+    rid = str(role_id)
+    if rid in SPECIAL_CHAR:
+        temp = (rover_map or {}).get(SPECIAL_CHAR_RANK_MAP[rid])
+        if temp is None:
+            return 0, "", True
+        return temp.get_chain_num(), temp.get_chain_name(), False
+    num, name = lookup_chain(rawdata_map, role_id)
+    return num, name, False
 
 
 def parse_skill_levels(skill_str: str) -> list[int]:

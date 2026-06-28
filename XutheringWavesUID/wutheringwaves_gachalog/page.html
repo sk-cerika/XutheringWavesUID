@@ -204,32 +204,39 @@ body::after {
 }
 .user-uid::before { content: "UID/"; color: var(--text-low); margin-right: 4px; }
 .stats-row {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 8px;
-  margin-top: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  margin-top: 14px;
 }
 .stat-cell {
-  padding: 8px 6px;
-  background: rgba(15, 22, 40, 0.6);
-  border: 1px solid var(--line);
-  text-align: center;
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  padding: 0 13px;
   position: relative;
 }
-.stat-cell .num {
-  display: block;
-  font-family: var(--display);
-  font-size: 18px;
-  font-weight: 700;
-  color: var(--gold-soft);
-  letter-spacing: .03em;
+.stat-cell:first-child { padding-left: 2px; }
+.stat-cell:not(:last-child)::after {
+  content: "";
+  position: absolute; right: 0; top: 50%;
+  transform: translateY(-50%);
+  width: 1px; height: 13px;
+  background: var(--line);
 }
 .stat-cell .lbl {
-  display: block;
   font-size: 10px;
   color: var(--text-dim);
-  margin-top: 2px;
-  letter-spacing: .12em;
+  letter-spacing: .14em;
+  white-space: nowrap;
+}
+.stat-cell .num {
+  font-family: var(--display);
+  font-size: 21px;
+  font-weight: 700;
+  color: var(--gold-soft);
+  letter-spacing: .02em;
+  line-height: 1;
 }
 .timestamp-line {
   display: flex; justify-content: space-between; align-items: center;
@@ -272,6 +279,8 @@ body::after {
   -webkit-overflow-scrolling: touch;
 }
 .tab-strip::-webkit-scrollbar { display: none; }
+.tab-strip.dragging { cursor: grabbing; user-select: none; }
+.tab-strip.dragging .tab { pointer-events: none; }
 .tab-strip .inner {
   display: flex;
   gap: 4px;
@@ -489,6 +498,9 @@ body::after {
   max-width: 70px;
 }
 .fs-card.is-wai .fs-name { color: var(--silver); }
+.hide-fs-name .fs-name { display: none; }
+.hide-fs-name .fs-card { grid-template-columns: 32px 36px minmax(80px, 1fr) auto auto; }
+.fab.fab-mini { right: auto; left: 16px; bottom: 18px; padding: 9px 16px; font-size: 12px; letter-spacing: .04em; }
 .fs-tags { display: inline-flex; gap: 4px; align-items: center; flex: 0 0 auto; }
 
 .bar-stack {
@@ -593,9 +605,9 @@ body::after {
 /* === 4★ tray (collapsed by default; expanded on click) === */
 .tray {
   display: none;
-  gap: 4px;
-  padding: 4px 8px 6px 44px;
-  font-size: 9.5px;
+  gap: 6px;
+  padding: 5px 8px 8px 44px;
+  font-size: 11px;
   color: var(--text-dim);
   position: relative;
   overflow-x: auto;
@@ -623,14 +635,14 @@ body::after {
 }
 .fs-pkg.open .tray-stub { display: block; }
 .tray-item {
-  display: inline-flex; align-items: center; gap: 3px;
-  padding: 1px 5px 1px 1px;
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 7px 2px 2px;
   background: rgba(15, 22, 40, 0.5);
   border: 1px solid var(--line);
   flex: 0 0 auto;
 }
 .tray-item .ic {
-  width: 18px; height: 18px;
+  width: 23px; height: 23px;
   background: linear-gradient(135deg, rgba(195, 155, 255, .25), #1a1430);
   display: grid; place-items: center;
   clip-path: polygon(15% 0, 100% 0, 85% 100%, 0 100%);
@@ -638,12 +650,12 @@ body::after {
 }
 .tray-item .ic img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .tray-item .ic .pl {
-  font-family: var(--serif); font-weight: 700; font-size: 9px; color: var(--purple-4);
+  font-family: var(--serif); font-weight: 700; font-size: 11px; color: var(--purple-4);
 }
 .tray-item .ct {
   font-family: var(--mono);
   color: var(--purple-4);
-  font-size: 9.5px;
+  font-size: 11.5px;
   letter-spacing: .02em;
 }
 
@@ -742,13 +754,17 @@ body::after {
 .export-mode .tab-strip { display: none !important; }
 .export-mode .fab, .export-mode .toast { display: none !important; }
 .export-mode .pool-section { display: block !important; }
+/* 导出: 去展开箭头并收回其列 */
+.export-mode .fs-caret { display: none; }
+.export-mode .fs-card { grid-template-columns: 32px 120px minmax(80px, 1fr) auto; }
+.export-mode.hide-fs-name .fs-card { grid-template-columns: 32px 36px minmax(80px, 1fr) auto; }
 .export-mode .pool-title {
   display: block;
   font-family: var(--serif);
   font-size: 22px;
   font-weight: 700;
   color: var(--gold-soft);
-  margin: 28px 4px 14px;
+  margin: 12px 4px 14px;
   padding-left: 12px;
   border-left: 3px solid var(--gold-soft);
   letter-spacing: .1em;
@@ -797,18 +813,26 @@ body::after {
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
   <span>导出 PNG</span>
 </button>
+<button class="fab fab-mini" id="nameToggle" hidden>显示角色名</button>
 <div class="toast" id="toast"></div>
 
 <script>
 const $app = document.getElementById('app');
 const $fab = document.getElementById('exportBtn');
 const $toast = document.getElementById('toast');
+const $nameToggle = document.getElementById('nameToggle');
+const HIDE_NAME_KEY = 'ww_gacha_hide_name';
+function applyHideName(on) {
+  document.body.classList.toggle('hide-fs-name', on);
+  $nameToggle.textContent = on ? '显示角色名' : '隐藏角色名';
+}
+applyHideName(localStorage.getItem(HIDE_NAME_KEY) !== '0');
 
 const PATH_BASE = location.pathname.replace(/\/$/, '');
 const DATA_URL = PATH_BASE + '/data';
 const ASSET = (k, rid) => `${PATH_BASE}/${k}/${rid}.png`;
 
-const POOL_LIMITED = new Set(["角色精准调谐", "武器精准调谐", "角色新旅唤取", "武器新旅唤取", "角色联动唤取", "武器联动唤取"]);
+const POOL_LIMITED = new Set(["角色精准调谐", "武器精准调谐", "角色新旅唤取", "武器新旅唤取", "角色联动唤取", "武器联动唤取", "角色忆旅唤取", "武器忆旅唤取"]);
 const POOL_PERM = new Set(["角色调谐（常驻池）", "武器调谐（常驻池）"]);
 const POOL_NEWBIE = new Set(["新手调谐", "新手自选唤取", "新手自选唤取（感恩定向唤取）"]);
 
@@ -824,6 +848,8 @@ const POOL_ABBR = {
   "武器新旅唤取": "新旅·武器",
   "角色联动唤取": "联动·角色",
   "武器联动唤取": "联动·武器",
+  "角色忆旅唤取": "忆旅·角色",
+  "武器忆旅唤取": "忆旅·武器",
 };
 
 const WD = ["日","一","二","三","四","五","六"];
@@ -881,15 +907,15 @@ function fmtDay(key) {
 
 // 内联实心填充, 不依赖外部 <defs>, 避免 html2canvas 导出时丢失。
 function svgUp() {
-  return `<svg class="badge-svg" viewBox="0 0 44 18" width="44">
-    <polygon points="3,0 44,0 41,18 0,18" fill="#e9c270" stroke="#fff3d3" stroke-width=".7"/>
-    <text x="22" y="13.5" text-anchor="middle" font-family="Oswald, serif" font-weight="700" font-size="11" fill="#1c0e02" letter-spacing="2">UP</text>
+  return `<svg class="badge-svg" viewBox="0 0 34 18" width="34">
+    <polygon points="3,0 34,0 31,18 0,18" fill="#e9c270" stroke="#fff3d3" stroke-width=".7"/>
+    <text x="17" y="13.5" text-anchor="middle" font-family="Oswald, serif" font-weight="700" font-size="11" fill="#1c0e02" letter-spacing="1">UP</text>
   </svg>`;
 }
 function svgWai() {
-  return `<svg class="badge-svg" viewBox="0 0 36 18" width="36">
-    <polygon points="3,0 36,0 33,18 0,18" fill="#c01e36" stroke="#ff8aa0" stroke-width=".7"/>
-    <text x="18" y="13.5" text-anchor="middle" font-family="'Noto Serif SC', serif" font-weight="700" font-size="11" fill="#fff5f7" letter-spacing="1">歪</text>
+  return `<svg class="badge-svg" viewBox="0 0 34 18" width="34">
+    <polygon points="3,0 34,0 31,18 0,18" fill="#c01e36" stroke="#ff8aa0" stroke-width=".7"/>
+    <text x="17" y="13.5" text-anchor="middle" font-family="'Noto Serif SC', serif" font-weight="700" font-size="11" fill="#fff5f7" letter-spacing="1">歪</text>
   </svg>`;
 }
 
@@ -921,7 +947,7 @@ function renderHeader(base, dataTime, now) {
   const isNet = base.is_net;
   const stats = isNet ? [
     ['—', '等级'],
-    ['—', '世界等级'],
+    ['—', '世界'],
     ['—', '活跃'],
     ['—', '角色'],
   ] : [
@@ -941,12 +967,12 @@ function renderHeader(base, dataTime, now) {
     <header class="header" id="exportArea-header">
       <div class="brand-line">
         <span class="dot"></span>
-        <span>WUTHERING WAVES · GACHA ARCHIVE</span>
+        <span>WUTHERING WAVES · CONVENE ARCHIVE</span>
         <span class="sep"></span>
         <span class="stamp">v.echo</span>
       </div>
       <h1 class="title-zh">唤取档案</h1>
-      <div class="title-en">CONVENE RECORDS  ·  ASTRAL LEDGER</div>
+      <div class="title-en">CONVENE HISTORY  ·  ASTRITE LEDGER</div>
       <div class="user-card">
         <div class="avatar-emblem">
           <div class="pic">
@@ -958,7 +984,7 @@ function renderHeader(base, dataTime, now) {
           <h2 class="user-name">${namePart}</h2>
           <div class="user-uid">${uidSafe}</div>
           <div class="stats-row">
-            ${stats.map(([v,l]) => `<div class="stat-cell"><span class="num">${esc(v)}</span><span class="lbl">${esc(l)}</span></div>`).join('')}
+            ${stats.map(([v,l]) => `<div class="stat-cell"><span class="lbl">${esc(l)}</span><span class="num">${esc(v)}</span></div>`).join('')}
           </div>
         </div>
       </div>
@@ -1077,7 +1103,7 @@ function render5Star(fs, poolName) {
 
 function render4Tray(items, isStub) {
   if (isStub && (!items || !items.length)) {
-    return `<div class="tray tray-stub">旧版接口未区分 4★（2025-11 之前），无 4★ 详情</div>`;
+    return `<div class="tray tray-stub">无 4★</div>`;
   }
   if (!items || !items.length) return '';
   return `
@@ -1101,6 +1127,46 @@ function bindTabs() {
       window.scrollTo({ top: 0, behavior: 'smooth' });
     });
   });
+  
+  document.querySelectorAll('.tab-strip').forEach(strip => {
+    let isDragging = false;
+    let startX = 0;
+    let scrollLeft = 0;
+    let hasMoved = false;
+
+    strip.addEventListener('mousedown', (e) => {
+      isDragging = true;
+      hasMoved = false;
+      startX = e.pageX - strip.offsetLeft;
+      scrollLeft = strip.scrollLeft;
+    });
+
+    document.addEventListener('mousemove', (e) => {
+      if (!isDragging) return;
+      const x = e.pageX - strip.offsetLeft;
+      const walk = (x - startX) * 1.5;
+      if (Math.abs(walk) > 5) {
+        hasMoved = true;
+        strip.classList.add('dragging');
+        e.preventDefault();
+        strip.scrollLeft = scrollLeft - (x - startX);
+      }
+    });
+
+    document.addEventListener('mouseup', () => {
+      if (isDragging) {
+        isDragging = false;
+        strip.classList.remove('dragging');
+      }
+    });
+
+    strip.addEventListener('click', (e) => {
+      if (hasMoved) {
+        e.stopPropagation();
+        e.preventDefault();
+      }
+    }, true);
+  });
 }
 
 function bindRowToggle() {
@@ -1120,27 +1186,46 @@ async function exportPNG() {
     return;
   }
   $fab.classList.add('exporting');
-  $fab.querySelector('span').textContent = '生成中…';
+  const $span = $fab.querySelector('span');
+  $span.textContent = '生成中…';
+  $nameToggle.hidden = true;
   document.body.classList.add('export-mode');
   try {
-    // Force show all pools for export
-    const sections = [...document.querySelectorAll('.pool-section')];
     const target = document.getElementById('app');
+    const imgs = [...target.querySelectorAll('img')];
+    let done = 0;
+    await Promise.all(imgs.map(im => {
+      im.loading = 'eager';
+      if (im.complete && im.naturalWidth) { done++; return; }
+      return new Promise(res => {
+        im.addEventListener('load', () => { done++; $span.textContent = `生成中 ${done}/${imgs.length}`; res(); }, { once: true });
+        im.addEventListener('error', () => { done++; res(); }, { once: true });
+      });
+    }));
+    $span.textContent = '生成中…';
     await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
     const canvas = await html2canvas(target, {
       backgroundColor: '#06080f',
       scale: Math.min(window.devicePixelRatio || 1, 2),
       useCORS: true,
+      allowTaint: false,
+      imageTimeout: 20000,
       logging: false,
       windowWidth: Math.max(720, target.scrollWidth),
     });
     const blob = await new Promise(r => canvas.toBlob(r, 'image/png'));
+    if (!blob) throw new Error('画布转换失败');
+    const objUrl = URL.createObjectURL(blob);
     const a = document.createElement('a');
     const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-    a.href = URL.createObjectURL(blob);
+    a.href = objUrl;
     a.download = `gacha_archive_${ts}.png`;
-    document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    if (typeof a.download === 'undefined') {
+      window.open(objUrl, '_blank');
+    } else {
+      document.body.appendChild(a); a.click(); a.remove();
+    }
+    setTimeout(() => URL.revokeObjectURL(objUrl), 4000);
     showToast('已导出至下载目录');
   } catch (e) {
     console.error(e);
@@ -1149,6 +1234,7 @@ async function exportPNG() {
     document.body.classList.remove('export-mode');
     $fab.classList.remove('exporting');
     $fab.querySelector('span').textContent = '导出 PNG';
+    $nameToggle.hidden = false;
   }
 }
 
@@ -1165,6 +1251,12 @@ async function exportPNG() {
     bindRowToggle();
     $fab.hidden = false;
     $fab.addEventListener('click', exportPNG);
+    $nameToggle.hidden = false;
+    $nameToggle.addEventListener('click', () => {
+      const on = !document.body.classList.contains('hide-fs-name');
+      localStorage.setItem(HIDE_NAME_KEY, on ? '1' : '0');
+      applyHideName(on);
+    });
   } catch (e) {
     console.error(e);
     $app.innerHTML = `<div class="error-card"><h2>加载失败</h2><p>${(e && e.message) || '网络异常'}</p></div>`;

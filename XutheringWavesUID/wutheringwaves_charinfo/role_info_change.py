@@ -83,7 +83,7 @@ class ReplaceWeapon:
         self.weaponId: str | None = None  # 武器id
         self.weaponName: str | None = None  # 武器名字
         self.level: str | None = None  # 等级
-        self.resonLevel: str | None = None  # 精炼
+        self.resonLevel: str | None = None  # 谐振
 
 
 class ReplaceSonata:
@@ -167,7 +167,7 @@ def parse_chain(content: str) -> tuple[str, str] | None:
 
 
 def parse_weapon_reson_level(content: str) -> tuple[str, str] | None:
-    pattern = r"(?:(精炼|谐振|精|谐|振)[1-5一二三四五满]|[1-5一二三四五满](精炼|谐振|精|谐|振))"
+    pattern = r"(?:(精炼|谐振|阶|精|谐|振)[1-5一二三四五满]|[1-5一二三四五满](精炼|谐振|阶|精|谐|振))"
     match = re.search(pattern, content)
     if match:
         matched_string = match.group(0)

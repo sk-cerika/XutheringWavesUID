@@ -32,10 +32,11 @@ from ..utils.image import (
     get_waves_bg,
     get_event_avatar,
     get_square_avatar_path,
+    get_skill_branch_emblem_b64,
     CHAIN_COLOR,
 )
 from ..utils.ascension.char import get_char_model
-from ..utils.char_info_utils import get_all_roleid_detail_info, lookup_chain
+from ..utils.char_info_utils import get_all_roleid_detail_info, get_rover_detail_map, lookup_chain_with_rover
 from .draw_slash_card_pil import (
     draw_slash_img as draw_slash_img_pil,
     get_slash_data,
@@ -118,6 +119,7 @@ async def draw_slash_img(ev: Event, uid: str, user_id: str) -> Union[bytes, str]
 
         # 根据面板数据获取详细信息
         role_detail_info_map = await get_all_roleid_detail_info(uid) or {}
+        rover_map = await get_rover_detail_map(uid)
 
         # 获取角色信息列表（用于获取角色等级）
         role_info_res = await waves_api.get_role_info(uid, ck)
@@ -184,7 +186,7 @@ async def draw_slash_img(ev: Event, uid: str, user_id: str) -> Union[bytes, str]
                         if role:
                             role_level = role.level
 
-                        chain_num, chain_name = lookup_chain(role_detail_info_map, slash_role.roleId)
+                        chain_num, chain_name, hide_detail = lookup_chain_with_rover(role_detail_info_map, rover_map, slash_role.roleId)
 
                         # 使用本地头像（和PIL版本一致）
                         role_icon_b64 = img_to_b64(get_square_avatar_path(slash_role.roleId), quality=75, bake=True, cover_size=(128, 128))
@@ -196,7 +198,9 @@ async def draw_slash_img(ev: Event, uid: str, user_id: str) -> Union[bytes, str]
                             "level": role_level,
                             "chain": chain_num,
                             "chain_name": chain_name,
+                            "hide_detail": hide_detail,
                             "icon_url": role_icon_b64,
+                            "branch_icon": get_skill_branch_emblem_b64(slash_role.roleId, slash_role.skillBranchIndex),
                         })
 
                     half_list.append({
@@ -259,7 +263,7 @@ async def draw_slash_img(ev: Event, uid: str, user_id: str) -> Union[bytes, str]
         img_bytes = await render_html(waves_templates, "abyss/slash_card.html", context)
         if img_bytes:
             await save_slash_record(uid, slash_detail)
-            await upload_slash_record(is_self_ck, uid, slash_detail, sender_avatar)
+            await upload_slash_record(is_self_ck, uid, slash_detail, sender_avatar, user_id, ev.bot_id)
             return img_bytes
         else:
             logger.warning("[鸣潮·冥海渲染] Playwright 返回空, 回退到 PIL")

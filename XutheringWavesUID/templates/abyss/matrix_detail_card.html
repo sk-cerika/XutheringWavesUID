@@ -309,6 +309,8 @@
         }
 
         .role-mini img { width: 100%; height: 100%; object-fit: cover; border-radius: 8px; }
+        .role-slot { position: relative; }
+        .role-branch { position: absolute; left: 11px; bottom: 11px; transform: translate(-50%, 50%); height: 34px; width: auto; z-index: 5; pointer-events: none; }
 
         .role-placeholder {
             display: flex; align-items: center; justify-content: center;
@@ -546,11 +548,16 @@
                                 <span class="placeholder-text">模版<br>角色</span>
                             </div>
                             {% else %}
+                            <div class="role-slot">
                             <div class="role-mini">
                                 <img src="{{ role.icon_url }}" alt="role">
                                 {% if role.chain_name %}
                                 <div class="role-mini-chain chain-{{ role.chain }}">{{ role.chain_name }}</div>
                                 {% endif %}
+                            </div>
+                            {% if role.branch_icon %}
+                            <img src="{{ role.branch_icon }}" class="role-branch" alt="branch">
+                            {% endif %}
                             </div>
                             {% endif %}
                             {% endfor %}

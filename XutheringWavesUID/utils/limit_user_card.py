@@ -2,6 +2,7 @@ import json
 
 import aiofiles
 
+from .player_store import write_player_json
 from .resource.RESOURCE_PATH import MAP_PATH, PLAYER_PATH
 
 LIMIT_PATH = MAP_PATH / "1.json"
@@ -14,12 +15,6 @@ async def load_limit_user_card():
         data = json.loads(await f.read())
 
     limit_user_path = PLAYER_PATH / "1"
-    if not limit_user_path.exists():
-        limit_user_path.mkdir(parents=True, exist_ok=True)
-
-    async with aiofiles.open(
-        limit_user_path / "rawData.json", "w", encoding="UTF-8"
-    ) as f:
-        await f.write(json.dumps(data, ensure_ascii=False))
+    await write_player_json(limit_user_path / "rawData.json", data)
 
     return data

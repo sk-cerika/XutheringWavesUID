@@ -13,6 +13,7 @@ from gsuid_core.utils.image.convert import convert_img
 from .rank_avatar import get_avatar
 from .rank_badge import draw_rank_badge
 from ._permissions import get_rank_token_condition, filter_active_group_users
+from ..utils.util import build_uid_masker
 from ..utils.image import (
     RED,
     GREY,
@@ -195,13 +196,14 @@ async def draw_gacha_rank_card(bot, ev: Event) -> Union[str, bytes]:
         mode_label = "·非"
     else:
         mode_label = "·欧"
-    card_img = await _compose_gacha_rank(rankInfoList_display, results, self_uid, min_pull, active_filter, mode_label)
+    _mask_uid = await build_uid_masker([(ri.uid, ri.user_id) for _, ri in rankInfoList_display], ev.bot_id)
+    card_img = await _compose_gacha_rank(rankInfoList_display, results, self_uid, min_pull, active_filter, mode_label, _mask_uid)
     card_img = await convert_img(card_img)
     return card_img
 
 
 @to_thread
-def _compose_gacha_rank(rankInfoList_display, results, self_uid, min_pull, active_filter, mode_label: str = ""):
+def _compose_gacha_rank(rankInfoList_display, results, self_uid, min_pull, active_filter, mode_label: str = "", mask_uid=None):
     width = 1000
     text_bar_height = 130
     item_spacing = 120
@@ -282,7 +284,7 @@ def _compose_gacha_rank(rankInfoList_display, results, self_uid, min_pull, activ
         uid_color = "white"
         if rankInfo.uid == self_uid:
             uid_color = RED
-        role_bg_draw.text((210, 70), f"{rankInfo.uid}", uid_color, waves_font_20, "lm")
+        role_bg_draw.text((210, 70), f"{mask_uid(rankInfo.uid, rankInfo.user_id)}", uid_color, waves_font_20, "lm")
 
         up_color = get_stat_color(rankInfo.char_avg, 76, 86)
         role_bg_draw.text((460, 30), "UP平均", SPECIAL_GOLD, waves_font_20, "mm")

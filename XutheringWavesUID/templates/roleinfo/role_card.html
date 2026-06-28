@@ -340,6 +340,8 @@
             line-height: 1;
             position: relative;
             z-index: 1;
+            max-width: 100%;
+            white-space: nowrap;
         }
 
         .info-value {
@@ -487,9 +489,27 @@
             object-fit: contain;
         }
 
+        .weapon-refine {
+            position: absolute;
+            right: 0;
+            bottom: 4px;
+            font-size: 17px;
+            font-weight: 900;
+            padding: 1px 7px 1px 10px;
+            background: linear-gradient(-90deg, rgba(0,0,0,0.9) 0%, rgba(0,0,0,0.7) 80%, transparent 100%);
+            border-radius: 9px 0 0 9px;
+            text-align: right;
+            font-family: 'Oswald', sans-serif;
+            color: #fff;
+            line-height: 1;
+            border-right: 3px solid #d4b163;
+            text-shadow: 0 0 6px rgba(212, 177, 99, 0.55);
+            z-index: 11;
+        }
+
         .chain-large {
             position: absolute;
-            bottom: 8px;
+            bottom: 6px;
             right: 0;
             font-size: 24px;
             font-weight: 900;
@@ -499,8 +519,9 @@
             text-align: right;
             font-family: 'Oswald', sans-serif;
             z-index: 6;
-            border-right: 4px solid transparent; 
+            border-right: 4px solid transparent;
             color: #fff;
+            line-height: 1;
         }
         
         .chain-0 { border-right-color: #666; color: #aaa; }
@@ -567,8 +588,9 @@
                 {% endif %}
             </div>
             <div class="base-info-grid">
+                {# highlight 按格子位置棋盘交错(奇偶行错开), 与哪些项请求成功无关, 避免缺项错位 #}
                 {% for item in base_info_list %}
-                <div class="info-item{% if item.highlight %} highlight{% endif %}">
+                <div class="info-item{% if (loop.index0 // 6 + loop.index0 % 6) % 2 == 1 %} highlight{% endif %}">
                     <div class="info-key">{{ item.key }}</div>
                     <div class="info-value">{{ item.value }}</div>
                 </div>
@@ -593,17 +615,20 @@
                         </div>
                         {% endif %}
                         <div class="role-level-badge">Lv.{{ role.level }}</div>
+                        {% if role.chain_name %}
+                        <div class="chain-large chain-{{ role.chain_num }}">{{ role.chain_name }}</div>
+                        {% else %}
+                        <div class="chain-large chain-0">零链</div>
+                        {% endif %}
                     </div>
                     <div class="role-info-container">
                         {% if role.weapon_icon %}
                         <div class="weapon-large">
                              <img src="{{ role.weapon_icon }}" alt="武器">
+                             {% if role.weapon_reson and role.weapon_reson > 1 %}
+                             <div class="weapon-refine">{{ role.weapon_reson_name }}</div>
+                             {% endif %}
                         </div>
-                        {% endif %}
-                        {% if role.chain_name %}
-                        <div class="chain-large chain-{{ role.chain_num }}">{{ role.chain_name }}</div>
-                        {% else %}
-                        <div class="chain-large chain-0">零链</div>
                         {% endif %}
                     </div>
                 </div>
@@ -617,5 +642,17 @@
              {% endif %}
         </div>
     </div>
+    <script>
+        // 数据概览小标题: 超出格子宽度时自适应缩小字号
+        document.querySelectorAll('.base-info-grid .info-key').forEach(function (el) {
+            var size = parseFloat(getComputedStyle(el).fontSize);
+            var guard = 0;
+            while (el.scrollWidth > el.clientWidth && size > 10 && guard < 40) {
+                size -= 1;
+                el.style.fontSize = size + 'px';
+                guard++;
+            }
+        });
+    </script>
 </body>
 </html>

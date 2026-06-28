@@ -211,8 +211,11 @@ const LazyImages = (() => {
 async function loadMeta() {
   state.meta = await api("/meta");
   state.role = state.meta?.role === "guest" ? "guest" : "admin";
+  state.pendingCount = state.meta?.pending_count || 0;
+  state.orbAvailable = !!state.meta?.orb_available;
   renderTypeTabs();
   renderRoleBadge();
+  renderTopbarTools();
 }
 
 function isGuest() { return state.role !== "admin"; }
@@ -325,7 +328,10 @@ function renderFolders() {
     },
       el("span", { class: "folder__id", text: f.char_id }),
       el("span", { class: "folder__name", title: f.char_name, text: f.char_name || "—" }),
-      el("span", { class: "folder__count", text: String(f.count) }),
+      el("span", { class: "folder__meta" },
+        f.pending ? el("span", { class: "folder__pending", title: `待审核 ${f.pending}`, text: String(f.pending) }) : null,
+        el("span", { class: "folder__count", text: String(f.count) }),
+      ),
     );
     root.append(row);
   }
@@ -407,6 +413,13 @@ function renderCenterHead() {
   } else {
     actions.append(buildThumbSizer());
     if (!isGuest()) {
+      const pend = state.folders.find(f => f.char_id === state.selectedCharId)?.pending || 0;
+      if (pend > 0) {
+        actions.append(el("button", { class: "btn btn--pending",
+          title: "查看该角色待审核图片",
+          onClick: () => openPendingModal({ type: state.type, char_id: state.selectedCharId }) },
+          `待审核 ${pend}`));
+      }
       actions.append(
         el("button", { class: "btn", onClick: openSingleUpload }, "上传单张"),
         el("button", { class: "btn", onClick: openBatchUpload }, "批量上传"),
@@ -707,7 +720,7 @@ function renderCropper(body) {
         title: "外框收紧到内框大小, 切掉面板可见区外的 padding" }, "裁掉多余"),
       el("button", { class: "btn", onClick: promptResize }, "缩放"),
       el("button", { id: "cropConfirmBtn", class: "btn btn--primary",
-        onClick: tmp.kind === "edit-existing" ? confirmReplace : confirmUpload },
+        onClick: tmp.kind === "edit-existing" ? confirmReplace : () => confirmUpload() },
         tmp.kind === "edit-existing" ? "确认覆盖" : "确认上传"),
     ),
   );
@@ -1121,6 +1134,7 @@ async function restoreCrop() {
     const r = await apiJson("/tmp/restore", { token: tmp.token });
     tmp.offset = { x: 0, y: 0 };
     tmp.current = { w: r.width, h: r.height };
+    if (r.suffix) tmp.suffix = r.suffix;
     document.getElementById("cropCurSize").textContent = `${r.width}×${r.height}`;
     refreshCropImg();
     await waitCropImgLoad();
@@ -1183,27 +1197,52 @@ async function trimExtra() {
   await applyCrop();
 }
 
-async function promptResize() {
+function promptResize() {
   if (isCropBusy()) return;
   const tmp = state.cropTmp;
   if (!tmp) return;
-  const raw = window.prompt("缩放倍率 (0.05 - 8.0, 例如 0.5 / 1.5)", "1.0");
-  if (raw == null) return;
-  const scale = parseFloat(raw);
+  const { body, actions } = openModal("缩放 / 压缩");
+  const scaleInput = el("input", {
+    type: "number", min: "0.05", max: "8", step: "0.05", value: "1.0",
+    class: "modal__input",
+  });
+  const compressCb = el("input", { type: "checkbox", checked: "checked" });
+  body.append(
+    el("label", { class: "modal__field" },
+      el("span", { text: "图片尺寸缩放倍率 (0.05 - 8.0)" }), scaleInput),
+    el("label", { class: "modal__check" },
+      compressCb, el("span", { text: "压缩图片大小（同「压缩面板图」）" })),
+  );
+  const submit = () => {
+    const scale = parseFloat(scaleInput.value);
+    const compress = compressCb.checked;
+    closeModal();
+    doResize(scale, compress);
+  };
+  scaleInput.addEventListener("keydown", e => { if (e.key === "Enter") submit(); });
+  actions.append(
+    el("button", { class: "btn btn--ghost", onClick: closeModal }, "取消"),
+    el("button", { class: "btn btn--primary", onClick: submit }, "应用"),
+  );
+}
+
+async function doResize(scale, compress) {
+  const tmp = state.cropTmp;
+  if (!tmp) return;
   if (!Number.isFinite(scale) || scale < 0.05 || scale > 8) {
-    toast("倍率超出范围", "warn");
-    return;
+    return toast("倍率超出范围", "warn");
   }
-  if (Math.abs(scale - 1) < 1e-3) return;
+  if (Math.abs(scale - 1) < 1e-3 && !compress) return;  // 没缩放也没压缩
   _cropInflight = true;
   syncCropConfirm();
   try {
     const oldSourceW = tmp.source.w, oldSourceH = tmp.source.h;
-    const r = await apiJson("/tmp/resize", { token: tmp.token, scale });
+    const r = await apiJson("/tmp/resize", { token: tmp.token, scale, compress });
     const sx = r.source_width / oldSourceW;
     const sy = r.source_height / oldSourceH;
     tmp.current = { w: r.width, h: r.height };
     tmp.source = { w: r.source_width, h: r.source_height };
+    if (r.suffix) tmp.suffix = r.suffix;
     if (tmp.offset) {
       tmp.offset = { x: tmp.offset.x * sx, y: tmp.offset.y * sy };
     }
@@ -1211,9 +1250,10 @@ async function promptResize() {
     syncCropConfirm();
     await waitCropImgLoad();
     triggerPreview(true);
-    toast(`已缩放 ${r.width}×${r.height}`, "ok");
+    toast(compress ? `已处理 ${r.width}×${r.height} · ${formatBytes(r.size)}`
+                   : `已缩放 ${r.width}×${r.height}`, "ok");
   } catch (e) {
-    toast(`缩放失败: ${e.message}`, "err");
+    toast(`处理失败: ${e.message}`, "err");
   } finally {
     _cropInflight = false;
     syncCropConfirm();
@@ -1244,15 +1284,29 @@ async function cancelCrop() {
   renderPreview();
 }
 
-async function confirmUpload() {
+async function confirmUpload(force = false) {
   const tmp = state.cropTmp;
   if (!tmp) return;
   const fromBatch = tmp.fromBatch === true;
+  const fromPending = tmp.fromPending || null;
   try {
     const r = await apiJson("/confirm", {
-      token: tmp.token, type: state.type, char_id: state.selectedCharId,
+      token: tmp.token, type: state.type, char_id: state.selectedCharId, force,
     });
+    if (r && r.duplicate) {
+      const proceed = await showDuplicateDialog(r.matches || []);
+      if (proceed) return confirmUpload(true);
+      return;
+    }
     toast(`已上传 ${r.hash_id}`, "ok");
+    if (fromPending) {
+      // 删成功才递减计数; 失败不动, 下次打开「待审核」会按真实列表刷新。
+      try {
+        await apiJson("/pending/delete", fromPending);
+        state.pendingCount = Math.max(0, (state.pendingCount || 0) - 1);
+        renderTopbarTools();
+      } catch (_) {}
+    }
     if (fromBatch) {
       state.batchItems = state.batchItems.filter(x => x.token !== tmp.token);
     }
@@ -1420,17 +1474,21 @@ async function discardBatchItem(it) {
 
 async function confirmAllBatch() {
   if (!state.batchAllow || !state.batchItems.length) return;
-  let ok = 0, fail = 0;
+  let ok = 0, dup = 0, fail = 0;
   for (const it of state.batchItems.slice()) {
     try {
-      await apiJson("/confirm", {
+      const r = await apiJson("/confirm", {
         token: it.token, type: state.type, char_id: state.selectedCharId,
       });
+      if (r && r.duplicate) { dup++; continue; }  // 疑似重复保留在暂存区, 可单张裁剪后强制上传
       state.batchItems = state.batchItems.filter(x => x.token !== it.token);
       ok++;
     } catch (_) { fail++; }
   }
-  toast(`确认完成 — 成功 ${ok} 张${fail ? ` / 失败 ${fail}` : ""}`, fail ? "warn" : "ok");
+  const parts = [`成功 ${ok} 张`];
+  if (dup) parts.push(`跳过重复 ${dup}`);
+  if (fail) parts.push(`失败 ${fail}`);
+  toast(`确认完成 — ${parts.join(" / ")}`, (dup || fail) ? "warn" : "ok");
   if (!state.batchItems.length) state.mode = "browse";
   await loadImages();
   await loadFolders();
@@ -1833,6 +1891,282 @@ async function init() {
   await loadFolders();
   renderCenter();
   renderPreview();
+}
+
+// ============================================================
+// Modal — 查重 / 待审核 / 缩放对话框共用浮层
+// ============================================================
+let _modalOnClose = null;
+
+function openModal(title) {
+  closeModal();
+  const body = el("div", { class: "modal__body" });
+  const actions = el("div", { class: "modal__actions" });
+  const head = el("div", { class: "modal__head" },
+    el("h2", { class: "modal__title", text: title }),
+    actions,
+    el("button", { class: "modal__close", "aria-label": "关闭", onClick: closeModal }, "✕"),
+  );
+  const panel = el("div", { class: "modal__panel" }, head, body);
+  const overlay = el("div", { class: "modal", id: "modal" }, panel);
+  overlay.addEventListener("click", e => { if (e.target === overlay) closeModal(); });
+  document.body.append(overlay);
+  document.addEventListener("keydown", onModalEsc);
+  return { body, actions, panel };
+}
+
+function closeModal() {
+  const m = document.getElementById("modal");
+  if (!m) return;
+  m.remove();
+  document.removeEventListener("keydown", onModalEsc);
+  const cb = _modalOnClose;
+  _modalOnClose = null;
+  if (cb) cb();
+}
+
+function onModalEsc(e) { if (e.key === "Escape") closeModal(); }
+
+// 点开放大: 独立浮层(层级高于 modal), 点任意处或 ESC 关闭。
+function openLightbox(src) {
+  const overlay = el("div", { class: "lightbox" }, el("img", { class: "lightbox__img", src, alt: "" }));
+  const close = () => { overlay.remove(); document.removeEventListener("keydown", onKey, true); };
+  // 捕获阶段拦截 + stopImmediatePropagation: ESC 只关放大层, 不连带关掉底层 modal。
+  const onKey = e => { if (e.key === "Escape") { e.stopImmediatePropagation(); e.preventDefault(); close(); } };
+  overlay.addEventListener("click", close);
+  document.addEventListener("keydown", onKey, true);
+  document.body.append(overlay);
+}
+
+// 查重/重复图缩略图 URL: card 等按类型裁到角色卡可见区(与已入库图同口径); pending 走 crop=1。
+function dupThumbUrl(pending, type, charId, name, size) {
+  const cid = encodeURIComponent(charId);
+  const nm = encodeURIComponent(name);
+  return pending
+    ? `${API}/pending/thumb?type=${type}&char_id=${cid}&name=${nm}&size=${size}&crop=1`
+    : `${API}/thumb?type=${type}&char_id=${cid}&name=${nm}&size=${size}&v=${state.meta?.thumb_ver ?? 0}`;
+}
+
+// ============================================================
+// 顶栏工具 — 查重 / 待审核 (仅 admin)
+// ============================================================
+function renderTopbarTools() {
+  const root = $("#topbarTools");
+  if (!root) return;
+  root.innerHTML = "";
+  if (isGuest()) return;
+  root.append(
+    el("button", { class: "btn btn--ghost", title: "全库查重", onClick: openDuplicatesModal }, "查重"),
+    el("button", { class: "btn btn--ghost", title: "待审核图片", onClick: () => openPendingModal() },
+      "待审核",
+      (state.pendingCount || 0) > 0 && el("span", { class: "tool-badge", text: String(state.pendingCount) }),
+    ),
+  );
+}
+
+// ============================================================
+// 上传查重弹窗 — confirmUpload 命中疑似重复时
+// ============================================================
+function showDuplicateDialog(matches) {
+  return new Promise(resolve => {
+    const { body, actions } = openModal("疑似重复");
+    let decided = false;
+    const finish = v => { decided = true; _modalOnClose = null; closeModal(); resolve(v); };
+    const hasPending = matches.some(m => m.pending);
+    body.append(el("p", { class: "modal__hint",
+      text: `检测到 ${matches.length} 张相似图片${hasPending ? "（含待审核）" : ""}，是否仍要上传？` }));
+    const row = el("div", { class: "dup-row" });
+    for (const m of matches) {
+      row.append(el("figure", { class: "dup-tile" },
+        el("img", { loading: "lazy", alt: m.hash_id, title: "点击放大",
+          src: dupThumbUrl(m.pending, state.type, state.selectedCharId, m.name, 180),
+          onClick: () => openLightbox(dupThumbUrl(m.pending, state.type, state.selectedCharId, m.name, 720)) }),
+        el("figcaption", null,
+          el("b", { text: m.hash_id }),
+          m.pending && el("span", { class: "muted", text: "待审核" }),
+          el("span", { class: "sim-badge" + (m.sim >= 0.9 ? " is-high" : ""), text: m.sim.toFixed(2) }),
+        ),
+      ));
+    }
+    body.append(row);
+    actions.append(
+      el("button", { class: "btn btn--ghost", onClick: () => finish(false) }, "取消"),
+      el("button", { class: "btn btn--primary", onClick: () => finish(true) }, "仍然上传"),
+    );
+    _modalOnClose = () => { if (!decided) resolve(false); };
+  });
+}
+
+// ============================================================
+// 全库查重浮层
+// ============================================================
+async function openDuplicatesModal() {
+  if (!state.orbAvailable) return toast("未安装 opencv-python，无法查重", "warn");
+  const { body, actions } = openModal("全库查重");
+  const load = async () => {
+    body.innerHTML = "";
+    body.append(el("div", { class: "modal__hint", text: "扫描中…（图片多时较慢）" }));
+    try {
+      const data = await api("/duplicates");
+      renderDuplicates(body, data.groups || []);
+    } catch (e) {
+      body.innerHTML = "";
+      body.append(el("div", { class: "modal__hint", text: `查重失败: ${e.message}` }));
+    }
+  };
+  actions.append(el("button", { class: "btn btn--ghost", onClick: load }, "重新扫描"));
+  load();
+}
+
+function renderDuplicates(body, groups) {
+  body.innerHTML = "";
+  if (!groups.length) {
+    body.append(el("div", { class: "modal__hint", text: "未发现重复图片。" }));
+    return;
+  }
+  body.append(el("div", { class: "modal__hint", text: `共 ${groups.length} 组重复，点图右上角 ✕ 删除。` }));
+  for (const g of groups) {
+    const row = el("div", { class: "dup-row" });
+    for (const im of g.images) row.append(buildDupTile(im));
+    const wrap = el("div", { class: "dup-group" }, row);
+    if (g.pairs && g.pairs.length) {
+      wrap.append(el("div", { class: "dup-sims",
+        text: g.pairs.map(p => `${p.a}↔${p.b} ${p.sim.toFixed(2)}`).join("    ") }));
+    }
+    body.append(wrap);
+  }
+}
+
+function buildDupTile(im) {
+  const fig = el("figure", { class: "dup-tile" },
+    el("img", { loading: "lazy", alt: im.hash_id, title: "点击放大",
+      src: dupThumbUrl(false, im.type, im.char_id, im.name, 180),
+      onClick: () => openLightbox(dupThumbUrl(false, im.type, im.char_id, im.name, 720)) }),
+    el("figcaption", null,
+      el("span", { class: "type-dot", style: `background:${TYPE_INFO[im.type]?.color || "var(--fg-3)"}` }),
+      el("b", { text: im.hash_id }),
+      el("span", { class: "muted", text: im.char_name }),
+    ),
+    el("button", { class: "dup-del", title: "删除此图", onClick: async () => {
+      if (!confirm(`删除 ${im.char_name} 的 ${im.hash_id}？此操作不可撤销。`)) return;
+      try {
+        await apiJson("/delete", { type: im.type, char_id: im.char_id, name: im.name });
+        toast("已删除", "ok");
+        fig.remove();
+        if (im.type === state.type && im.char_id === state.selectedCharId) {
+          loadImages(); loadFolders();
+        }
+      } catch (e) { toast(`删除失败: ${e.message}`, "err"); }
+    } }, "✕"),
+  );
+  return fig;
+}
+
+// ============================================================
+// 待审核浮层
+// ============================================================
+async function openPendingModal(focus = null) {
+  const { body } = openModal(focus ? "待审核图片 · 当前角色" : "待审核图片");
+  const load = async () => {
+    body.innerHTML = "";
+    body.append(el("div", { class: "modal__hint", text: "加载中…" }));
+    try {
+      const data = await api("/pending/list");
+      renderPending(body, data.groups || [], load, focus);
+    } catch (e) {
+      body.innerHTML = "";
+      body.append(el("div", { class: "modal__hint", text: `加载失败: ${e.message}` }));
+    }
+  };
+  load();
+}
+
+function renderPending(body, groups, reload, focus) {
+  body.innerHTML = "";
+  const total = groups.reduce((n, g) => n + g.images.length, 0);
+  state.pendingCount = total;
+  renderTopbarTools();
+  const shown = focus
+    ? groups.filter(g => g.type === focus.type && g.char_id === focus.char_id)
+    : groups;
+  const shownTotal = shown.reduce((n, g) => n + g.images.length, 0);
+  if (!shownTotal) {
+    body.append(el("div", { class: "modal__hint",
+      text: focus ? "该角色暂无待审核图片。"
+                  : "暂无待审核图片。需在配置开启「上传审核面板图储存本地」。" }));
+    return;
+  }
+  body.append(el("div", { class: "modal__hint",
+    text: `共 ${shownTotal} 张待审核。裁剪上传会经过查重；删除不可撤销。` }));
+  for (const g of shown) {
+    const head = el("div", { class: "pending-group__head" },
+      el("span", { class: "type-dot", style: `background:${TYPE_INFO[g.type]?.color || "var(--fg-3)"}` }),
+      el("b", { text: g.char_name }),
+      el("span", { class: "muted", text: `${TYPE_INFO[g.type]?.label || g.type} · ${g.char_id}` }),
+    );
+    const row = el("div", { class: "pending-row" });
+    for (const im of g.images) row.append(buildPendingTile(g, im, reload));
+    body.append(el("div", { class: "pending-group" }, head, row));
+  }
+}
+
+function buildPendingTile(g, im, reload) {
+  const origin = [im.user_id && `用户 ${im.user_id}`, im.group_id && `群 ${im.group_id}`]
+    .filter(Boolean).join(" · ") || "未知来源";
+  const cid = encodeURIComponent(g.char_id);
+  const nm = encodeURIComponent(im.name);
+  return el("figure", { class: "pending-tile" },
+    el("img", { loading: "lazy", alt: im.name, title: "点击放大",
+      src: `${API}/pending/thumb?type=${g.type}&char_id=${cid}&name=${nm}&size=360`,
+      onClick: () => openLightbox(`${API}/pending/image?type=${g.type}&char_id=${cid}&name=${nm}`) }),
+    el("figcaption", null,
+      el("span", { class: "muted", text: origin }),
+      el("span", { class: "muted", text: formatDate(im.mtime) }),
+    ),
+    el("div", { class: "pending-tile__row" },
+      el("button", { class: "btn btn--primary", onClick: () => stageAndCrop(g, im) }, "裁剪上传"),
+      el("button", { class: "btn btn--danger", onClick: () => deletePending(g, im, reload) }, "删除"),
+    ),
+  );
+}
+
+async function deletePending(g, im, reload) {
+  if (!confirm("删除该待审核图？此操作不可撤销。")) return;
+  try {
+    await apiJson("/pending/delete", { type: g.type, char_id: g.char_id, name: im.name });
+    toast("已删除", "ok");
+    reload();
+    loadFolders();  // 刷新左侧角色待审核角标
+  } catch (e) { toast(`删除失败: ${e.message}`, "err"); }
+}
+
+// 待审核图 → 复制进 tmp → 切到对应类型/角色进入单图裁剪; 确认成功后删原待审核图。
+async function stageAndCrop(g, im) {
+  try {
+    const r = await apiJson("/pending/stage", { type: g.type, char_id: g.char_id, name: im.name });
+    closeModal();
+    if (state.type !== g.type) { state.type = g.type; renderTypeTabs(); await loadFolders(); }
+    state.selectedCharId = g.char_id;
+    renderFolders();
+    await loadImages();
+    state.cropTmp = {
+      token: r.token, suffix: r.suffix,
+      source: { w: r.width, h: r.height },
+      current: { w: r.width, h: r.height },
+      kind: "upload",
+      fromPending: { type: g.type, char_id: g.char_id, name: im.name },
+    };
+    state.mode = "single-crop";
+    closeMobileDrawers();
+    renderCenter();
+    renderPreview();
+  } catch (e) { toast(`无法编辑: ${e.message}`, "err"); }
+}
+
+function formatDate(sec) {
+  if (!sec) return "";
+  try { return new Date(sec * 1000).toLocaleString("zh-CN", { hour12: false }); }
+  catch (_) { return ""; }
 }
 
 document.addEventListener("DOMContentLoaded", init);

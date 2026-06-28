@@ -232,8 +232,8 @@ ELEMENT_COLOR_MAP = {
 CHAIN_COLOR = {
     0: WAVES_MOONLIT,
     1: WAVES_LINGERING,
-    2: WAVES_FREEZING,
-    3: WAVES_SIERRA,
+    2: WAVES_SIERRA,
+    3: WAVES_FREEZING,
     4: WAVES_VOID,
     5: AMBER,
     6: WAVES_MOLTEN,
@@ -244,8 +244,8 @@ CHAIN_COLOR_LIST = [CHAIN_COLOR[i] for i in range(7)]
 WEAPON_RESONLEVEL_COLOR = {
     0: WAVES_MOONLIT,
     1: WAVES_LINGERING,
-    2: WAVES_FREEZING,
-    3: WAVES_SIERRA,
+    2: WAVES_SIERRA,
+    3: WAVES_FREEZING,
     4: WAVES_VOID,
     5: AMBER,
     6: WAVES_MOLTEN,
@@ -577,6 +577,66 @@ async def get_attribute_skill(name: str = "", locale: Optional[str] = None) -> I
     draw = ImageDraw.Draw(img)
     draw.text((50, 50), short, fill="white", font=font, anchor="mm")
     return img
+
+
+def get_skill_branch_emblem(
+    char_id: int, skill_branch_index: Optional[int], size: int = 30
+) -> Optional[Image.Image]:
+    """skillBranchIndex → 技能分支徽章(中心金色光源 + 灰底); 无则 None"""
+    if skill_branch_index is None:
+        return None
+    from .ascension.char import get_char_model
+
+    char_model = get_char_model(char_id)
+    branches = getattr(char_model, "skillBranches", None) if char_model else None
+    if not branches or skill_branch_index >= len(branches):
+        return None
+    cache_path = CACHE_PATH / "attribute_skill" / f"{branches[skill_branch_index].name}.png"
+    if not cache_path.exists():
+        return None
+    icon = Image.open(cache_path).convert("RGBA").resize((size, size))
+    rc = size // 2
+    m = max(3, int(rc * 0.22))
+    W = H = 2 * rc + 2 * m
+    cx = cy = W // 2
+    emblem = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    glow = Image.new("L", (W, H), 0)
+    gr2 = max(2, int(rc * 0.45))
+    ImageDraw.Draw(glow).ellipse([cx - gr2, cy - gr2, cx + gr2, cy + gr2], fill=255)
+    glow = glow.filter(ImageFilter.GaussianBlur(max(2, int(rc * 0.4))))
+    rlay = Image.new("RGBA", (W, H), (255, 221, 160, 0))
+    rlay.putalpha(glow.point(lambda v: min(190, int(v * 1.7))))
+    emblem.alpha_composite(rlay)
+    gray = Image.new("L", (W, H), 0)
+    gdr = int(rc * 0.72)
+    ImageDraw.Draw(gray).ellipse([cx - gdr, cy - gdr, cx + gdr, cy + gdr], fill=255)
+    glay = Image.new("RGBA", (W, H), (45, 49, 58, 0))
+    glay.putalpha(gray.filter(ImageFilter.GaussianBlur(max(2, rc // 4))).point(lambda v: int(v * 0.55)))
+    emblem.alpha_composite(glay)
+    emblem.alpha_composite(icon, (cx - size // 2, cy - size // 2))
+    return emblem
+
+
+def paste_skill_branch_emblem(
+    canvas: Image.Image,
+    char_id: int,
+    skill_branch_index: Optional[int],
+    center: Tuple[int, int],
+    size: int = 30,
+) -> None:
+    """有分支徽章则按 center 居中贴到 canvas, 无则跳过 (PIL 渲染用)"""
+    emblem = get_skill_branch_emblem(char_id, skill_branch_index, size)
+    if emblem:
+        canvas.alpha_composite(emblem, (center[0] - emblem.width // 2, center[1] - emblem.height // 2))
+
+
+def get_skill_branch_emblem_b64(
+    char_id: int, skill_branch_index: Optional[int], size: int = 40
+) -> str:
+    """分支图标 base64(PNG data URL), 无则空串 (HTML 渲染用)"""
+    emblem = get_skill_branch_emblem(char_id, skill_branch_index, size)
+    return pil_to_b64(emblem) if emblem else ""
+
 
 async def get_attribute_effect(name: str = "") -> Image.Image:
     if (TEXT_PATH / "attribute_effect" / f"attr_{name}.png").exists():

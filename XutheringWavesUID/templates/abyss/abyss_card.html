@@ -236,8 +236,8 @@
         }
 
         .role-group {
-            display: flex; flex-direction: column; align-items: center; gap: 0;             
-            width: auto; 
+            display: flex; flex-direction: column; align-items: center; gap: 0;
+            width: auto; position: relative;
         }
 
         
@@ -257,6 +257,7 @@
         .role-mini[data-star="4"] { border-color: #9c27b0; box-shadow: 0 0 12px rgba(156, 39, 176, 0.4); }
 
         .role-mini img { width: 100%; height: 100%; object-fit: cover; border-radius: 12px; }
+        .role-branch { position: absolute; left: 16px; bottom: 16px; transform: translate(-50%, 50%); height: 44px; width: auto; z-index: 5; pointer-events: none; }
 
         .role-mini-level {
             position: absolute;
@@ -380,13 +381,18 @@
                             <div class="role-group">
                                 <div class="role-mini" data-star="{{ role.star }}">
                                     <img src="{{ role.icon_url }}" alt="role">
+                                    {% if not role.hide_detail %}
                                     <div class="role-mini-level">Lv.{{ role.level }}</div>
+                                    {% endif %}
                                     {% if role.chain_name %}
                                     <div class="role-mini-chain chain-{{ role.chain_num }}">{{ role.chain_name }}</div>
-                                    {% else %}
+                                    {% elif not role.hide_detail %}
                                     <div class="role-mini-chain chain-0">零链</div>
                                     {% endif %}
                                 </div>
+                                {% if role.branch_icon %}
+                                <img src="{{ role.branch_icon }}" class="role-branch" alt="branch">
+                                {% endif %}
                                 </div>
                             {% endfor %}
                         </div>

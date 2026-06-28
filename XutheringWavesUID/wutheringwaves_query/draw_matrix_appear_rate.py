@@ -248,7 +248,8 @@ def _render_matrix_appear(
     card_img.paste(char_mask_temp, (0, 0), char_mask_temp)
 
     # ── section 循环 ───────────────────────────────────────
-    start_y = TITLE_H
+    # 内容起点上移 30px (与塔/冥海出场率一致), 给底部 footer 留足间距
+    start_y = TITLE_H - 30
     for sec_idx, (section_label, kind, rates) in enumerate(sections):
         if sec_idx > 0:
             start_y += INTER_SECTION_GAP

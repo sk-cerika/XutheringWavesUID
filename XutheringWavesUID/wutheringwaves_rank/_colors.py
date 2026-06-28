@@ -92,7 +92,7 @@ def get_matrix_total_rank_color(score: int) -> tuple:
 
 
 def get_matrix_local_rank_color(score: int) -> tuple:
-    """矩阵 群排行 分档颜色。与 detail 共用同一份阈值 + 配色"""
+    """矩阵 群排行 分档颜色, 阈值与个人查询(detail) 一致"""
     if score >= 100000:
         return CRYSTAL_SENTINEL
     if score >= 58000:

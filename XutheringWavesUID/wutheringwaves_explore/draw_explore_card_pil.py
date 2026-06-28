@@ -13,7 +13,6 @@ from gsuid_core.utils.image.convert import convert_img
 from ..utils import hint
 from ..utils.util import get_hide_uid_pref, hide_uid
 from ..utils.image import (
-    GOLD,
     GREY,
     YELLOW,
     WAVES_VOID,
@@ -34,12 +33,11 @@ from ..utils.api.model import (
     ExploreList,
     AccountBaseInfo,
 )
-from ..utils.imagetool import draw_pic_with_ring
+from ..utils.imagetool import draw_pic_with_ring, draw_base_info_bg
 from ..utils.waves_api import waves_api
 from ..utils.error_reply import WAVES_CODE_102
 from ..utils.fonts.waves_fonts import (
     waves_font_24,
-    waves_font_25,
     waves_font_26,
     waves_font_30,
     waves_font_36,
@@ -182,15 +180,10 @@ def _compose_explore_img(
     img.paste(avatar_ring, (95, 80), avatar_ring)
 
     # 基础信息 名字 特征码
-    base_info_bg = Image.open(TEXT_PATH / "base_info_bg.png")
-    base_info_draw = ImageDraw.Draw(base_info_bg)
-    base_info_draw.text((275, 120), f"{account_info.name[:10]}", "white", waves_font_30, "lm")
-    base_info_draw.text(
-        (226, 173),
+    base_info_bg = draw_base_info_bg(
+        f"{account_info.name[:10]}",
         f"特征码:  {hide_uid(account_info.id, user_pref=user_pref)}",
-        GOLD,
-        waves_font_25,
-        "lm",
+        TEXT_PATH,
     )
     img.paste(base_info_bg, (75, 20), base_info_bg)
 

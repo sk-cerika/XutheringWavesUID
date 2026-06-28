@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>鸣潮收藏图鉴</title>
+    <style>
+        @import url('{{ font_css_url }}');
+
+        :root {
+            --gold: #d4b163;
+            --ink-1: rgba(20, 22, 26, 0.78);
+            --line: rgba(255, 255, 255, 0.08);
+            --text-sub: #9aa0aa;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #0f1115;
+            font-family: 'Source Han Sans CN', 'Noto Sans CJK JP', 'Noto Sans CJK KR', sans-serif;
+            width: 1100px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+            position: relative;
+        }
+
+        .bg-layer {
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            z-index: 0;
+            pointer-events: none;
+        }
+        .bg-layer::after {
+            content: "";
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            background-color: rgba(0, 0, 0, 0.12);
+            z-index: 1;
+        }
+        .bg-image {
+            width: 100%; height: 100%;
+            object-fit: cover;
+            display: block;
+        }
+
+        .container {
+            position: relative;
+            z-index: 1;
+            width: 100%;
+            padding: 20px;
+            box-sizing: border-box;
+            display: flex;
+            flex-direction: column;
+            gap: 24px;
+            filter: brightness(1.1);
+        }
+
+        .user-card {
+            background:
+                radial-gradient(circle at 100% 0%, rgba(212, 177, 99, 0.15) 0%, transparent 40%),
+                linear-gradient(180deg, rgba(30, 34, 42, 0.9) 0%, rgba(15, 17, 21, 0.95) 100%);
+            border-radius: 0 0 16px 16px;
+            padding: 25px 40px;
+            display: flex;
+            align-items: center;
+            position: relative;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-top: 1px solid rgba(255, 255, 255, 0.2);
+            box-shadow: 0 10px 30px -10px rgba(0,0,0,0.5);
+        }
+        .deco-text {
+            position: absolute;
+            top: 20px;
+            right: 30px;
+            font-family: 'Oswald', sans-serif;
+            font-size: 14px;
+            letter-spacing: 4px;
+            color: rgba(255, 255, 255, 0.1);
+            font-weight: bold;
+            pointer-events: none;
+        }
+        .avatar-container {
+            width: 100px; height: 100px;
+            flex-shrink: 0;
+            margin-right: 30px;
+            position: relative;
+            border-radius: 50%;
+            border: 3px solid #2a2e35;
+            background-color: #222;
+            overflow: visible;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+        }
+        .avatar-ring {
+            position: absolute;
+            top: -6px; left: -6px; right: -6px; bottom: -6px;
+            border-radius: 50%;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-left: 2px solid #d4b163;
+            transform: rotate(-45deg);
+            box-shadow: -2px 2px 10px rgba(212, 177, 99, 0.2);
+            pointer-events: none;
+            z-index: 0;
+        }
+        .avatar {
+            width: 100%; height: 100%;
+            object-fit: cover;
+            display: block;
+            border-radius: 50%;
+            position: relative;
+            z-index: 1;
+        }
+        .user-info {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            z-index: 2;
+        }
+        .user-row-1 {
+            display: flex;
+            align-items: baseline;
+            margin-bottom: 10px;
+            border-bottom: 1px solid rgba(255,255,255,0.08);
+            padding-bottom: 8px;
+            position: relative;
+        }
+        .user-row-1::after {
+            content: "";
+            position: absolute;
+            bottom: -1px; left: 0;
+            width: 40px; height: 2px;
+            background: #d4b163;
+            box-shadow: 0 0 8px #d4b163;
+        }
+        .user-name {
+            font-size: 42px;
+            font-weight: 800;
+            color: #fff;
+            margin-right: 20px;
+            text-shadow: 0 4px 10px rgba(0,0,0,0.5);
+        }
+        .user-uid {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 20px;
+            color: #d4b163;
+            background: rgba(0,0,0,0.4);
+            padding: 4px 12px;
+            border-radius: 6px;
+            border: 1px solid rgba(212, 177, 99, 0.2);
+            letter-spacing: 1.5px;
+            font-weight: bold;
+        }
+        .user-stats { display: flex; gap: 40px; }
+        .stat-item { display: flex; flex-direction: column; }
+        .stat-value {
+            font-family: 'Oswald', sans-serif;
+            font-size: 30px;
+            font-weight: 700;
+            color: #fff;
+            line-height: 1.1;
+            background: linear-gradient(180deg, #fff 50%, #d4b163 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .stat-label {
+            font-size: 12px;
+            color: #6d717a;
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-top: 2px;
+        }
+
+        .section-container {
+            background: var(--ink-1);
+            backdrop-filter: blur(6px);
+            border-radius: 4px;
+            border: 1px solid var(--line);
+            padding: 18px 24px 24px;
+            box-shadow: 0 6px 18px -6px rgba(0,0,0,0.5);
+        }
+        .section-header {
+            display: flex;
+            align-items: center;
+            margin-bottom: 18px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid var(--line);
+        }
+        .section-icon {
+            width: 30px; height: 30px;
+            margin-right: 12px;
+            object-fit: contain;
+            filter: drop-shadow(0 1px 2px rgba(0,0,0,0.6));
+        }
+        .section-title {
+            font-size: 24px;
+            font-weight: 800;
+            color: #fff;
+            letter-spacing: 1.5px;
+            margin-right: 14px;
+            text-shadow: 0 2px 8px rgba(0,0,0,0.5);
+            font-style: italic;
+        }
+        .section-deco-line {
+            flex: 1;
+            height: 1px;
+            margin-left: 16px;
+            background: linear-gradient(90deg, rgba(212, 177, 99, 0.6), transparent);
+        }
+
+        .skin-grid {
+            display: grid;
+            grid-template-columns: repeat(8, minmax(0, 1fr));
+            gap: 14px;
+        }
+        /* 车架: 用官方专门大背景框 + 品质长条, 宽图整体 contain */
+        .skin-card.wide {
+            aspect-ratio: 690 / 214;
+            background-image: url('{{ frame_bg }}') !important;
+            border-color: rgba(212, 177, 99, 0.55);
+        }
+        .skin-card.wide .skin-img { height: auto; width: auto; max-height: 86%; max-width: 90%; }
+        .skin-card.wide .frame-level {
+            position: absolute;
+            left: 0; bottom: 0;
+            width: 100%;
+            object-fit: cover;
+            opacity: 0.9;
+            pointer-events: none;
+        }
+        .skin-cell {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .skin-card {
+            position: relative;
+            width: 100%;
+            aspect-ratio: 1 / 1;
+            border-radius: 10px;
+            overflow: hidden;
+            background-color: #20242c;
+            background-size: cover;
+            background-position: center;
+            border: 1px solid rgba(255,255,255,0.10);
+            box-shadow: 0 4px 10px rgba(0,0,0,0.35);
+        }
+        .skin-card.q5 { background-image: url('{{ q5_bg }}'); border-color: rgba(212,177,99,0.55); }
+        .skin-card.q4 { background-image: url('{{ q4_bg }}'); border-color: rgba(160,110,200,0.5); }
+        .skin-card.q3 { background-image: url('{{ q3_bg }}'); border-color: rgba(90,120,190,0.5); }
+
+        .skin-img {
+            position: absolute;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            height: 82%;
+            width: auto;
+            filter: drop-shadow(0 3px 6px rgba(0,0,0,0.45));
+        }
+        .skin-type {
+            position: absolute;
+            top: 4px; left: 4px;
+            width: 32px; height: 32px;
+            object-fit: contain;
+            z-index: 2;
+            opacity: 0.82;
+            filter: drop-shadow(0 1px 2px rgba(0,0,0,0.7));
+        }
+        .skin-name {
+            margin-top: 8px;
+            font-size: 15px;
+            color: #e6e6e6;
+            text-align: center;
+            height: 19px;
+            line-height: 19px;
+            max-width: 100%;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .skin-name.s1 { font-size: 13px; }
+        .skin-name.s2 { font-size: 12px; }
+        .skin-name.s3 { font-size: 11px; }
+        .skin-name.s4 { font-size: 10px; }
+        .skin-name.s5 { font-size: 9px; letter-spacing: -0.2px; }
+
+        .footer {
+            margin-top: -10px;
+            margin-bottom: -20px;
+            text-align: center;
+            width: 100%;
+            opacity: 0.6;
+        }
+        .footer img { max-width: 100%; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="bg-layer">
+            <img src="{{ bg_url }}" class="bg-image">
+        </div>
+
+        <div class="user-card">
+            <div class="deco-text">ROVER COLLECTION</div>
+            <div class="avatar-container">
+                <div class="avatar-ring"></div>
+                <img src="{{ avatar_url }}" class="avatar" alt="Avatar">
+            </div>
+            <div class="user-info">
+                <div class="user-row-1">
+                    <div class="user-name">{{ user_name }}</div>
+                    <div class="user-uid">UID {{ user_id }}</div>
+                </div>
+                <div class="user-stats">
+                    <div class="stat-item">
+                        <div class="stat-value">{{ total_count }}</div>
+                        <div class="stat-label">收藏总数</div>
+                    </div>
+                    {% if show_stats %}
+                    <div class="stat-item">
+                        <div class="stat-value">{{ level }}</div>
+                        <div class="stat-label">联觉等级</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-value">{{ world_level }}</div>
+                        <div class="stat-label">索拉等级</div>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        {% for block in blocks %}
+        <div class="section-container">
+            <div class="section-header">
+                {% if block.header_b64 %}
+                <img src="{{ block.header_b64 }}" class="section-icon" alt="">
+                {% endif %}
+                <div class="section-title">{{ block.title }}</div>
+                <div class="section-deco-line"></div>
+            </div>
+            <div class="skin-grid" style="grid-template-columns: repeat({{ block.cols or 8 }}, minmax(0, 1fr));">
+                {% for item in block['items'] %}
+                <div class="skin-cell">
+                    <div class="skin-card q{{ item.quality if item.quality in [3, 4, 5] else 3 }}{% if block.wide %} wide{% endif %}">
+                        {% if item.icon_b64 %}
+                        <img src="{{ item.icon_b64 }}" class="skin-img" alt="">
+                        {% endif %}
+                        {% if block.wide and frame_level %}
+                        <img src="{{ frame_level }}" class="frame-level" alt="">
+                        {% endif %}
+                        {% if item.type_b64 %}
+                        <img src="{{ item.type_b64 }}" class="skin-type" alt="">
+                        {% endif %}
+                    </div>
+                    {% set _l = item.name|length if item.name else 0 %}
+                    <div class="skin-name{% if _l > 12 %} s5{% elif _l > 10 %} s4{% elif _l > 9 %} s3{% elif _l > 8 %} s2{% elif _l > 7 %} s1{% endif %}">{{ item.name }}</div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endfor %}
+
+        <div class="footer">
+            {% if footer_b64 %}
+            <img src="{{ footer_b64 }}" alt="Footer">
+            {% endif %}
+        </div>
+    </div>
+</body>
+</html>

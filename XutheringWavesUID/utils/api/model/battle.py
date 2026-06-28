@@ -7,6 +7,7 @@ from pydantic import Field, BaseModel, model_validator
 class AbyssRole(BaseModel):
     roleId: int
     iconUrl: Optional[str] = None
+    skillBranchIndex: Optional[int] = None  # 技能分支
 
 
 # 定义楼层模型
@@ -122,6 +123,7 @@ class ExploreList(BaseModel):
 class SlashRole(BaseModel):
     iconUrl: str  # 角色头像
     roleId: int  # 角色ID
+    skillBranchIndex: Optional[int] = None  # 技能分支
 
 
 class SlashHalf(BaseModel):
@@ -185,6 +187,14 @@ class MatrixBuff(BaseModel):
     desc: str = ""  # buff描述
 
 
+class MatrixRole(BaseModel):
+    """矩阵队伍角色(接口自带roleId)"""
+
+    iconUrl: str = ""  # 角色头像
+    roleId: int = 0  # 角色ID
+    skillBranchIndex: Optional[int] = None  # 技能分支
+
+
 class MatrixTeam(BaseModel):
     """矩阵队伍"""
 
@@ -192,6 +202,7 @@ class MatrixTeam(BaseModel):
     buffs: List[MatrixBuff] = Field(default_factory=list)  # buff列表
     passBoss: int = 0  # 击败的boss数
     roleIcons: List[str] = Field(default_factory=list)  # 角色头像URL列表
+    roleList: List[MatrixRole] = Field(default_factory=list)  # 角色列表(与roleIcons同序)
     round: int = 0  # 轮次
     score: int = 0  # 队伍得分
 

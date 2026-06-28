@@ -1,15 +1,10 @@
 """init"""
 
-import re
-import time
 import asyncio
-import shutil
-from pathlib import Path
 
 from gsuid_core.sv import SL, Plugins
 from gsuid_core.logger import logger
 from gsuid_core.server import on_core_shutdown
-from gsuid_core.data_store import get_res_path
 
 # 幂等: 防止跨插件 cross-import 让本文件在新 namespace 下重 exec 时
 # 把 disable_force_prefix 用默认值 False 覆盖掉。
@@ -163,31 +158,33 @@ if _old_login_cache.exists():
         logger.warning(f"[鸣潮·插件] 删除旧的 login_cache.db 失败: {_e}")
 
 # 修正: API曾错误地将陆·赫斯的resourceType标记为武器
-import json as _json
-from .utils.resource.RESOURCE_PATH import PLAYER_PATH as _PLAYER_PATH
-_fix_flag = _PLAYER_PATH / ".fix_hesi_done"
-if not _fix_flag.exists():
-    _fix_count = 0
-    for _uid_dir in _PLAYER_PATH.iterdir():
-        _gl = _uid_dir / "gacha_logs.json"
-        if not _gl.is_file():
-            continue
-        try:
-            _raw = _json.loads(_gl.read_text("utf-8"))
-            _modified = False
-            for _records in _raw.get("data", {}).values():
-                for _r in _records:
-                    if "赫斯" in _r.get("name", "") and _r.get("resourceType") == "武器":
-                        _r["resourceType"] = "角色"
-                        _modified = True
-            if _modified:
-                _gl.write_text(_json.dumps(_raw, ensure_ascii=False), "utf-8")
-                _fix_count += 1
-        except Exception:
-            continue
-    _fix_flag.write_text(f"fixed {_fix_count} players")
-    if _fix_count:
-        logger.info(f"[鸣潮·插件] 已修正 {_fix_count} 个玩家的赫斯 resourceType: 武器->角色")
+# from .utils.resource.RESOURCE_PATH import PLAYER_PATH as _PLAYER_PATH
+# from .utils.player_store import read_player_json_sync, write_player_json_sync, player_json_exists
+# _fix_flag = _PLAYER_PATH / ".fix_hesi_done"
+# if not _fix_flag.exists():
+#     _fix_count = 0
+#     for _uid_dir in _PLAYER_PATH.iterdir():
+#         _gl = _uid_dir / "gacha_logs.json"
+#         if not player_json_exists(_gl):
+#             continue
+#         try:
+#             _raw = read_player_json_sync(_gl)
+#             if not _raw:
+#                 continue
+#             _modified = False
+#             for _records in _raw.get("data", {}).values():
+#                 for _r in _records:
+#                     if "赫斯" in _r.get("name", "") and _r.get("resourceType") == "武器":
+#                         _r["resourceType"] = "角色"
+#                         _modified = True
+#             if _modified:
+#                 write_player_json_sync(_gl, _raw)
+#                 _fix_count += 1
+#         except Exception:
+#             continue
+#     _fix_flag.write_text(f"fixed {_fix_count} players")
+#     if _fix_count:
+#         logger.info(f"[鸣潮·插件] 已修正 {_fix_count} 个玩家的赫斯 resourceType: 武器->角色")
 
 # 修正: 仇远calc.json 热熔->气动
 # _calc_1411 = get_res_path() / "XutheringWavesUID" / "resource" / "map" / "character" / "1411" / "calc.json"

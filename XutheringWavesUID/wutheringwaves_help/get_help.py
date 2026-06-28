@@ -45,7 +45,7 @@ def get_help_data() -> Dict[str, PluginHelp]:
         {
             "name": "开启/关闭自动签到",
             "desc": "为自己绑定的鸣潮账号开启或关闭每日自动签到。开启后由 bot 在每天固定时刻自动代签，不需要再手动 `签到`。命令字 `开启自动签到` / `关闭自动签到`。",
-            "eg": "开启自动签到",
+            "eg": "开启(鸣潮/战双)自动签到",
             "need_ck": True,
             "need_sk": False,
             "need_admin": False,

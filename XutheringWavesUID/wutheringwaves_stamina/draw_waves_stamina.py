@@ -753,6 +753,7 @@ def _render_stamina_card_pil(
 
         info = Image.open(TEXT_PATH / "main_bar_bg.png").convert("RGBA")
 
+    # base_info 特例: GREY 名字 / roleName / 特征码 i18n, 不接公共 draw_base_info_bg
     base_info_draw = ImageDraw.Draw(base_info_bg)
     base_info_draw.text((275, 120), f"{daily_info.roleName[:7]}", GREY, waves_font_30, "lm")
     base_info_draw.text((226, 173), f"{t('特征码:', locale)}  {hide_uid(daily_info.roleId, user_pref=user_pref)}", GOLD, waves_font_25, "lm")

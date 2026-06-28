@@ -25,13 +25,12 @@ from ..utils.image import (
 )
 from ..utils.button import WavesButton
 from ..utils.api.model import RoleDetailData
-from ..utils.imagetool import draw_pic_with_ring
+from ..utils.imagetool import draw_pic_with_ring, draw_base_info_bg
 from ..utils.expression_ctx import WavesCharRank, get_waves_char_rank
 from ..utils.char_info_utils import get_all_role_detail_info_list
 from ..utils.database.models import WavesBind
 from ..wutheringwaves_config import PREFIX, WutheringWavesConfig
 from ..utils.fonts.waves_fonts import (
-    waves_font_25,
     waves_font_26,
     waves_font_30,
     waves_font_40,
@@ -138,13 +137,13 @@ def get_refresh_interval_notify(time_stamp: int, is_single_refresh: bool = False
             return "请等待{0}s后尝试刷新面板！".format(time_stamp)
 
 
-async def get_refresh_role_img(width: int, height: int):
+async def get_refresh_role_img(width: int, height: int, panel_top: int = 470):
     path = await get_random_share_bg_path()
-    return await _render_refresh_role_img(path, width, height)
+    return await _render_refresh_role_img(path, width, height, panel_top)
 
 
 @to_thread
-def _render_refresh_role_img(path: Path, width: int, height: int):
+def _render_refresh_role_img(path: Path, width: int, height: int, panel_top: int = 470):
     img = Image.open(path).convert("RGBA")
     if path.name in refresh_role_map:
         img = img.crop(refresh_role_map[path.name])
@@ -166,7 +165,7 @@ def _render_refresh_role_img(path: Path, width: int, height: int):
     result.paste(blur_img, (0, 0))
 
     # 计算角色区域位置和尺寸
-    char_panel_y = 470  # 角色区域开始的Y坐标
+    char_panel_y = panel_top  # 角色区域开始的Y坐标
     char_panel_height = height - char_panel_y - 50  # 角色区域高度
     char_panel_width = width - 100  # 角色区域宽度
 
@@ -308,29 +307,39 @@ async def _draw_refresh_char_detail_img(
     card_spacing = 280 if is_single_refresh else 300
     card_margin = 40 if is_single_refresh else 80
     role_high = role_len // cols + (0 if role_len % cols == 0 else 1)
-    height = 470 + 75 + role_high * 330
+    grid_top = 370 if is_view else 470  # view 不画刷新横条, 整体上移
+    height = grid_top + 75 + role_high * 330
     width = 1200 if is_single_refresh else 2000
     # img = get_waves_bg(width, height, "bg3")
     img = Image.new("RGBA", (width, height))
-    img.alpha_composite(await get_refresh_role_img(width, height), (0, 0))
+    img.alpha_composite(await get_refresh_role_img(width, height, grid_top), (0, 0))
 
     # 提示文案
-    title = f"共刷新{role_update}个角色，可以使用"
     name = role_detail_list[0].role.roleName
     name = NAME_ALIAS.get(name, name)
-    title2 = f"{PREFIX}{name}面板"
-    title3 = "来查询该角色的具体面板"
-    info_block = Image.new("RGBA", (980, 50), color=(255, 255, 255, 0))
+    head = f"本次共刷新{role_update}个角色，可以使用" if (not is_view and not is_single_refresh) else "可以使用"
+    segs = [
+        (head, GREY),
+        (f"{PREFIX}{name}面板", (255, 180, 0)),
+    ]
+    if is_single_refresh:
+        segs.append(("来查询该角色的具体面板", GREY))
+    else:
+        segs.append(("来查询该角色的具体面板，可使用", GREY))
+        segs.append((f"{PREFIX}刷新{name}面板", (255, 180, 0)))
+        segs.append(("以刷新单角色面板", GREY))
+    measure = ImageDraw.Draw(Image.new("RGBA", (1, 1)))
+    seg_gap = 10
+    seg_w = [measure.textlength(t, waves_font_30) for t, _ in segs]
+    block_w = int(sum(seg_w) + seg_gap * (len(segs) - 1) + 60)
+    info_block = Image.new("RGBA", (block_w, 50), color=(255, 255, 255, 0))
     info_block_draw = ImageDraw.Draw(info_block)
-    info_block_draw.rounded_rectangle([0, 0, 980, 50], radius=15, fill=(128, 128, 128, int(0.3 * 255)))
-    t1_w = info_block_draw.textlength(title, waves_font_30)
-    t2_w = info_block_draw.textlength(title2, waves_font_30)
-    t3_w = info_block_draw.textlength(title3, waves_font_30)
-    start_x = (980 - t1_w - 20 - t2_w - 10 - t3_w) / 2
-    info_block_draw.text((start_x, 24), f"{title}", GREY, waves_font_30, "lm")
-    info_block_draw.text((start_x + t1_w + 20, 24), f"{title2}", (255, 180, 0), waves_font_30, "lm")
-    info_block_draw.text((start_x + t1_w + 20 + t2_w + 10, 24), f"{title3}", GREY, waves_font_30, "lm")
-    img.alpha_composite(info_block, ((width - 980) // 2, 400))
+    info_block_draw.rounded_rectangle([0, 0, block_w, 50], radius=15, fill=(128, 128, 128, int(0.3 * 255)))
+    seg_x = 30
+    for (seg_t, seg_c), seg_ww in zip(segs, seg_w):
+        info_block_draw.text((seg_x, 24), seg_t, seg_c, waves_font_30, "lm")
+        seg_x += seg_ww + seg_gap
+    img.alpha_composite(info_block, ((width - block_w) // 2, grid_top - 70))
 
     waves_char_rank = await get_waves_char_rank(uid, role_detail_list)
 
@@ -349,7 +358,7 @@ async def _draw_refresh_char_detail_img(
     rIndex = 0
     for char_rank in map_update:
         pic = await draw_pic(char_rank, True)  # type: ignore
-        img.alpha_composite(pic, (card_margin + card_spacing * (rIndex % cols), 470 + (rIndex // cols) * 330))
+        img.alpha_composite(pic, (card_margin + card_spacing * (rIndex % cols), grid_top + (rIndex // cols) * 330))
         rIndex += 1
         if rIndex <= 5:
             name = SPECIAL_CHAR_NAME.get(str(char_rank.roleId), char_rank.roleName)
@@ -358,7 +367,7 @@ async def _draw_refresh_char_detail_img(
 
     for char_rank in map_unchanged:
         pic = await draw_pic(char_rank, False)  # type: ignore
-        img.alpha_composite(pic, (card_margin + card_spacing * (rIndex % cols), 470 + (rIndex // cols) * 330))
+        img.alpha_composite(pic, (card_margin + card_spacing * (rIndex % cols), grid_top + (rIndex // cols) * 330))
         rIndex += 1
 
         if len(map_update) == 0 and rIndex <= 5:
@@ -369,10 +378,11 @@ async def _draw_refresh_char_detail_img(
     buttons.append(WavesButton("练度统计", "练度统计"))
 
     # 基础信息 名字 特征码
-    base_info_bg = Image.open(TEXT_PATH / "base_info_bg.png")
-    base_info_draw = ImageDraw.Draw(base_info_bg)
-    base_info_draw.text((275, 120), f"{account_info.name[:10]}", "white", waves_font_30, "lm")
-    base_info_draw.text((226, 173), f"特征码:  {hide_uid(account_info.id, user_pref=user_pref)}", GOLD, waves_font_25, "lm")
+    base_info_bg = draw_base_info_bg(
+        f"{account_info.name[:10]}",
+        f"特征码:  {hide_uid(account_info.id, user_pref=user_pref)}",
+        TEXT_PATH,
+    )
     img.paste(base_info_bg, (15, 20), base_info_bg)
 
     # 头像 头像环
@@ -392,39 +402,39 @@ async def _draw_refresh_char_detail_img(
         img.paste(title_bar, (-20, 70), title_bar)
 
     # bar
-    refresh_bar = Image.open(TEXT_PATH / "refresh_bar_single.png") if is_single_refresh else Image.open(TEXT_PATH / "refresh_bar.png")
-    if is_single_refresh and refresh_bar.width > width:
-        refresh_bar = refresh_bar.crop((0, 0, width, refresh_bar.height))
-    refresh_bar_draw = ImageDraw.Draw(refresh_bar)
-    bar_title_x = 600 if is_single_refresh else 1010
-    bar_login_x = 970 if is_single_refresh else 1700
-    bar_icon_x = 1050 if is_single_refresh else 1800
-    draw_text_with_shadow(
-        refresh_bar_draw,
-        f"{shadow_title}",
-        bar_title_x,
-        40,
-        waves_font_60,
-        shadow_color=shadow_color,
-        offset=(2, 2),
-        anchor="mm",
-    )
-    draw_text_with_shadow(
-        refresh_bar_draw,
-        "登录状态:",
-        bar_login_x,
-        20,
-        waves_font_40,
-        shadow_color=GOLD,
-        offset=(2, 2),
-        anchor="mm",
-    )
-    if self_ck:
-        refresh_bar.alpha_composite(refresh_yes.resize((60, 60)), (bar_icon_x, -8))
-    else:
-        refresh_bar.alpha_composite(refresh_no.resize((60, 60)), (bar_icon_x, -8))
-
-    img.paste(refresh_bar, (0, 300), refresh_bar)
+    if not is_view:
+        refresh_bar = Image.open(TEXT_PATH / "refresh_bar_single.png") if is_single_refresh else Image.open(TEXT_PATH / "refresh_bar.png")
+        if is_single_refresh and refresh_bar.width > width:
+            refresh_bar = refresh_bar.crop((0, 0, width, refresh_bar.height))
+        refresh_bar_draw = ImageDraw.Draw(refresh_bar)
+        bar_title_x = 600 if is_single_refresh else 1010
+        bar_login_x = 970 if is_single_refresh else 1700
+        bar_icon_x = 1050 if is_single_refresh else 1800
+        draw_text_with_shadow(
+            refresh_bar_draw,
+            f"{shadow_title}",
+            bar_title_x,
+            40,
+            waves_font_60,
+            shadow_color=shadow_color,
+            offset=(2, 2),
+            anchor="mm",
+        )
+        draw_text_with_shadow(
+            refresh_bar_draw,
+            "登录状态:",
+            bar_login_x,
+            20,
+            waves_font_40,
+            shadow_color=GOLD,
+            offset=(2, 2),
+            anchor="mm",
+        )
+        if self_ck:
+            refresh_bar.alpha_composite(refresh_yes.resize((60, 60)), (bar_icon_x, -8))
+        else:
+            refresh_bar.alpha_composite(refresh_no.resize((60, 60)), (bar_icon_x, -8))
+        img.paste(refresh_bar, (0, 300), refresh_bar)
     img = add_footer(img, 600, 20)
     img = await convert_img(img)
     if not is_view:

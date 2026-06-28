@@ -5,6 +5,7 @@ from PIL import Image, ImageDraw
 
 from gsuid_core.models import Event
 from gsuid_core.pool import to_thread
+from gsuid_core.logger import logger
 from gsuid_core.utils.image.convert import convert_img
 
 from ..wutheringwaves_config import PREFIX
@@ -12,8 +13,8 @@ from ..wutheringwaves_config import PREFIX
 from ..utils.at_help import ruser_id
 from ..utils.util import get_hide_uid_pref, hide_uid
 from ..utils.image import (
-    GOLD,
     GREY,
+    CHAIN_COLOR,
     add_footer,
     get_waves_bg,
     get_attribute,
@@ -24,15 +25,17 @@ from ..utils.image import (
 from ..utils.api.model import (
     Role,
     RoleList,
+    SkinData,
+    MotorData,
     CalabashData,
     RoleDetailData,
     AccountBaseInfo,
 )
-from ..utils.imagetool import draw_pic_with_ring
+from ..utils.imagetool import draw_pic_with_ring, draw_base_info_bg
 from ..utils.waves_api import waves_api
 from ..utils.char_info_utils import get_all_roleid_detail_info_int
 from ..utils.fonts.waves_fonts import (
-    waves_font_25,
+    waves_font_22,
     waves_font_26,
     waves_font_30,
     waves_font_40,
@@ -42,6 +45,14 @@ from ..utils.resource.constant import NORMAL_LIST, SPECIAL_CHAR_INT
 
 TEXT_PATH = Path(__file__).parent / "texture2d"
 TOP_TRIM = 150
+
+
+def draw_identity_header(card_img, name: str, uid_text: str, avatar, avatar_ring):
+    """卡片/图鉴共用顶部身份栏: base_info_bg + 名称 + 特征码 + 头像"""
+    base_info_bg = draw_base_info_bg(name, uid_text, TEXT_PATH)
+    card_img.paste(base_info_bg, (35, 0), base_info_bg)
+    card_img.paste(avatar, (45, 50), avatar)
+    card_img.paste(avatar_ring, (55, 60), avatar_ring)
 
 
 async def draw_role_img(uid: str, ck: str, ev: Event):
@@ -82,39 +93,43 @@ async def draw_role_img(uid: str, ck: str, ev: Event):
 
     base_info_value_list = []
     if account_info.is_full:
+        # 配色不在此指定, 由绘制时按格子位置决定(见下方循环)
         base_info_value_list = [
-            {
-                "key": "活跃天数",
-                "value": f"{account_info.activeDays}",
-                "info_block": "color_y.png",
-            },
-            {"key": "解锁角色", "value": f"{account_info.roleNum}", "info_block": ""},
-            {"key": "UP角色", "value": f"{up_num}", "info_block": "color_g.png"},
-            {
-                "key": "数据坞等级",
-                "value": f"{calabash_data.level if calabash_data.isUnlock else 0}",
-                "info_block": "",
-            },
-            {
-                "key": "已达成成就",
-                "value": f"{account_info.achievementCount}",
-                "info_block": "color_p.png",
-            },
-            {
-                "key": "成就星数",
-                "value": f"{account_info.achievementStar}",
-                "info_block": "",
-            },
-            {
-                "key": "小型信标",
-                "value": f"{account_info.smallCount}",
-                "info_block": "",
-            },
-            {"key": "中型信标", "value": f"{account_info.bigCount}", "info_block": ""},
+            {"key": "活跃天数", "value": f"{account_info.activeDays}"},
+            {"key": "解锁角色", "value": f"{account_info.roleNum}"},
+            {"key": "UP角色", "value": f"{up_num}"},
+            {"key": "数据坞等级", "value": f"{calabash_data.level if calabash_data.isUnlock else 0}"},
+            {"key": "已达成成就", "value": f"{account_info.achievementCount}"},
+            {"key": "成就星数", "value": f"{account_info.achievementStar}"},
+            {"key": "小型信标", "value": f"{account_info.smallCount}"},
+            {"key": "中型信标", "value": f"{account_info.bigCount}"},
         ]
 
+        # 服饰数量(共鸣者服饰 quality>3) + 饰品数量, 失败不影响卡片
+        try:
+            skin_resp = await waves_api.get_skin_data(uid, ck)
+            if skin_resp.success:
+                skin_data = SkinData.model_validate(skin_resp.data)
+                costume_num = sum(1 for s in skin_data.roleSkinList if (s.quality or 0) > 3)
+                base_info_value_list.append({"key": "服饰数量", "value": f"{costume_num}"})
+                base_info_value_list.append({"key": "饰品数量", "value": f"{len(skin_data.roleDecorationList)}"})
+        except Exception as e:
+            logger.warning(f"[鸣潮·角色信息] 获取服饰数量失败: {e}")
+
+        # 摩托等级
+        try:
+            motor_resp = await waves_api.get_motor_data(uid, ck)
+            if motor_resp.success:
+                motor_data = MotorData.model_validate(motor_resp.data)
+                base_info_value_list.append({"key": "摩托等级", "value": f"{motor_data.motorLevel}"})
+        except Exception as e:
+            logger.warning(f"[鸣潮·角色信息] 获取摩托等级失败: {e}")
+
         for b in account_info.treasureBoxList:
-            base_info_value_list.append({"key": b.name, "value": f"{b.num}", "info_block": ""})
+            base_info_value_list.append({"key": b.name, "value": f"{b.num}"})
+
+        for b in account_info.phantomBoxList or []:
+            base_info_value_list.append({"key": b.name, "value": f"{b.num}"})
 
     # 根据面板数据获取详细信息
     role_detail_info_map = await get_all_roleid_detail_info_int(uid)
@@ -197,26 +212,29 @@ def _compose_role_img(
             color_path = "info_block.png"
         info_block = Image.open(TEXT_PATH / f"{color_path}")
         info_block_draw = ImageDraw.Draw(info_block)
-        info_block_draw.text((66, 90), key, "white", waves_font_26, "mm")
+        key_font = waves_font_26 if len(key) <= 5 else waves_font_22
+        info_block_draw.text((66, 90), key, "white", key_font, "mm")
         info_block_draw.text((66, 43), value, "white", waves_font_40, "mm")
         bs.paste(info_block, (_x, _y), info_block)
 
-    # 基本信息
+    # 基本信息: 配色按格子位置棋盘交错(奇偶行错开), 绘制时决定, 与哪些项请求成功无关, 避免缺项错位
+    _hl_colors = ["color_y.png", "color_g.png", "color_p.png"]
     x = 66
     y = 75
-    for i in range(2):
+    for i in range(3):
         for j in range(6):
             _x = x + 145 * j
             _y = y + 140 * i
             _len = i * 6 + j
             if _len >= len(base_info_value_list):
                 break
+            color_path = _hl_colors[(_len // 2) % 3] if (i + j) % 2 == 1 else ""
             calc_info_block(
                 _x,
                 _y,
                 base_info_value_list[_len]["key"],
                 base_info_value_list[_len]["value"],
-                base_info_value_list[_len]["info_block"],
+                color_path,
             )
 
     def calc_role_info(_x: int, _y: int, asset):
@@ -238,9 +256,19 @@ def _compose_role_img(
             weapon_bg.paste(weapon_icon, (123, 73), weapon_icon)
             char_bg.paste(weapon_bg, (0, 5), weapon_bg)
 
+            reson = temp.weaponData.resonLevel or 1
+            if reson > 1:
+                reson_name = f"{['零', '一', '二', '三', '四', '五'][reson]}阶"
+                reson_block = Image.new("RGBA", (60, 30), color=(255, 255, 255, 0))
+                reson_block_draw = ImageDraw.Draw(reson_block)
+                reson_block_draw.rounded_rectangle([0, 0, 60, 30], radius=7, fill=(212, 177, 99, int(0.9 * 255)))
+                reson_block_draw.text((30, 15), reson_name, "white", waves_font_26, "mm")
+                reson_block = reson_block.resize((30, 15))
+                char_bg.paste(reson_block, (165, 138), reson_block)
+
             info_block = Image.new("RGBA", (60, 30), color=(255, 255, 255, 0))
             info_block_draw = ImageDraw.Draw(info_block)
-            info_block_draw.rounded_rectangle([0, 0, 60, 30], radius=7, fill=(96, 12, 120, int(0.8 * 255)))
+            info_block_draw.rounded_rectangle([0, 0, 60, 30], radius=7, fill=CHAIN_COLOR[temp.get_chain_num()] + (int(0.9 * 255),))
             info_block_draw.text((5, 15), f"{temp.get_chain_name()}", "white", waves_font_26, "lm")
             char_bg.paste(info_block, (18, 158), info_block)
 
@@ -252,22 +280,14 @@ def _compose_role_img(
         _y = yset + 200 * int(index / 4)
         calc_role_info(_x, _y, asset)
 
-    # 基础信息 名字 特征码
-    base_info_bg = Image.open(TEXT_PATH / "base_info_bg.png")
-    base_info_draw = ImageDraw.Draw(base_info_bg)
-    base_info_draw.text((275, 120), f"{account_info.name[:10]}", "white", waves_font_30, "lm")
-    base_info_draw.text(
-        (226, 173),
+    # 基础信息 名字 特征码 + 头像 头像环
+    draw_identity_header(
+        card_img,
+        account_info.name[:10],
         f"特征码:  {hide_uid(account_info.id, user_pref=user_pref)}",
-        GOLD,
-        waves_font_25,
-        "lm",
+        avatar,
+        avatar_ring,
     )
-    card_img.paste(base_info_bg, (35, 0), base_info_bg)
-
-    # 头像 头像环
-    card_img.paste(avatar, (45, 50), avatar)
-    card_img.paste(avatar_ring, (55, 60), avatar_ring)
 
     # 右侧装饰
     char = Image.open(TEXT_PATH / "char.png")
