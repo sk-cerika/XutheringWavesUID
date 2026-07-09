@@ -360,6 +360,11 @@ async def waves_login_index(auth: str):
 
         return await render_cloud_login_page(auth, state)
 
+    if isinstance(state, dict) and state.get("flow") == "add_token":
+        from ..wutheringwaves_user.add_token_web import render_add_token_page
+
+        return await render_add_token_page(auth, state)
+
     temp = state
     if temp is None:
         # 多 worker / 进程重启 / TTL 过期都会走这里，打点便于排查

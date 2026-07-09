@@ -1,4 +1,4 @@
-from typing import Any, Dict, Union, Generator
+from typing import Any, Dict, Union, Optional, Generator
 
 from .api.model import RoleDetailData
 from .player_store import read_player_json
@@ -41,6 +41,23 @@ async def get_all_roleid_detail_info_int(
     if not _all:
         return None
     return {r.role.roleId: r for r in _all}
+
+
+async def get_char_detail_for_id(uid: str, char_id: str) -> Optional[RoleDetailData]:
+    """按 char_id 取当前落盘面板数据(漂泊者以 rover.json 为准), 无则 None。"""
+    all_role_detail = await get_all_roleid_detail_info(uid)
+    if char_id in SPECIAL_CHAR:
+        canon = SPECIAL_CHAR_RANK_MAP[char_id]
+        rover_map = await get_rover_detail_map(uid)
+        if canon in rover_map:
+            all_role_detail = {**(all_role_detail or {}), canon: rover_map[canon]}
+        query_list = SPECIAL_CHAR[char_id]
+    else:
+        query_list = [char_id]
+    for tid in query_list:
+        if all_role_detail and tid in all_role_detail:
+            return all_role_detail[tid]
+    return None
 
 
 async def get_rover_detail_map(uid: str) -> Dict[str, RoleDetailData]:

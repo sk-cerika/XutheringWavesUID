@@ -11,6 +11,8 @@ from .utils import (
     Tune_Rupture_Role_Ids,
     Tune_Strain_Role_Ids,
     Hack_Shifting_Role_Ids,
+    Havoc_Bane_Role_Ids,
+    Abnormal_Role_Ids,
     temp_atk,
     temp_def,
     temp_life,
@@ -280,8 +282,8 @@ class Weapon_21010056(WeaponAbstract):
         if not attr.is_env_abnormal():
             return
         
-        # 千咲：满层时，附加异常效应时全属性伤害加成
-        if attr.role and attr.role.role.roleId == 1508:
+        # 满层时，附加【异常效应】的角色全属性伤害加成 (任意可施加异常效应的角色)
+        if check_char_id(attr, Abnormal_Role_Ids):
             dmg2 = f"{self.param(4)}"
             msg = f"满层时附加【异常效应】，全属性伤害加成提升{dmg2}"
             attr.add_dmg_bonus(calc_percent_expression(dmg2), title, msg)
@@ -857,6 +859,35 @@ class Weapon_21020086(WeaponAbstract):
             title = self.get_title()
             msg = f"目标受到霜渐效应伤害加深{dmg}"
             attr.add_effect_dmg_deepen(calc_percent_expression(dmg), title, msg)
+
+
+
+class Weapon_21020096(WeaponAbstract):
+    id = 21020096
+    type = 2
+    name = "天之苍苍"
+
+    # 全属性伤害加成提升{0}。附加虚湮效应后，重击伤害加深{1}，重击伤害无视目标{2}防御，持续{3}秒。
+    def do_action(
+        self,
+        func_list: Union[List[str], str],
+        attr: DamageAttribute,
+        isGroup: bool = False,
+    ):
+        """附加虚湮效应后"""
+        if not check_char_id(attr, Havoc_Bane_Role_Ids):
+            return
+
+        if attr.char_damage == hit_damage:
+            dmg = f"{self.param(1)}"
+            title = self.get_title()
+            msg = f"附加虚湮效应后，重击伤害加深{dmg}"
+            attr.add_dmg_deepen(calc_percent_expression(dmg), title, msg)
+
+            dmg = f"{self.param(2)}"
+            title = self.get_title()
+            msg = f"重击伤害无视目标{dmg}防御"
+            attr.add_defense_ignore(calc_percent_expression(dmg), title, msg)
 
 
 class Weapon_21030011(WeaponAbstract):
@@ -2110,6 +2141,32 @@ class Weapon_21050094(WeaponAbstract):
             dmg = f"{self.param(0)}*{self.param(2)}"
             title = self.get_title()
             msg = f"对带有【异常效应】的怪物造成伤害时，自身攻击提升{dmg}"
+            attr.add_atk_percent(calc_percent_expression(dmg), title, msg)
+
+
+
+class Weapon_21050096(WeaponAbstract):
+    id = 21050096
+    type = 5
+    name = "栖霞饮露"
+
+    # 生命提升{0}。施放共鸣解放时，回复自身{1}点协奏能量，每20秒可触发1次。
+    # 每次附加霜渐效应时获得【染雪色】；每次造成治疗时获得【生漪】。
+    # 自身同时持有【染雪色】和【生漪】时，附近队伍中所有角色攻击提升{2}。同名效果之间不可叠加。
+    def do_action(
+        self,
+        func_list: Union[List[str], str],
+        attr: DamageAttribute,
+        isGroup: bool = False,
+    ):
+        """持有者(穗穗)常态霜渐+治疗, 按常驻双持【染雪色】【生漪】。如校长通过声骸产生治疗，暂不认为是常规玩法; 团队场景经穗穗 _do_buff 驱动"""
+        if not (isGroup or (attr.role and attr.role.role.roleId == 1110)):
+            return
+
+        if attr.char_template == temp_atk:
+            dmg = f"{self.param(2)}"
+            title = self.get_title()
+            msg = f"同时持有【染雪色】和【生漪】时，队伍中角色攻击提升{dmg}"
             attr.add_atk_percent(calc_percent_expression(dmg), title, msg)
 
 

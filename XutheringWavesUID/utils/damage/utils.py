@@ -24,6 +24,7 @@ SONATA_CROWN_OF_VALOR = "荣斗铸锋之冠"
 SONATA_HARMONY = "息界同调之律"
 SONATA_FIREWALL = "焚羽猎魔之影"
 SONATA_SCISSOR = "命理崩毁之弦"
+
 SONATA_NEONLIGHT = "逆光跃彩之约"
 SONATA_HALO = "星构寻辉之环"
 SONATA_GILDED = "流金溯真之式"
@@ -33,6 +34,9 @@ SONATA_WHISPER = "听唤语义之愿"
 SONATA_SNOWFALL = "雪落无声之愿"
 SONATA_HEARTCUT = "剪心辑梦之影"
 SONATA_NIGHTMARE = "碎梦亡鬼之魇"
+SONATA_FEATHERFALL = "羽落空尘之歌"
+SONATA_EXORCISM = "清邪荡煞之心"
+SONATA_NIGHTLAMP = "冥途夜行之灯"
 
 CHAR_ATTR_FREEZING = "冷凝"
 CHAR_ATTR_CELESTIAL = "衍射"
@@ -53,6 +57,8 @@ liberation_damage = "liberation_damage"
 phantom_damage = "phantom_damage"
 # 谐度破坏伤害加成
 tunebreak_damage = "tunebreak_damage"
+# 延奏技能伤害
+extension_damage = "extension_damage"
 # 治疗效果加成
 heal_bonus = "heal_bonus"
 # 护盾量加成
@@ -108,13 +114,19 @@ SkillTreeMap = {
 Spectro_Frazzle_Role_Ids = [1407, 1501, 1502, 1506, 1507]
 
 # 虚湮效应
-Havoc_Bane_Role_Ids = [1508]
+Havoc_Bane_Role_Ids = [1508, 1610]
 
 # 聚爆效应
 Fusion_Burst_Role_Ids = [1210, 1211]
 
 # 霜渐效应
-Glacio_Chafe_Role_Ids = [1108, 1109]
+Glacio_Chafe_Role_Ids = [1108, 1109, 1110]
+
+# 风蚀效应
+Aero_Erosion_Role_Ids = [1406, 1407, 1408, 1409]
+
+# 电磁效应
+Electro_Flare_Role_Ids = [1309, 1310]
 
 # 失序彼岸之梦 套装 (共鸣能量上限为0的角色: 弗洛洛 / 洛瑟菈)
 Ancient_Role_Ids = [1608, 1109]
@@ -130,6 +142,18 @@ Tune_Strain_Role_Ids = [1509, 1211, 1510]
 
 # 附加骇破·偏移 角色
 Hack_Shifting_Role_Ids = [1308, 1511]
+
+# 可施加任意【异常效应】的角色并集 (光噪/虚湮/聚爆/霜渐/风蚀/电磁)
+Abnormal_Role_Ids = sorted(
+    set(
+        Spectro_Frazzle_Role_Ids
+        + Havoc_Bane_Role_Ids
+        + Fusion_Burst_Role_Ids
+        + Glacio_Chafe_Role_Ids
+        + Aero_Erosion_Role_Ids
+        + Electro_Flare_Role_Ids
+    )
+)
 
 # 异常
 AbnormalType = Literal[

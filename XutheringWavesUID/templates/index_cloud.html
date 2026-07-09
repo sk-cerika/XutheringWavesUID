@@ -5,8 +5,57 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>云鸣潮抽卡登录</title>
   <link rel="icon" href="https://web-static.kurobbs.com/resource/prod/icon.ico" type="image/x-icon">
-  <script src="https://static.geetest.com/v4/gt4.js"></script>
-  <script src="https://apps.bdimg.com/libs/jquery/1.6.4/jquery.min.js"></script>
+  <!-- 极验（异步多源，失败不阻塞页面渲染） -->
+  <script>
+    (function () {
+      var srcs = [
+        'https://static.geetest.com/v4/gt4.js',
+        'https://static.geevisit.com/v4/gt4.js'
+      ];
+      var done = false, i = 0, t;
+      function fin() { if (done) return; done = true; window.dispatchEvent(new Event('geetestready')); }
+      function next() {
+        if (done) return;
+        if (i >= srcs.length) { fin(); return; }
+        var s = document.createElement('script');
+        s.src = srcs[i++];
+        s.onload = function () { window.initGeetest4 ? fin() : next(); };
+        s.onerror = next;
+        document.head.appendChild(s);
+        clearTimeout(t); t = setTimeout(next, 3000);
+      }
+      next();
+      setTimeout(fin, 8000);
+    })();
+  </script>
+  <!-- GSAP -->
+  <script>
+    (function () {
+      var d = document.documentElement;
+      d.classList.add('gsap-anim');
+      var srcs = [
+        'https://lib.baomitu.com/gsap/3.13.0/gsap.min.js',
+        'https://cdn.staticfile.org/gsap/3.13.0/gsap.min.js',
+        'https://cdnjs.cloudflare.com/ajax/libs/gsap/3.13.0/gsap.min.js'
+      ];
+      var done = false, i = 0, timer;
+      function reveal() { if (done) return; done = true; clearTimeout(timer); d.classList.remove('gsap-anim'); }
+      function ready() { if (done) return; done = true; clearTimeout(timer); window.dispatchEvent(new Event('gsapready')); }
+      function next() {
+        if (done) return;
+        if (i >= srcs.length) { reveal(); return; }
+        var s = document.createElement('script');
+        s.src = srcs[i++];
+        s.onload = function () { window.gsap ? ready() : next(); };
+        s.onerror = next;
+        document.head.appendChild(s);
+        clearTimeout(timer);
+        timer = setTimeout(next, 2000);
+      }
+      next();
+      setTimeout(reveal, 8000);
+    })();
+  </script>
   <style>
     body, html {
       margin: 0;
@@ -223,6 +272,20 @@
       color: #666;
       margin-top: 10px;
     }
+    .gsap-anim .login-container { visibility: hidden; }
+    .login-container.vx-introing,
+    .login-container.vx-introing * { transition: none !important; }
+    #vxToast {
+      position: fixed; left: 50%; top: 20px;
+      z-index: 3000; max-width: 86%; padding: 11px 18px;
+      border-radius: 10px; font-size: 14px; font-weight: 600;
+      line-height: 1.4; text-align: center; color: #1b2733;
+      background: rgba(255, 255, 255, 0.96);
+      box-shadow: 0 12px 30px rgba(0, 0, 0, 0.25);
+      backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+      opacity: 0; visibility: hidden; pointer-events: none;
+    }
+    #vxToast.is-error { color: #fff; background: #d9534f; }
   </style>
 </head>
 <body>
@@ -273,13 +336,43 @@
   const modal = document.getElementById('successModal');
   const closeBtn = modal.querySelector('.close');
 
+  let geetestReady = false;
+
+  function ajax(opts) {
+    var headers = {}, body = opts.data;
+    if (opts.data && typeof opts.data === 'object') {
+      headers['Content-Type'] = 'application/x-www-form-urlencoded; charset=UTF-8';
+      body = Object.keys(opts.data).map(function (k) {
+        return encodeURIComponent(k) + '=' + encodeURIComponent(opts.data[k]);
+      }).join('&');
+    } else if (opts.contentType) {
+      headers['Content-Type'] = opts.contentType;
+    }
+    if (opts.headers) for (var k in opts.headers) headers[k] = opts.headers[k];
+    fetch(opts.url, { method: opts.type || 'GET', headers: headers, body: body })
+      .then(function (r) { if (!r.ok) throw new Error('http ' + r.status); return r.json(); })
+      .then(function (res) { if (opts.success) opts.success(res); })
+      .catch(function () { if (opts.error) opts.error(); });
+  }
+
+  function whenGeetestReady(config, cb) {
+    function go() {
+      if (!window.initGeetest4) { getCodeBtn.textContent = '验证服务不可用'; getCodeBtn.disabled = true; return; }
+      geetestReady = true;
+      if (phoneInput.value.length === 11) getCodeBtn.disabled = false;
+      window.initGeetest4(config, cb);
+    }
+    if (window.initGeetest4) go();
+    else window.addEventListener('geetestready', go, { once: true });
+  }
+
   const auth = "{{ auth }}";
   const serverUrl = "{{ server_url }}";
   const captchaId = "{{ captchaId }}";
   const product = "{{ product }}";
 
   phoneInput.addEventListener('input', function () {
-    getCodeBtn.disabled = this.value.length !== 11;
+    getCodeBtn.disabled = !geetestReady || this.value.length !== 11;
     loginBtn.disabled = this.value.length !== 11 || verificationCodeInput.value === "";
   });
 
@@ -287,7 +380,7 @@
     loginBtn.disabled = this.value === "" || phoneInput.value.length !== 11;
   });
 
-  initGeetest4({
+  whenGeetestReady({
     captchaId: captchaId,
     product: product,
   }, function (captcha) {
@@ -297,7 +390,7 @@
       if (!result) {
         return alert('请完成验证');
       }
-      $.ajax({
+      ajax({
         url: serverUrl + '/waves/c/sendCode',
         type: 'POST',
         data: JSON.stringify({ auth: auth, phone: phoneInput.value, geetest: result }),
@@ -330,7 +423,7 @@
   loginForm.addEventListener('submit', function (e) {
     e.preventDefault();
     loginBtn.disabled = true;
-    $.ajax({
+    ajax({
       url: serverUrl + '/waves/c/login',
       type: 'POST',
       data: JSON.stringify({ auth: auth, phone: phoneInput.value, code: verificationCodeInput.value }),
@@ -376,6 +469,70 @@
       modal.classList.remove('show');
     });
   }
+</script>
+
+<script>
+  // GSAP 动效层
+  function vxInit() {
+    if (!window.gsap) return;
+    var card = document.querySelector('.login-container');
+    if (!card) return;
+    var REDUCE = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    var toast = document.createElement('div');
+    toast.id = 'vxToast';
+    document.body.appendChild(toast);
+    gsap.set(toast, { xPercent: -50 });
+    var toastTl;
+    function vxToast(msg) {
+      var s = String(msg == null ? '' : msg);
+      var isErr = /失败|出错|错误|请完成|稍后|不存在|超时|异常/.test(s);
+      toast.textContent = s;
+      toast.className = isErr ? 'is-error' : '';
+      if (toastTl) toastTl.kill();
+      gsap.killTweensOf(toast);
+      toastTl = gsap.timeline()
+        .fromTo(toast, { autoAlpha: 0, y: REDUCE ? 0 : -14 },
+          { autoAlpha: 1, y: 0, duration: REDUCE ? 0.2 : 0.4, ease: 'back.out(1.7)' })
+        .to(toast, { autoAlpha: 0, y: REDUCE ? 0 : -10, duration: 0.4, ease: 'power2.in' }, '+=2.4');
+      if (isErr) shake();
+    }
+    window.alert = function (m) { vxToast(m); };
+
+    var shaking = false;
+    function shake() {
+      if (REDUCE || shaking) return;
+      shaking = true;
+      card.classList.add('vx-introing');
+      gsap.to(card, {
+        keyframes: [{ x: -8 }, { x: 7 }, { x: -6 }, { x: 4 }, { x: 0 }],
+        duration: 0.45, ease: 'power1.inOut', clearProps: 'transform',
+        onComplete: function () { card.classList.remove('vx-introing'); shaking = false; }
+      });
+    }
+
+    gsap.matchMedia().add({
+      full: '(prefers-reduced-motion: no-preference)',
+      reduce: '(prefers-reduced-motion: reduce)'
+    }, function (ctx) {
+      if (ctx.conditions.reduce) { gsap.set(card, { autoAlpha: 1 }); return; }
+      card.classList.add('vx-introing');
+      var bits = gsap.utils.toArray('.banner-text > *, .banner');
+      var fields = gsap.utils.toArray('#loginForm .input-group, #loginForm .user-id-display');
+      var submit = card.querySelector('button[type="submit"]');
+      var tl = gsap.timeline({
+        defaults: { ease: 'expo.out' },
+        onComplete: function () { card.classList.remove('vx-introing'); }
+      });
+      tl.from(card, { autoAlpha: 0, y: 26, scale: 0.97, duration: 0.7, clearProps: 'transform' })
+        .from(bits, { autoAlpha: 0, y: 12, stagger: 0.06, duration: 0.5, clearProps: 'transform' }, '-=0.4')
+        .from(fields, { autoAlpha: 0, y: 14, stagger: 0.08, duration: 0.5, clearProps: 'transform' }, '-=0.3')
+        .from(submit, { autoAlpha: 0, y: 12, duration: 0.5, clearProps: 'transform' }, '-=0.25');
+      return function () { tl.kill(); card.classList.remove('vx-introing'); };
+    });
+  }
+  if (window.gsap) vxInit();
+  else window.addEventListener('gsapready', vxInit, { once: true });
 </script>
 </body>
 </html>

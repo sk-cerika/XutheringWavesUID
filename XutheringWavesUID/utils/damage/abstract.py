@@ -239,6 +239,7 @@ class WeaponAbstract(object):
 class EchoAbstract(object):
     name = None
     id = None
+    cost = None
 
     def do_echo(self, attr: DamageAttribute, isGroup: bool = False):
         self.damage(attr, isGroup)

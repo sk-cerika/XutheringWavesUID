@@ -38,6 +38,14 @@ def get_modal_options(char_id: int) -> List[Dict[str, str]]:
     return [{"key": o["key"], "name": o["name"]} for o in MODAL_CHARS.get(char_id, [])]
 
 
+def get_default_modal(char_id: int) -> str:
+    """该角色的默认模态 key; 无模态角色返回 ""。"""
+    options = MODAL_CHARS.get(char_id)
+    if not options:
+        return ""
+    return _DEFAULT_MODAL.get(char_id, options[0]["key"])
+
+
 def get_modal_name(char_id: int, key: str) -> str:
     """modal key -> 中文名; 找不到返回 ""。"""
     for o in MODAL_CHARS.get(char_id, []):

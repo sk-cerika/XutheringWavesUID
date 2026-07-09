@@ -22,11 +22,11 @@ _BUILD_LOCK_PATH = None
 def _get_build_lock_path() -> Path:
     global _BUILD_LOCK_PATH
     if _BUILD_LOCK_PATH is None:
-        # 放安装目录内(与落盘目标同处): 跨实例共享, 且不受 systemd PrivateTmp 隔离;
-        # 若放 /tmp, PrivateTmp=yes 时各实例 /tmp 互相隔离, 锁会形同虚设。
-        from .resource.RESOURCE_PATH import BUILD_ROOT
+        # 放数据目录: 持久, 不受 systemd PrivateTmp 隔离, 不落在仓库树内
+        from .resource.RESOURCE_PATH import MAIN_PATH
 
-        _BUILD_LOCK_PATH = Path(BUILD_ROOT) / ".build_copy.lock"
+        MAIN_PATH.mkdir(parents=True, exist_ok=True)
+        _BUILD_LOCK_PATH = MAIN_PATH / ".build_copy.lock"
     return _BUILD_LOCK_PATH
 
 

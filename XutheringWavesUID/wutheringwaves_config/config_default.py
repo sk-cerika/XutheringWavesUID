@@ -210,13 +210,14 @@ CONFIG_DEFAULT: Dict[str, GSC] = {
     ),
     "RefreshSingleCharBehavior": GsStrConfig(
         "刷新单角色面板发送逻辑",
-        "控制刷新单个角色面板后的行为：refresh_only(仅刷新)、refresh_and_send(刷新并合并发送)、refresh_and_send_separately(刷新并分别发送)、concatenate(拼接为一张图发送)",
-        "concatenate",
+        "控制刷新单个角色面板后的行为：refresh_only(仅刷新)、refresh_and_send(刷新并合并发送)、refresh_and_send_separately(刷新并分别发送)、concatenate(刷新小图与面板拼一张发送)、concat_diff(刷新成功时不发刷新小图, 改发刷新前后两张面板横向拼接的对比图; 数据未更新则同 concatenate)",
+        "concat_diff",
         options=[
             "refresh_only",
             "refresh_and_send",
             "refresh_and_send_separately",
             "concatenate",
+            "concat_diff",
         ],
     ),
     "WavesUploadAudit": GsBoolConfig(
@@ -243,6 +244,12 @@ CONFIG_DEFAULT: Dict[str, GSC] = {
     "ActiveUserDays": GsIntConfig(
         "活跃账号认定天数",
         "在此天数内有使用记录的账号被认定为活跃账号",
+        42,
+        10000,
+    ),
+    "AnnActiveGroupDays": GsIntConfig(
+        "公告推送活跃群认定天数",
+        "群在此天数内有人使用本插件才推送公告，0 表示不过滤",
         42,
         10000,
     ),

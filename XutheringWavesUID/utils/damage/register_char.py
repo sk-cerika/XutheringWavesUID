@@ -15,6 +15,7 @@ from .utils import (
     cast_variation,
     cast_attack,
     liberation_damage,
+    Abnormal_Role_Ids,
 )
 from .damage import DamageAttribute, check_char_id
 from .abstract import (
@@ -224,6 +225,11 @@ class Char_1109(CharAbstract):
             title = f"{self.name}-套装-雪落无声之愿"
             msg = "下一个变奏登场角色冷凝伤害提升25%"
             attr.add_dmg_bonus(0.25, title, msg)
+
+            # 声骸技能-格洛犸图: 施放延奏后, 下一个变奏登场角色冷凝伤害加成提升12%
+            title = f"{self.name}-声骸技能-格洛犸图"
+            msg = "下一个变奏登场角色冷凝伤害加成提升12%"
+            attr.add_dmg_bonus(0.12, title, msg)
         elif attr.char_template == temp_atk:
             title = f"{self.name}-套装-轻云出月"
             msg = "下一个登场角色攻击提升22.5%"
@@ -234,6 +240,64 @@ class Char_1109(CharAbstract):
         weapon_clz = WavesWeaponRegister.find_class(weapon_id)
         if weapon_clz:
             w = weapon_clz(weapon_id, 90, 6, resonLevel)
+            w.do_action(["buff"], attr, isGroup)
+
+
+class Char_1110(CharAbstract):
+    id = 1110
+    name = "穗穗"
+    starLevel = 5
+
+    def _do_buff(
+        self,
+        attr: DamageAttribute,
+        chain: int = 0,
+        resonLevel: int = 1,
+        isGroup: bool = True,
+    ):
+        # 延奏技能-渌水盈盈: 队伍中的角色全伤害加深25%
+        title = f"{self.name}-延奏技能"
+        attr.add_dmg_deepen(0.25, title, "队伍中的角色全伤害加深25%")
+
+        # 延奏(消耗≥400芳菲信)-重明照影: 共鸣效率超200%部分转伤害提升, 按上限12%
+        title = f"{self.name}-延奏技能-重明照影"
+        attr.add_dmg_bonus(0.12, title, "山河水境内持有重明照影, 伤害提升按上限12%")
+
+        # 延奏(消耗≥600芳菲信)-烟岚: 持有烟岚的角色消耗目标【异常效应】或【电磁爆发】层数后攻击提升,
+        # 穗穗共效超200%部分转化, 按上限50%。受益者需能消耗层数(如玄翎剑式流转消耗虚湮);
+        # 一链变更: 持有烟岚的角色 附加【异常效应】或造成异常效应伤害 也可触发(不再要求消耗层)
+        if attr.char_template == temp_atk:
+            title = f"{self.name}-延奏技能-烟岚"
+            attr.add_atk_percent(0.5, title, "消耗目标【异常效应】层数后, 攻击提升按上限50%")
+
+        # 共鸣解放-山河水境 (水境内队伍角色, 各条均持续15秒且不可叠加):
+        # ·为目标附加【光噪/聚爆/霜渐/风蚀效应】或造成对应异常效应伤害后, 对应【异常效应】层数上限+3
+        # ·为目标附加【电磁效应】或造成对应异常效应伤害后, 【电磁效应】和【电磁爆发】层数上限+3
+        # ·不含【虚湮效应】(虚湮只有下方"消耗后减防减抗"条款)
+        title = f"{self.name}-共鸣解放-山河水境"
+        msg = "使目标除【虚湮效应】外的【异常效应】层数上限增加3层"
+        attr.add_effect(title, msg)
+        # 注：这个记得单独写，是几层就是几层，好多加上限还是手动算得了
+
+        # 共鸣解放-山河水境: 消耗目标【虚湮效应】层数后, 自身湮灭伤害无视目标6%防御、
+        # 12%湮灭抗性, 持续30秒, 不可叠加 (受益者需能消耗虚湮层)
+        if attr.char_attr == CHAR_ATTR_SINKING:
+            title = f"{self.name}-共鸣解放-山河水境"
+            attr.add_defense_ignore(0.06, title, "消耗【虚湮效应】后, 湮灭伤害无视目标6%防御")
+            attr.add_enemy_resistance(-0.12, title, "消耗【虚湮效应】后, 无视目标12%湮灭抗性")
+
+        # 二链: 山河水境内队伍角色触发以下任一后, 该角色暴击伤害提升50%, 持续30秒:
+        # ·为目标附加【光噪/聚爆/霜渐/风蚀/电磁效应】或造成对应异常效应伤害
+        # ·消耗目标【虚湮效应】层数
+        # 登场角色不处于山河水境内时该效果暂时失效
+        if chain >= 2:
+            title = f"{self.name}-二链"
+            attr.add_crit_dmg(0.5, title, "山河水境内触发后, 暴击伤害提升50%")
+
+        # 栖霞饮露
+        weapon_clz = WavesWeaponRegister.find_class(21050096)
+        if weapon_clz:
+            w = weapon_clz(21050096, 90, 6, resonLevel)
             w.do_action(["buff"], attr, isGroup)
 
 
@@ -639,6 +703,37 @@ class Char_1407(CharAbstract):
 class Char_1408(Char_1406):
     id = 1408
     name = "漂泊者·气动"
+    starLevel = 5
+
+
+class Char_1309(CharAbstract):
+    id = 1309
+    name = "漂泊者·导电"
+    starLevel = 5
+
+    def _do_buff(
+        self,
+        attr: DamageAttribute,
+        chain: int = 0,
+        resonLevel: int = 1,
+        isGroup: bool = True,
+    ):
+        # 共鸣回路-超负荷(短按): 清空【电涌】, 队伍中的角色攻击提升10%
+        if attr.char_template == temp_atk:
+            title = "雷主-共鸣回路-超负荷"
+            msg = "施放超负荷后，队伍中的角色攻击提升10%"
+            attr.add_atk_percent(0.1, title, msg)
+
+        # 延奏技能-殷殷其雷: 下一位登场角色获得电髓, 附加【异常效应】后消耗电髓, 全伤害加深25%
+        if check_char_id(attr, Abnormal_Role_Ids):
+            title = "雷主-延奏技能-电髓"
+            msg = "持有电髓的角色附加【异常效应】后，全伤害加深25%"
+            attr.add_dmg_deepen(0.25, title, msg)
+
+
+class Char_1310(Char_1309):
+    id = 1310
+    name = "漂泊者·导电"
     starLevel = 5
 
 

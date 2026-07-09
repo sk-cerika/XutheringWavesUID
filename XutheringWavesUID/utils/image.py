@@ -1,6 +1,7 @@
 import os
 import random
 import base64
+import hashlib
 from io import BytesIO
 from contextvars import ContextVar
 from typing import Tuple, Union, Literal, Optional
@@ -710,6 +711,18 @@ def get_crop_waves_bg(w: int, h: int, bg: str = "bg") -> Image.Image:
     return crop_center_img(cropped_image, w, h)
 
 
+# qlogo 对无效号/无头像返回 QQ 企鹅占位图(HTTP 200)，按 md5 识别并视为无头像
+QQ_DEFAULT_AVATAR_MD5 = frozenset({
+    "bad9cbb852b22fe58e62f3f23c7d63d2",  # q1.qlogo 个人号占位 (s>=140)
+    "4700116072a9eba9330a81fbbe49b7d5",  # q1.qlogo 个人号占位 (s=100)
+    "bb7257abd317126fc3fd3e29ea118958",  # q.qlogo 官机(qqgroup)占位
+})
+
+
+def is_qq_default_avatar(content: bytes) -> bool:
+    return hashlib.md5(content).hexdigest() in QQ_DEFAULT_AVATAR_MD5
+
+
 async def get_qq_avatar(
     qid: Optional[Union[int, str]] = None,
     avatar_url: Optional[str] = None,
@@ -719,8 +732,10 @@ async def get_qq_avatar(
         avatar_url = f"http://q1.qlogo.cn/g?b=qq&nk={qid}&s={size}"
     elif avatar_url is None:
         return None  # 并非 QQ 来源
-    char_pic = Image.open(BytesIO((await sget(avatar_url)).content)).convert("RGBA")
-    return char_pic
+    content = (await sget(avatar_url)).content
+    if is_qq_default_avatar(content):
+        return None
+    return Image.open(BytesIO(content)).convert("RGBA")
 
 
 async def get_event_avatar(
@@ -742,7 +757,14 @@ async def get_event_avatar(
         except Exception:
             img = None
 
-    if img is None and "avatar" in ev.sender and ev.sender["avatar"]:
+    if img is None and ev.bot_id == "qqgroup" and ev.at and is_valid_at_param:
+        try:
+            url = f"https://q.qlogo.cn/qqapp/{ev.bot_self_id}/{ev.at}/100"
+            img = await get_qq_avatar(avatar_url=url, size=size)
+        except Exception:
+            img = None
+
+    if img is None and not is_valid_at_param and "avatar" in ev.sender and ev.sender["avatar"]:
         avatar_url: str = ev.sender["avatar"]
         if avatar_url.startswith(("http", "https")):
             try:

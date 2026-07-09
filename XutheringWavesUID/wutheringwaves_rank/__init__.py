@@ -78,7 +78,7 @@ async def send_rank_card(bot: Bot, ev: Event):
 
 
 @sv_waves_rank_all_list.on_regex(
-    rf"^(?P<char>{PATTERN})(?:总排行|总排行榜|总排名|zph|zpm)(?P<pages>\d+)?(?P<modal>\S+)?$",
+    rf"^(?P<char>{PATTERN})(?:总排行|总排行榜|总排名|zph|zpm)\s*(?P<pages>\d+)?\s*(?P<modal>\S+)?$",
     block=True,
     to_ai="""查询全体某角色的排行（伤害或评分，跨群）。
 

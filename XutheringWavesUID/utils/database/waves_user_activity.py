@@ -1,4 +1,4 @@
-from typing import Any, Dict, Optional, Type, TypeVar
+from typing import Any, Dict, Optional, Set, Type, TypeVar
 
 from sqlmodel import Field, select
 from sqlalchemy import update
@@ -163,6 +163,26 @@ class WavesUserActivity(BaseBotIDModel, table=True):
         result = await session.execute(sql)
         data = result.scalars().all()
         return len(data)
+
+    @classmethod
+    @with_session
+    async def get_active_user_ids(
+        cls: Type[T_WavesUserActivity],
+        session: AsyncSession,
+        active_days: int,
+    ) -> Set[str]:
+        """一次性取出所有活跃用户的 user_id 集合"""
+        import time
+
+        threshold_time = int(time.time()) - active_days * 24 * 60 * 60
+        sql = select(cls.user_id).where(
+            and_(
+                cls.last_active_time.is_not(None),
+                cls.last_active_time >= threshold_time,
+            )
+        )
+        result = await session.execute(sql)
+        return {uid for uid in result.scalars().all() if uid}
 
     @classmethod
     @with_session

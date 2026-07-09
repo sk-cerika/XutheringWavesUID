@@ -131,13 +131,13 @@ async def draw_char_list_img(
         display_rank = [r for r in waves_char_rank if r.starLevel == 4]
     else:
         display_rank = list(waves_char_rank)
-    # 默认视图: 角色 >50 时隐藏 0 分角色 (显式传星级参数不过滤)
-    if is_default and total_count > 50:
+    # 默认视图: 角色 >100 时隐藏 0 分角色 (显式传星级参数不过滤)
+    if is_default and total_count > 100:
         display_rank = [r for r in display_rank if r.score > 0]
     if not display_rank:
         return "[鸣潮] 暂无对应星级的角色"
 
-    two_col = total_count > 30
+    two_col = total_count > 60
 
     # 头像 头像环
     avatar = await draw_pic_with_ring(ev, is_peek)

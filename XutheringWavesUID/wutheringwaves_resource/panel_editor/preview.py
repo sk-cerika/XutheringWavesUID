@@ -212,7 +212,6 @@ async def render_mr_preview(
         YES,
         NO,
     )
-    from ...wutheringwaves_config.wutheringwaves_config import ShowConfig
     from ...utils.api.model import AccountBaseInfo, DailyData
 
     char_name = easy_id_to_name(char_id, "漂泊者")
@@ -265,7 +264,6 @@ async def render_mr_preview(
         daily_info=daily_info, account_info=account_info,
         sign_in_icon=YES, sing_in_text=sing_in_text,
         active_icon=NO, active_text=active_text,
-        mr_use_bg=bool(ShowConfig.get_config("MrUseBG")),
         locale="",
         pile_hash=pile_hash,
     )

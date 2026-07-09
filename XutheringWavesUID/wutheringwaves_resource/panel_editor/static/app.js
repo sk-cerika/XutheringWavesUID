@@ -39,6 +39,7 @@ const state = {
   previewSeq: 0,
   previewAuto: (() => { try { return localStorage.getItem("ww.panelEdit.previewAuto") !== "0"; } catch (_) { return true; } })(),
   autoCrop: (() => { try { return localStorage.getItem("ww.panelEdit.autoCrop") !== "0"; } catch (_) { return true; } })(),
+  lqEdit: (() => { try { return localStorage.getItem("ww.panelEdit.lqEdit") === "1"; } catch (_) { return false; } })(),
 
   // edit-existing warning dismissed
   editWarnDismissed: false,
@@ -660,6 +661,7 @@ async function uploadSingle(file) {
       suffix: data.suffix,
       source: { w: data.width, h: data.height },
       current: { w: data.width, h: data.height },
+      size: data.size,
       kind: "upload",
     };
     state.mode = "single-crop";
@@ -709,6 +711,29 @@ function renderCropper(body) {
       }),
       el("span", { text: "实时裁剪" }),
     ),
+    el("label", {
+      class: "crop-auto",
+      title: "编辑时用同尺寸高压缩 WebP 传输节省流量; 后台裁剪与保存仍用原图",
+    },
+      el("input", {
+        type: "checkbox",
+        ...(state.lqEdit ? { checked: "checked" } : {}),
+        onChange: (e) => {
+          state.lqEdit = e.target.checked;
+          try { localStorage.setItem("ww.panelEdit.lqEdit", state.lqEdit ? "1" : "0"); } catch (_) {}
+          // 重载同尺寸图, onLoad 的 initCropRect 会重置框选; 载入后恢复
+          const keep = state.cropRect && { ...state.cropRect };
+          refreshCropImg();
+          waitCropImgLoad().then(() => {
+            if (!keep || state.mode !== "single-crop") return;
+            state.cropRect = keep;
+            const wrap = state.cropImgEl?.parentElement;
+            if (wrap) { layoutCropper(wrap); updateRectReadout(); }
+          });
+        },
+      }),
+      el("span", { text: "底清编辑" }),
+    ),
   );
 
   const bar = el("div", { class: "cropper__bar" },
@@ -729,7 +754,7 @@ function renderCropper(body) {
   const wrap = el("div", { class: "cropper__canvas-wrap" });
   const img = el("img", {
     class: "cropper__img",
-    src: `${API}/tmp/image?token=${tmp.token}&_=${Date.now()}`,
+    src: cropImgUrl(),
     onLoad: () => initCropRect(img, wrap),
   });
   state.cropImgEl = img;
@@ -1110,8 +1135,8 @@ async function applyCrop(opts = {}) {
     const r = await apiJson("/tmp/crop", { token: tmp.token, ...abs });
     tmp.offset = { x: abs.x, y: abs.y };
     tmp.current = { w: r.width, h: r.height };
-    const sizeEl = document.getElementById("cropCurSize");
-    if (sizeEl) sizeEl.textContent = `${r.width}×${r.height}`;
+    tmp.size = r.size;
+    syncSizeReadouts();
     refreshCropImg();
     await waitCropImgLoad();
     triggerPreview(true);
@@ -1134,8 +1159,9 @@ async function restoreCrop() {
     const r = await apiJson("/tmp/restore", { token: tmp.token });
     tmp.offset = { x: 0, y: 0 };
     tmp.current = { w: r.width, h: r.height };
+    tmp.size = r.size;
     if (r.suffix) tmp.suffix = r.suffix;
-    document.getElementById("cropCurSize").textContent = `${r.width}×${r.height}`;
+    syncSizeReadouts();
     refreshCropImg();
     await waitCropImgLoad();
     triggerPreview();
@@ -1148,9 +1174,25 @@ async function restoreCrop() {
   }
 }
 
+function syncSizeReadouts() {
+  const t = state.cropTmp;
+  if (!t) return;
+  const cur = document.getElementById("cropCurSize");
+  if (cur) cur.textContent = `${t.current.w}×${t.current.h}`;
+  const footSize = document.getElementById("previewFootSize");
+  if (footSize) footSize.textContent = formatBytes(t.size);
+  const footNow = document.getElementById("previewFootNow");
+  if (footNow) footNow.textContent = `${t.current.w}×${t.current.h}`;
+}
+
+function cropImgUrl() {
+  const lq = state.lqEdit ? "&lq=1" : "";
+  return `${API}/tmp/image?token=${state.cropTmp.token}${lq}&_=${Date.now()}`;
+}
+
 function refreshCropImg() {
   if (!state.cropImgEl) return;
-  state.cropImgEl.src = `${API}/tmp/image?token=${state.cropTmp.token}&_=${Date.now()}`;
+  state.cropImgEl.src = cropImgUrl();
 }
 
 function waitCropImgLoad() {
@@ -1242,11 +1284,13 @@ async function doResize(scale, compress) {
     const sy = r.source_height / oldSourceH;
     tmp.current = { w: r.width, h: r.height };
     tmp.source = { w: r.source_width, h: r.source_height };
+    tmp.size = r.size;
     if (r.suffix) tmp.suffix = r.suffix;
     if (tmp.offset) {
       tmp.offset = { x: tmp.offset.x * sx, y: tmp.offset.y * sy };
     }
     renderCenterBody();
+    syncSizeReadouts();
     syncCropConfirm();
     await waitCropImgLoad();
     triggerPreview(true);
@@ -1359,6 +1403,7 @@ async function editExisting(img) {
       suffix: r.suffix,
       source: { w: r.width, h: r.height },
       current: { w: r.width, h: r.height },
+      size: r.size,
       kind: "edit-existing",
       origin: { char_id: state.selectedCharId, name: img.name },
     };
@@ -1457,6 +1502,7 @@ async function editBatchItem(it) {
     suffix: it.suffix,
     source: { w: it.width, h: it.height },
     current: { w: it.width, h: it.height },
+    size: it.size,
     kind: "upload",
     fromBatch: true,
   };
@@ -1542,7 +1588,7 @@ function renderPreview() {
   if (state.mode === "browse" && state.selectedImage) {
     subEl.textContent = `${state.selectedImage.hash_id} · ${state.selectedImage.name}`;
   } else if (state.mode === "single-crop" && state.cropTmp) {
-    subEl.textContent = `tmp · ${state.cropTmp.token.slice(0, 8)}…`;
+    subEl.textContent = `tmp · ${state.cropTmp.token}`;
   } else {
     subEl.textContent = "未选中";
   }
@@ -1571,9 +1617,9 @@ function renderPreview() {
   } else if (state.mode === "single-crop" && state.cropTmp) {
     const t = state.cropTmp;
     foot.append(
-      el("span", null, "tmp ", el("b", { text: t.token.slice(0, 12) })),
+      el("span", null, "size ", el("b", { id: "previewFootSize", text: formatBytes(t.size) })),
       el("span", null, "src ", el("b", { text: `${t.source.w}×${t.source.h}` })),
-      el("span", null, "now ", el("b", { text: `${t.current.w}×${t.current.h}` })),
+      el("span", null, "now ", el("b", { id: "previewFootNow", text: `${t.current.w}×${t.current.h}` })),
     );
   }
 
@@ -2153,6 +2199,7 @@ async function stageAndCrop(g, im) {
       token: r.token, suffix: r.suffix,
       source: { w: r.width, h: r.height },
       current: { w: r.width, h: r.height },
+      size: r.size,
       kind: "upload",
       fromPending: { type: g.type, char_id: g.char_id, name: im.name },
     };

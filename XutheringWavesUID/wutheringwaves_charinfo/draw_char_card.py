@@ -26,7 +26,7 @@ from ..utils.ascension.char import get_char_model
 from ..utils.api.model_other import EnemyDetailData
 from ..utils.damage.utils import comma_separated_number
 from ..utils.ascension.template import get_template_data
-from ..utils.char_info_utils import get_all_roleid_detail_info, get_rover_detail_map
+from ..utils.char_info_utils import get_all_roleid_detail_info, get_char_detail_for_id
 from . import base_info_cache
 from ..utils.name_convert import alias_to_char_name, char_name_to_char_id
 from ..utils.api.wwapi import ONE_RANK_URL, OneRankRequest, OneRankResponse
@@ -427,6 +427,7 @@ async def get_role_need(
     is_limit_query=False,
     change_list_regex: Optional[str] = None,
     fallback_to_generic=False,
+    role_detail_override: Optional[RoleDetailData] = None,
 ):
     if waves_id:
         query_list = [char_id]
@@ -460,23 +461,11 @@ async def get_role_need(
             )
     else:
         avatar = await draw_pic_with_ring(ev, is_force_avatar, force_resource_id)
-        all_role_detail: Optional[Dict[str, RoleDetailData]] = await get_all_roleid_detail_info(uid)
+        if role_detail_override is not None:
+            return avatar, role_detail_override
 
-        if char_id in SPECIAL_CHAR:
-            # 漂泊者面板以 rover.json 为准
-            canon = SPECIAL_CHAR_RANK_MAP[char_id]
-            rover_map = await get_rover_detail_map(uid)
-            if canon in rover_map:
-                all_role_detail = {**(all_role_detail or {}), canon: rover_map[canon]}
-            query_list = SPECIAL_CHAR.copy()[char_id]
-        else:
-            query_list = [char_id]
-
-        for temp_char_id in query_list:
-            if all_role_detail and temp_char_id in all_role_detail:
-                role_detail: RoleDetailData = all_role_detail[temp_char_id]
-                break
-        else:
+        role_detail = await get_char_detail_for_id(uid, char_id)
+        if role_detail is None:
             if is_limit_query and not fallback_to_generic:
                 return (
                     None,
@@ -630,6 +619,7 @@ async def draw_char_detail_img(
     is_limit_query=False,
     show_score=True,
     fallback_to_generic=False,
+    role_detail_override: Optional[RoleDetailData] = None,
 ):
     locale = await WavesLangSettings.get_lang(ev.user_id)
     # waves_id 时是查别人, 用 self uid 取本人偏好
@@ -712,6 +702,7 @@ async def draw_char_detail_img(
         is_limit_query,
         change_list_regex,
         fallback_to_generic=fallback_to_generic,
+        role_detail_override=role_detail_override,
     )
     if isinstance(role_detail, str):
         return role_detail

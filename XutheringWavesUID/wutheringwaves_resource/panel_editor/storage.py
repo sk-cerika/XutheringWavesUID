@@ -484,4 +484,4 @@ def stage_pending(t: str, char_id: str, name: str) -> Optional[dict]:
     token = new_tmp_token()
     write_tmp_image(token, suffix, data)
     write_tmp_image(f"{token}.orig", suffix, data)
-    return {"token": token, "suffix": suffix, "width": w, "height": h}
+    return {"token": token, "suffix": suffix, "width": w, "height": h, "size": len(data)}

@@ -26,6 +26,8 @@ from ..wutheringwaves_config.ann_config import get_ann_new_ids, set_ann_new_ids
 from ..utils.resource.RESOURCE_PATH import ANN_CARD_PATH, BAKE_PATH, CALENDAR_PATH, WIKI_CACHE_PATH
 from ..wutheringwaves_resource.panel_editor.storage import PANEL_EDIT_TMP
 from ..utils.database.waves_subscribe import WavesSubscribe
+from ..utils.database.waves_group_activity import WavesGroupActivity, ANN_PUSH_GUARD
+from ..utils.database.waves_user_activity import WavesUserActivity
 
 sv_ann = SV("鸣潮公告")
 sv_ann_clear_cache = SV("鸣潮公告缓存清理", pm=0, priority=3)
@@ -46,7 +48,11 @@ async def _send_ann_to_one_subscribe(subscribe, img, ann_id, semaphore: asyncio.
     async with semaphore:
         try:
             await asyncio.sleep(3)
-            await subscribe.send(img)  # type: ignore
+            token = ANN_PUSH_GUARD.set(True)
+            try:
+                await subscribe.send(img)  # type: ignore
+            finally:
+                ANN_PUSH_GUARD.reset(token)
             return True
         except Exception as e:
             target_id = subscribe.group_id or subscribe.user_id
@@ -57,6 +63,23 @@ async def _send_ann_to_one_subscribe(subscribe, img, ann_id, semaphore: asyncio.
 
 
 async def _push_new_announcements(new_ann_need_send, datas) -> None:
+    active_days = WutheringWavesConfig.get_config("AnnActiveGroupDays").data
+    if active_days:
+        try:
+            active_gids = await WavesGroupActivity.get_active_group_ids(active_days)
+            active_uids = await WavesUserActivity.get_active_user_ids(active_days)
+            kept = [
+                s for s in datas
+                if (s.group_id and s.group_id in active_gids)
+                or (not s.group_id and s.user_id in active_uids)
+            ]
+            skipped = len(datas) - len(kept)
+            if skipped:
+                logger.info(f"[鸣潮·公告] 跳过 {skipped} 个不活跃订阅")
+            datas = kept
+        except Exception as e:
+            logger.warning(f"[鸣潮·公告] 活跃过滤失败, 不过滤: {e}")
+
     logger.info(
         f"[鸣潮·公告] 后台推送开始: 公告数={len(new_ann_need_send)}, 订阅数={len(datas)}"
     )

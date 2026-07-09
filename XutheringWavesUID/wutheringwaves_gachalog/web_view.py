@@ -319,7 +319,7 @@ def _build_pool_view(name: str, logs: List[Dict]) -> Dict:
     """把单池抽卡日志整理成前端使用的结构。
 
     分组: 把每两个 5 星之间的所有抽卡视为"一个 5 星周期",
-    周期内按抽到次数最多的 4 星排序后取 top4。
+    周期内的 4 星按抽到次数降序全部输出（前端滚动/换行容纳，不截断）。
     输出按 5 星倒序（最近的在前）。
     """
     total = len(logs)
@@ -367,7 +367,7 @@ def _build_pool_view(name: str, logs: List[Dict]) -> Dict:
             pity = 0
 
     remain_since_last = pity  # 末尾未出 5 星的累积
-    # 打包 4 星（top 4 by count）
+    # 打包 4 星（按 count 降序，全部输出，不截断）
     # 注: 库洛接口 2025-11 之前未区分 4★, 旧记录全部 qualityLevel=3。
     # 周期内累计 ≥10 抽却 0 个 4★, 视为旧 API 的占位周期, 前端展示提示。
     fives_with_4 = []
@@ -375,7 +375,7 @@ def _build_pool_view(name: str, logs: List[Dict]) -> Dict:
         items = list(period_4stars.get(i, {}).values())
         items.sort(key=lambda x: -x["count"])
         fs2 = dict(fs)
-        fs2["top_4stars"] = items[:4]
+        fs2["top_4stars"] = items
         fs2["is_stub"] = (len(items) == 0 and fs.get("pity", 0) >= 10)
         fives_with_4.append(fs2)
     fives_with_4.reverse()  # 新到老

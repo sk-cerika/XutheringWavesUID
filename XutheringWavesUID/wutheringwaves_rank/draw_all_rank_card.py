@@ -43,7 +43,7 @@ from ..utils.name_convert import alias_to_char_name, char_name_to_char_id
 from ..utils.ascension.char import get_char_model
 from ..utils.database.models import WavesBind
 from ..wutheringwaves_config import WutheringWavesConfig
-from ..utils.damage.modal import get_modal_options, get_role_modal
+from ..utils.damage.modal import get_modal_name, get_modal_options, get_role_modal, get_default_modal
 from .draw_rank_card import find_role_detail
 from ..utils.ascension.weapon import get_weapon_model
 from ..utils.fonts.waves_fonts import (
@@ -152,7 +152,7 @@ async def draw_all_rank_card(bot: Bot, ev: Event, char: str, rank_type: str, pag
         options = get_modal_options(int(char_id))
         if options:
             role = await find_role_detail(self_uid, char_id) if self_uid else None
-            modal = get_role_modal(role) if role else options[0]["key"]
+            modal = get_role_modal(role) if role else get_default_modal(int(char_id))
     is_group = group_uids is not None
     if is_group:
         resp = await get_cards_rank(
@@ -222,6 +222,9 @@ async def draw_all_rank_card(bot: Bot, ev: Event, char: str, rank_type: str, pag
         from ..wutheringwaves_config import PREFIX
         names = "/".join(o["name"] for o in modal_options)
         text_bar_draw.text((185, 120), f"支持模态: {PREFIX}{char}总排行 {names}", SPECIAL_GOLD, waves_font_20, "lm")
+        current_modal_name = get_modal_name(int(char_id), modal)
+        if current_modal_name:
+            text_bar_draw.text((1260, 120), f"当前模态: {current_modal_name}", SPECIAL_GOLD, waves_font_20, "rm")
 
     # 备注
     if rank_type == "伤害":

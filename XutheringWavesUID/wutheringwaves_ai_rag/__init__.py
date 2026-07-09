@@ -15,6 +15,7 @@ from ..utils.resource.RESOURCE_PATH import (
     MAP_CHALLENGE_PATH,
 )
 from ..utils.resource.constant import ATTRIBUTE_ID_MAP, WEAPON_TYPE_ID_MAP
+from ..utils.util import format_with_defaults
 
 HELP_JSON_PATH = Path(__file__).parent.parent / "wutheringwaves_help" / "help.json"
 
@@ -252,7 +253,12 @@ def _register_echoes(aliases: Dict[str, List[str]]):
 
         skill_obj = d.get("skill") or {}
         if isinstance(skill_obj, dict):
-            skill_desc = _strip(skill_obj.get("desc"))
+            desc_raw = skill_obj.get("desc") or ""
+            params = skill_obj.get("params") or []
+            # desc 是 nanoka 模板({0} 占位), 用满级 params 渲染; 预渲染成品无占位则原样返回
+            if desc_raw and params and isinstance(params[0], list):
+                desc_raw = format_with_defaults(desc_raw, params[-1])
+            skill_desc = _strip(desc_raw)
             simple = _strip(skill_obj.get("simpleDesc"))
         else:
             skill_desc, simple = _strip(skill_obj), ""
