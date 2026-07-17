@@ -733,7 +733,7 @@ function renderCropper(body) {
           triggerPreview(true);
         },
       }),
-      el("span", { text: "低清编辑" }),
+      el("span", { text: "底清编辑" }),
     ),
   );
 

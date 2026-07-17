@@ -300,23 +300,6 @@ async def api_tmp_upload_batch(
 _LQ_WEBP_MAX_DIM = 16383  # WebP 编码尺寸上限
 
 
-def _lq_webp(data: bytes) -> Optional[bytes]:
-    """低清模式: 转同尺寸高压缩 WebP, 仅省传输; 失败/超限返回 None 由调用方回退原图。"""
-    try:
-        with Image.open(BytesIO(data)) as im:
-            im.load()
-            if max(im.size) > _LQ_WEBP_MAX_DIM:
-                return None
-            if im.mode not in ("RGB", "RGBA"):
-                im = im.convert("RGBA")
-            out = BytesIO()
-            im.save(out, "WEBP", quality=40)
-            return out.getvalue()
-    except Exception:
-        logger.warning("[鸣潮·面板编辑] 低清转码失败, 回退原图")
-        return None
-
-
 @app.get("/waves/panel-edit/api/tmp/image")
 async def api_tmp_image(token: str, lq: int = 0, _: None = Depends(require_auth)):
     if not st.is_safe_token(token):
@@ -325,10 +308,19 @@ async def api_tmp_image(token: str, lq: int = 0, _: None = Depends(require_auth)
     if current is None:
         raise HTTPException(404, "tmp not found")
     if lq:
-        data = _lq_webp(current.read_bytes())
-        if data is not None:
-            return Response(data, media_type="image/webp",
-                            headers={"Cache-Control": "no-store"})
+        # 底清编辑: 同尺寸高压缩 WebP, 仅省传输; 裁剪/保存仍用原图
+        try:
+            with Image.open(current) as im:
+                im.load()
+                if max(im.size) <= _LQ_WEBP_MAX_DIM:
+                    if im.mode not in ("RGB", "RGBA"):
+                        im = im.convert("RGBA")
+                    out = BytesIO()
+                    im.save(out, "WEBP", quality=40)
+                    return Response(out.getvalue(), media_type="image/webp",
+                                    headers={"Cache-Control": "no-store"})
+        except Exception:
+            logger.warning(f"[鸣潮·面板编辑] 底清转码失败, 回退原图: {token}")
     return FileResponse(current, headers={"Cache-Control": "no-store"})
 
 
