@@ -730,6 +730,7 @@ function renderCropper(body) {
             const wrap = state.cropImgEl?.parentElement;
             if (wrap) { layoutCropper(wrap); updateRectReadout(); }
           });
+          triggerPreview(true);
         },
       }),
       el("span", { text: "底清编辑" }),
@@ -799,9 +800,25 @@ function panelVisibleRectInCrop(W, H) {
   return { x: l, y: t, w: r - l, h: b - t };
 }
 
+// 锁定图片显示尺寸为固定 px: 框选超界时 wrap padding 增大会经 max-width:100%
+// 压缩图片, 形成 padding↔图片尺寸正反馈(移动端拉到边缘后框急速缩放失控)。
+// 量测基准取无外扩 padding 的自然响应式尺寸。
+function lockCropImgSize(img, wrap) {
+  wrap.style.padding = `${CROP_FRAME}px`;
+  img.style.width = "";
+  img.style.height = "";
+  img.style.maxWidth = "";
+  img.style.maxHeight = "";
+  const w = img.clientWidth, h = img.clientHeight;
+  img.style.width = `${w}px`;
+  img.style.height = `${h}px`;
+  img.style.maxWidth = "none";
+  img.style.maxHeight = "none";
+  return { w, h };
+}
+
 function initCropRect(img, wrap) {
-  const w = img.clientWidth;
-  const h = img.clientHeight;
+  const { w, h } = lockCropImgSize(img, wrap);
   state.cropRect = { x: 0, y: 0, w, h };
   state.cropClient = { w, h };
   drawCropRect(wrap);
@@ -877,16 +894,17 @@ function layoutCropper(wrap) {
 function onCropperResize() {
   if (state.mode !== "single-crop") return;
   const img = state.cropImgEl;
-  if (!img || !state.cropRect || !state.cropClient) return;
-  const nw = img.clientWidth, nh = img.clientHeight;
+  const wrap = img?.parentElement;
+  if (!img || !wrap || !state.cropRect || !state.cropClient) return;
+  const { w: nw, h: nh } = lockCropImgSize(img, wrap);
   const ow = state.cropClient.w, oh = state.cropClient.h;
-  if (!ow || !oh) { state.cropClient = { w: nw, h: nh }; return; }
-  if (nw === ow && nh === oh) return;
+  if (!ow || !oh) { state.cropClient = { w: nw, h: nh }; layoutCropper(wrap); return; }
+  if (nw === ow && nh === oh) { layoutCropper(wrap); return; }
   const rx = nw / ow, ry = nh / oh;
   const r = state.cropRect;
   state.cropRect = { x: r.x * rx, y: r.y * ry, w: r.w * rx, h: r.h * ry };
   state.cropClient = { w: nw, h: nh };
-  layoutCropper(img.parentElement);
+  layoutCropper(wrap);
   updateRectReadout();
 }
 window.addEventListener("resize", onCropperResize);
@@ -990,12 +1008,16 @@ function startVisDrag(ev, wrap, visEl) {
       pasteX = (PANEL_OUT.w - W * f) / 2;
       pasteY = 0;
     }
-    state.cropRect = {
-      x: vx - (PANEL_VIS.l - pasteX) / f,
-      y: vy - (PANEL_VIS.t - pasteY) / f,
-      w: W,
-      h: H,
-    };
+    // 与普通框选同边界(尺寸≤3倍图幅、位置±1倍图幅); 超限保持上一状态,
+    // 否则反推的外框可无限增大, 拉到边缘后急速缩放失控
+    const iw = state.cropImgEl?.clientWidth || 0;
+    const ih = state.cropImgEl?.clientHeight || 0;
+    if (!iw || !ih || W > iw * 3 || H > ih * 3) return;
+    let x = vx - (PANEL_VIS.l - pasteX) / f;
+    let y = vy - (PANEL_VIS.t - pasteY) / f;
+    x = Math.min(Math.max(x, -iw), 2 * iw - W);
+    y = Math.min(Math.max(y, -ih), 2 * ih - H);
+    state.cropRect = { x, y, w: W, h: H };
   };
 
   try { visEl.setPointerCapture(ev.pointerId); } catch (_) {}
@@ -1666,12 +1688,14 @@ function buildRendererToggle() {
 }
 
 function buildPreviewUrl() {
+  const lq = state.lqEdit ? { lq: "1" } : {};
   if (state.mode === "browse" && state.selectedImage && state.selectedCharId) {
     const p = new URLSearchParams({
       type: state.type,
       char_id: state.selectedCharId,
       name: state.selectedImage.name,
       renderer: state.renderer,
+      ...lq,
     });
     return `${API}/preview?${p.toString()}`;
   }
@@ -1681,6 +1705,7 @@ function buildPreviewUrl() {
       char_id: state.selectedCharId,
       token: state.cropTmp.token,
       renderer: state.renderer,
+      ...lq,
     });
     return `${API}/preview-tmp?${p.toString()}`;
   }

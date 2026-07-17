@@ -43,6 +43,9 @@ from . import base_info_cache
 
 TEXT_PATH = Path(__file__).parent / "texture2d"
 VIEW_COMMANDS = {"面板", "面版", "面包", "🍞", "mb"}
+def display_char_name(role_id, role_name):
+    name = SPECIAL_CHAR_NAME.get(str(role_id), role_name)
+    return NAME_ALIAS.get(name, name)
 
 refresh_char_bg = Image.open(TEXT_PATH / "refresh_char_bg.png")
 refresh_yes = Image.open(TEXT_PATH / "refresh_yes.png")
@@ -315,8 +318,7 @@ async def _draw_refresh_char_detail_img(
     img.alpha_composite(await get_refresh_role_img(width, height, grid_top), (0, 0))
 
     # 提示文案
-    name = role_detail_list[0].role.roleName
-    name = NAME_ALIAS.get(name, name)
+    name = display_char_name(role_detail_list[0].role.roleId, role_detail_list[0].role.roleName)
     head = f"本次共刷新{role_update}个角色，可以使用" if (not is_view and not is_single_refresh) else "可以使用"
     segs = [
         (head, GREY),
@@ -361,7 +363,7 @@ async def _draw_refresh_char_detail_img(
         img.alpha_composite(pic, (card_margin + card_spacing * (rIndex % cols), grid_top + (rIndex // cols) * 330))
         rIndex += 1
         if rIndex <= 5:
-            name = SPECIAL_CHAR_NAME.get(str(char_rank.roleId), char_rank.roleName)
+            name = display_char_name(char_rank.roleId, char_rank.roleName)
             b = WavesButton(name, f"{name}面板")  # type: ignore
             buttons.append(b)
 
@@ -371,7 +373,7 @@ async def _draw_refresh_char_detail_img(
         rIndex += 1
 
         if len(map_update) == 0 and rIndex <= 5:
-            name = SPECIAL_CHAR_NAME.get(str(char_rank.roleId), char_rank.roleName)
+            name = display_char_name(char_rank.roleId, char_rank.roleName)
             b = WavesButton(name, f"{name}面板")  # type: ignore
             buttons.append(b)
 
@@ -462,7 +464,7 @@ def _compose_refresh_char_pic(char_rank: WavesCharRank, pic, star_bg, isUpdate=F
     img.alpha_composite(mask, (40, 255))
 
     # 名字
-    roleName = SPECIAL_CHAR_NAME.get(str(char_rank.roleId), char_rank.roleName)
+    roleName = display_char_name(char_rank.roleId, char_rank.roleName)
 
     img_draw.text((150, 290), f"{roleName}", "white", waves_font_40, "mm")
     # 命座

@@ -79,6 +79,8 @@ async def _email_login_local(bot: Bot, ev: Event, url: str):
 
     await send_login(bot, ev, f"{url}/waves/i/{user_token}")
 
+    uid = ""
+    role_name = ""
     try:
         async with timeout(180):
             while True:
@@ -92,24 +94,13 @@ async def _email_login_local(bot: Bot, ev: Event, url: str):
                 phase = state.get("phase")
                 if phase == "done":
                     uid = str(state.get("selected_uid") or "")
-                    role_name = ""
                     for r in (state.get("regions") or []):
                         if str(r.get("role_id")) == uid:
                             role_name = str(r.get("role_name") or "")
                             break
 
                     email_cache.delete(user_token)
-                    waves_user = await WavesUser.select_waves_user(
-                        uid, ev.user_id, ev.bot_id, game_id=WAVES_GAME_ID
-                    )
-                    if waves_user:
-                        return await login_success_msg(
-                            bot, ev, waves_user, role_name=role_name
-                        )
-                    return await bot.send(
-                        f"{GAME_TITLE} 登录已完成，但绑定信息读取失败，请稍后重试",
-                        at_sender=at_sender,
-                    )
+                    break
 
                 if phase == "failed":
                     err = state.get("error_msg") or "邮箱登录失败"
@@ -125,12 +116,25 @@ async def _email_login_local(bot: Bot, ev: Event, url: str):
         return await bot.send("登录超时!", at_sender=at_sender)
     except Exception as e:
         logger.exception(f"[鸣潮·邮箱登录] 异常: {e}")
+        return
+
+    waves_user = await WavesUser.select_waves_user(
+        uid, ev.user_id, ev.bot_id, game_id=WAVES_GAME_ID
+    )
+    if waves_user:
+        return await login_success_msg(bot, ev, waves_user, role_name=role_name)
+    return await bot.send(
+        f"{GAME_TITLE} 登录已完成，但绑定信息读取失败，请稍后重试",
+        at_sender=at_sender,
+    )
 
 
 async def _email_login_other(bot: Bot, ev: Event, url: str):
     # 外置 ww-login 处理页面与 SDK 调用，bot 仅领 token、转发链接、轮询结果。
     at_sender = True if ev.group_id else False
     auth = {"bot_id": ev.bot_id, "user_id": ev.user_id}
+    role_id = region = role_name = ""
+    state: Dict[str, Any] = {}
 
     async with httpx.AsyncClient() as client:
         try:
@@ -225,7 +229,7 @@ async def _email_login_other(bot: Bot, ev: Event, url: str):
                             at_sender=at_sender,
                         )
 
-                    state: Dict[str, Any] = {
+                    state = {
                         "user_id": ev.user_id,
                         "bot_id": ev.bot_id,
                         "group_id": ev.group_id,
@@ -238,32 +242,31 @@ async def _email_login_other(bot: Bot, ev: Event, url: str):
                         f"[鸣潮·邮箱登录] _email_login_other 拿到结果 "
                         f"user_id={ev.user_id} role_id={role_id} region={region}"
                     )
-
-                    try:
-                        await _persist_login(state, role_id, region, role_name)
-                    except Exception as e:
-                        logger.exception("[鸣潮·邮箱登录] 外置绑定失败")
-                        return await bot.send(
-                            (" " if at_sender else "")
-                            + f"{GAME_TITLE} 绑定失败：{e}",
-                            at_sender=at_sender,
-                        )
-
-                    waves_user = await WavesUser.select_waves_user(
-                        role_id, ev.user_id, ev.bot_id, game_id=WAVES_GAME_ID
-                    )
-                    if waves_user:
-                        return await login_success_msg(
-                            bot, ev, waves_user, role_name=role_name
-                        )
-                    return await bot.send(
-                        f"{GAME_TITLE} 登录已完成，但绑定信息读取失败，请稍后重试",
-                        at_sender=at_sender,
-                    )
+                    break
         except asyncio.TimeoutError:
             return await bot.send("登录超时!", at_sender=at_sender)
         except Exception as e:
             logger.exception(f"[鸣潮·邮箱登录] 外置异常: {e}")
+            return
+
+    try:
+        await _persist_login(state, role_id, region, role_name)
+    except Exception as e:
+        logger.exception("[鸣潮·邮箱登录] 外置绑定失败")
+        return await bot.send(
+            (" " if at_sender else "") + f"{GAME_TITLE} 绑定失败：{e}",
+            at_sender=at_sender,
+        )
+
+    waves_user = await WavesUser.select_waves_user(
+        role_id, ev.user_id, ev.bot_id, game_id=WAVES_GAME_ID
+    )
+    if waves_user:
+        return await login_success_msg(bot, ev, waves_user, role_name=role_name)
+    return await bot.send(
+        f"{GAME_TITLE} 登录已完成，但绑定信息读取失败，请稍后重试",
+        at_sender=at_sender,
+    )
 
 
 async def _persist_login(

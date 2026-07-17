@@ -34,6 +34,7 @@ from ..utils.fonts.waves_fonts import (
     waves_font_58,
 )
 from ..utils.resource.constant import (
+    NAME_ALIAS,
     NORMAL_LIST,
     NORMAL_LIST_IDS,
     ATTRIBUTE_ID_MAP,
@@ -191,8 +192,9 @@ def _render_char_hold_rate(
         bar_bg_draw = ImageDraw.Draw(bar_bg)
 
         # 角色名字
-        name_text = char_model.name
-        name_text = SPECIAL_CHAR_NAME.get(f"{char_id}", char_model.name)
+        name_text = SPECIAL_CHAR_NAME.get(
+            f"{char_id}", NAME_ALIAS.get(char_model.name, char_model.name)
+        )
         bar_bg_draw.text((190, 40), name_text, "white", waves_font_24, "lm")
 
         # 属性

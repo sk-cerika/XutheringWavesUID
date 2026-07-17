@@ -91,11 +91,12 @@ async def send_config_ev(bot: Bot, ev: Event):
         from ..wutheringwaves_charinfo import card_hash_index
         from ..wutheringwaves_charinfo.card_utils import get_char_id_and_name
 
-        m = re.match(r"^(.+?)面板图\s*(?P<hash_id>[a-zA-Z0-9]*)\s*$", ev.text)
+        m = re.match(r"^(.+?)面板图\s*(?P<hash_id>.*)$", ev.text)
         if not m:
             return await _say(bot, at_sender, "格式错误，正确格式: 设置{角色名}面板图{ID}")
         char_input = m.group(1).strip()
-        hash_id = m.group("hash_id").strip()
+        # 随机/空 等效清除 (仿体力背景)
+        hash_id = m.group("hash_id").replace("随机", "").strip()
 
         if not await _ensure_waves_user_row(bot, ev, uid, at_sender):
             return

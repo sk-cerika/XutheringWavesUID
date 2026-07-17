@@ -359,30 +359,85 @@ def _list_official_image_files(base_path: str) -> list:
     ]
 
 
-def _pick_from_custom_or_official(
+def _include_official_pile() -> bool:
+    return bool(ShowConfig.get_config("MrRandomIncludeOfficialPile").data)
+
+
+def _include_official_bg() -> bool:
+    return bool(ShowConfig.get_config("MrRandomIncludeOfficialBg").data)
+
+
+def _mr_pool(
     custom_base: str,
     official_base: str,
+    char_id: Optional[str],
+    official_name: str,
     force_not_use_custom: bool,
-) -> Optional[str]:
-    """custom (4 位数字 char_id 子目录) + 官方 文件 等权混合池随机抽一张, 返回完整路径。
-    每个 custom char_id 算一个 slot (内部再随机一张), 每个官方文件算一个 slot。"""
-    slots: list = []
+    include_official: bool,
+    official_fallback: bool = True,
+) -> list:
+    """构建一侧(立绘或背景)的候选池, 每张图一个条目(逐张等权)。
+
+    官方图并入条件: 开关开 / 强制只用官方 / (允许侧内 fallback 且 custom 池为空)。
+    official_fallback=False 用于「随机」的计数口径: 官方只由开关决定,
+    单侧 custom 为空不自动并官方(两侧全空的 fallback 由 mr_prefer_bg 统一处理)。
+    指定角色时官方图为单文件; 无角色时数整库。
+    """
+    pool: list = []
     if not force_not_use_custom:
-        slots.extend(("custom", cid) for cid in _list_custom_char_dirs(custom_base))
-    slots.extend(("official", fname) for fname in _list_official_image_files(official_base))
-    if not slots:
-        return None
-    kind, ident = random.choice(slots)
-    if kind == "custom":
-        custom_dir = f"{custom_base}/{ident}"
-        picked = _random_image_from_dir(custom_dir)
-        if picked:
-            return f"{custom_dir}/{picked}"
-    else:
-        path = f"{official_base}/{ident}"
-        if os.path.exists(path):
-            return path
-    return None
+        if char_id:
+            d = f"{custom_base}/{char_id}"
+            pool += [f"{d}/{f}" for f in _list_official_image_files(d)]
+        else:
+            for cid in _list_custom_char_dirs(custom_base):
+                d = f"{custom_base}/{cid}"
+                pool += [f"{d}/{f}" for f in _list_official_image_files(d)]
+    if include_official or force_not_use_custom or (official_fallback and not pool):
+        if char_id:
+            p = f"{official_base}/{official_name}"
+            if os.path.exists(p):
+                pool.append(p)
+        else:
+            pool += [f"{official_base}/{f}" for f in _list_official_image_files(official_base)]
+    return pool
+
+
+def _mr_pool_bg(char_id, force_not_use_custom, include_official, official_fallback=True) -> list:
+    return _mr_pool(
+        str(CUSTOM_MR_BG_PATH), str(ROLE_BG_PATH), char_id,
+        f"{char_id}.webp", force_not_use_custom, include_official, official_fallback,
+    )
+
+
+def _mr_pool_pile(char_id, force_not_use_custom, include_official, official_fallback=True) -> list:
+    return _mr_pool(
+        str(CUSTOM_MR_CARD_PATH), str(ROLE_PILE_PATH), char_id,
+        f"role_pile_{char_id}.png", force_not_use_custom, include_official, official_fallback,
+    )
+
+
+def mr_prefer_bg(char_id: Optional[str] = None, force_not_use_custom: bool = False) -> bool:
+    """MrUseBG 三态 → 是否走背景分支; 随机=按两侧候选池实际图数加权(逐张等权)。
+
+    随机口径: custom 立绘+custom 背景合并, 官方是否占位(各按实际张数)由两个开关分别控制;
+    两侧候选全空时忽略开关, 按该作用域的官方背景/官方立绘 fallback,
+    官方背景也没有则落到立绘分支(fetcher 内再逐级兜底)。
+    分支选中后 fetcher 的单侧池与此口径一致, 整体等价于合并池逐张等权。
+    """
+    pref = ShowConfig.get_config("MrUseBG").data
+    if pref == "背景":
+        return True
+    if pref != "随机":
+        return False
+    n_bg = len(_mr_pool_bg(char_id, force_not_use_custom, _include_official_bg(), official_fallback=False))
+    n_pile = len(_mr_pool_pile(char_id, force_not_use_custom, _include_official_pile(), official_fallback=False))
+    total = n_bg + n_pile
+    if total > 0:
+        return random.random() * total < n_bg
+    n_bg = len(_mr_pool_bg(char_id, True, True))
+    n_pile = len(_mr_pool_pile(char_id, True, True))
+    total = n_bg + n_pile
+    return total > 0 and random.random() * total < n_bg
 
 
 async def get_random_waves_role_pile(
@@ -392,18 +447,14 @@ async def get_random_waves_role_pile(
     forced = _force_pile_path.get()
     if forced is not None and forced.exists():
         return Image.open(forced).convert("RGBA"), forced
-    if char_id:
-        return await get_role_pile_default(char_id, custom=not force_not_use_custom)
-
-    picked = _pick_from_custom_or_official(
-        str(CUSTOM_MR_CARD_PATH), str(ROLE_PILE_PATH), force_not_use_custom
-    )
-    if picked:
-        return Image.open(picked).convert("RGBA"), Path(picked)
-
-    # 极端兜底: slots 为空时回落老逻辑
-    path = random.choice(os.listdir(f"{ROLE_PILE_PATH}"))
-    full = Path(f"{ROLE_PILE_PATH}/{path}")
+    pool = _mr_pool_pile(char_id, force_not_use_custom, _include_official_pile())
+    if not pool and char_id:
+        # 该角色 custom/官方立绘全缺: 从全库可用立绘里抽
+        pool = _mr_pool_pile(None, force_not_use_custom, True)
+    if pool:
+        full = Path(random.choice(pool))
+        return Image.open(full).convert("RGBA"), full
+    full = ROLE_PILE_PATH / "role_pile_1503.png"
     return Image.open(full).convert("RGBA"), full
 
 
@@ -414,25 +465,10 @@ async def get_random_waves_bg(
     forced = _force_bg_path.get()
     if forced is not None and forced.exists():
         return Image.open(forced).convert("RGBA"), True, forced
-    if char_id:
-        custom_dir = f"{CUSTOM_MR_BG_PATH}/{char_id}"
-        if not force_not_use_custom and os.path.isdir(custom_dir) and len(os.listdir(custom_dir)) > 0:
-            name = _random_image_from_dir(custom_dir)
-            if name:
-                full = Path(custom_dir) / name
-                return Image.open(full).convert("RGBA"), True, full
-        else:
-            name = f"{char_id}.webp"
-            path = ROLE_BG_PATH / name
-            if os.path.exists(path):
-                return Image.open(path).convert("RGBA"), True, path
-    else:
-        picked = _pick_from_custom_or_official(
-            str(CUSTOM_MR_BG_PATH), str(ROLE_BG_PATH), force_not_use_custom
-        )
-        if picked:
-            return Image.open(picked).convert("RGBA"), True, Path(picked)
-
+    pool = _mr_pool_bg(char_id, force_not_use_custom, _include_official_bg())
+    if pool:
+        full = Path(random.choice(pool))
+        return Image.open(full).convert("RGBA"), True, full
     pile, pile_path = await get_random_waves_role_pile(char_id, force_not_use_custom)
     return pile, False, pile_path
 

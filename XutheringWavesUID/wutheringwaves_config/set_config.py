@@ -29,6 +29,10 @@ async def set_waves_user_value(ev: Event, func: str, uid: str, value: str):
     # 体力背景: 先校验、归一化, 通过后再落库; 避免非法值持久化。
     bg_random_hint = False
     if func == "体力背景" and value:
+        # 随机背景/随机立绘/随机官方背景: 分支词本身即随机语义, 存值剥掉"随机";
+        # 只写"随机"则剥空, 等效清空设置回落全局默认
+        value = value.replace("随机", "").strip()
+    if func == "体力背景" and value:
         pure_value = value.replace("官方", "").replace("立绘", "").replace("背景", "").replace("图", "")
         if not pure_value.strip():
             if not any(k in value for k in ("背景", "立绘", "官方")):

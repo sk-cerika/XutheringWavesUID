@@ -485,7 +485,7 @@ async def send_card_info(bot: Bot, ev: Event):
         return
     uid, user_id = _ru
 
-    from .draw_refresh_char_card import draw_refresh_char_detail_img
+    from .draw_refresh_char_card import display_char_name, draw_refresh_char_detail_img
 
     buttons = []
     msg, num_updated, top_improver = await draw_refresh_char_detail_img(bot, ev, user_id, uid, buttons)
@@ -497,7 +497,7 @@ async def send_card_info(bot: Bot, ev: Event):
         and isinstance(msg, bytes)
         and WutheringWavesConfig.get_config("AutoSendCharAfterRefresh").data
     ):
-        char_name = top_improver["roleName"]
+        char_name = display_char_name(top_improver["roleId"], top_improver["roleName"])
         delta = top_improver["delta"]
         old_score = top_improver["old"]
         new_score = top_improver["new"]
@@ -580,8 +580,15 @@ async def send_one_char_detail_msg(bot: Bot, ev: Event):
             seg = MessageSegment.image(await convert_img(diff_im))
             await bot.send(_append_advice(ev, _with_tip(seg, tip)))
             return
-        body = MessageSegment.image(await convert_img(new_im)) if isinstance(new_im, Image.Image) else new_im
-        await bot.send(_append_advice(ev, _with_tip([refresh_seg, body], tip)))
+        # 无旧数据(无从对比): 退回 concatenate, 刷新小图与面板拼成一张
+        if isinstance(new_im, str):
+            await bot.send(_append_advice(ev, _with_tip([refresh_seg, new_im], tip)))
+            return
+        if isinstance(new_im, Image.Image):
+            merged = await _concat_refresh_and_detail(msg, new_im)
+            await bot.send(_append_advice(ev, _with_tip(MessageSegment.image(await convert_img(merged)), tip)))
+            return
+        await bot.send_option(_append_advice(ev, _with_tip(refresh_seg, tip)), buttons)
         return
 
     if refresh_behavior == "concatenate":

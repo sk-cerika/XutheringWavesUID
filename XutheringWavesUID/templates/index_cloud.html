@@ -337,6 +337,8 @@
   const closeBtn = modal.querySelector('.close');
 
   let geetestReady = false;
+  let openCaptcha = null;      // 方案3：可复用滑块（登录二次要求滑块时补弹）
+  let captchaResolver = null;
 
   function ajax(opts) {
     var headers = {}, body = opts.data;
@@ -385,8 +387,19 @@
     product: product,
   }, function (captcha) {
     captcha.onReady(function () {
+      openCaptcha = function () {   // 方案3：复用同一滑块，供登录补滑块重试
+        return new Promise(function (resolve) {
+          captchaResolver = resolve;
+          try { captcha.reset(); } catch (e) {}
+          captcha.showBox();
+        });
+      };
     }).onSuccess(function () {
       var result = captcha.getValidate();
+      if (captchaResolver) {          // 结算登录补滑块的 openCaptcha()
+        var r = captchaResolver; captchaResolver = null;
+        return r(result || null);
+      }
       if (!result) {
         return alert('请完成验证');
       }
@@ -399,6 +412,10 @@
         error: () => alert('请求出错，请检查网络连接')
       });
     }).onError(function () {
+      if (captchaResolver) {          // 补滑块失败/取消
+        var r = captchaResolver; captchaResolver = null;
+        return r(null);
+      }
       alert('请求出错，请检查网络连接');
     })
 
@@ -423,14 +440,27 @@
   loginForm.addEventListener('submit', function (e) {
     e.preventDefault();
     loginBtn.disabled = true;
+    doCloudLogin(null);
+  });
+
+  // 机房/异常 IP 登录被风控二次要求滑块（后端 need_captcha）：补弹一次滑块、带 geetest 重试一次。
+  function doCloudLogin(geetest) {
+    var payload = { auth: auth, phone: phoneInput.value, code: verificationCodeInput.value };
+    if (geetest) payload.geetest = geetest;
     ajax({
       url: serverUrl + '/waves/c/login',
       type: 'POST',
-      data: JSON.stringify({ auth: auth, phone: phoneInput.value, code: verificationCodeInput.value }),
+      data: JSON.stringify(payload),
       contentType: 'application/json',
       success: res => {
         if (res.success) {
           showSuccessModal();
+        } else if (res.need_captcha && !geetest) {
+          if (!openCaptcha) { loginBtn.disabled = false; return alert('验证组件未就绪，请重试'); }
+          openCaptcha().then(function (validate) {
+            if (!validate) { loginBtn.disabled = false; return alert('登录需要滑块验证，请重试'); }
+            doCloudLogin(validate);
+          });
         } else {
           loginBtn.disabled = false;
           alert('登录失败' + (res.msg ? '：' + res.msg : '，请重试'));
@@ -441,7 +471,7 @@
         alert('登录失败，请重试');
       }
     });
-  });
+  }
 
   function showSuccessModal() {
     const homeHref = 'https://github.com/Loping151/XutheringWavesUID';

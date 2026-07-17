@@ -28,6 +28,7 @@ from ..utils.image import (
     get_event_avatar,
     get_random_waves_bg,
     get_random_waves_role_pile,
+    mr_prefer_bg,
 )
 from ..utils.api.model import DailyData, AccountBaseInfo
 from ..utils.api.launcher_chain import fetch_launcher_panel
@@ -370,7 +371,7 @@ async def _draw_stamina_img(ev: Event, valid: Dict, locale: str = "") -> Image.I
         elif force_not_use_bg:
             pile, pile_path = await get_random_waves_role_pile(pile_id, force_not_use_custom=force_not_use_custom)
             has_bg = False
-        elif ShowConfig.get_config("MrUseBG").data:
+        elif mr_prefer_bg(pile_id, force_not_use_custom):
             pile, has_bg, pile_path = await get_random_waves_bg(pile_id, force_not_use_custom=force_not_use_custom)
         else:
             pile, pile_path = await get_random_waves_role_pile(pile_id, force_not_use_custom=force_not_use_custom)
@@ -457,7 +458,9 @@ async def _draw_stamina_img(ev: Event, valid: Dict, locale: str = "") -> Image.I
 
 
 @to_thread
-def _prepare_stamina_b64_assets(pile: Image.Image, avatar: Image.Image) -> Dict[str, str]:
+def _prepare_stamina_b64_assets(
+    pile: Image.Image, avatar: Image.Image, has_bg: bool = False
+) -> Dict[str, str]:
     def load_b64(filename, quality=0):
         try:
             p = TEXT_PATH / filename
@@ -467,17 +470,31 @@ def _prepare_stamina_b64_assets(pile: Image.Image, avatar: Image.Image) -> Dict[
             return ""
         return ""
 
-    def compress_and_b64(img: Image.Image) -> str:
+    def fit_and_b64(img: Image.Image) -> str:
+        # 按真实显示区归一(背景 cover 到 1150×850, 立绘归一到高 850), 只缩不放。
+        # 旧逻辑按单一 max_size=1150 降采样, 会把某维压到显示所需之下, 再被浏览器
+        # object-fit:cover / height:100% 放大回去 → 高清宽图发糊。resize/crop 返回
+        # 新对象, 不污染调用方 pile(HTML 失败回退 PIL 时仍要原图)。
         try:
-            max_size = 1150
-            if img.width > max_size or img.height > max_size:
-                # thumbnail 原地修改, 用 copy 避免污染调用方的 pile (HTML 失败回退 PIL 时仍要原图)
-                resized = img.copy()
-                resized.thumbnail((max_size, max_size), Image.LANCZOS)
-                return pil_to_b64(resized, quality=75)
+            if has_bg:
+                tw, th = 1150, 850
+                scale = max(tw / img.width, th / img.height)
+                if scale < 1:  # 源够大才缩到刚好 cover 再裁剪; 不够大就原样交给浏览器
+                    img = img.resize(
+                        (round(img.width * scale), round(img.height * scale)),
+                        Image.LANCZOS,
+                    )
+                    left, top = (img.width - tw) // 2, (img.height - th) // 2
+                    img = img.crop((left, top, left + tw, top + th))
+            else:
+                th = 850  # 立绘 height:100%
+                if img.height > th:
+                    img = img.resize(
+                        (max(1, round(img.width * th / img.height)), th), Image.LANCZOS
+                    )
             return pil_to_b64(img, quality=75)
         except Exception:
-            return pil_to_b64(img)
+            return pil_to_b64(img, quality=75)
 
     return {
         "yes_icon_b64": load_b64("yes.png"),
@@ -486,7 +503,7 @@ def _prepare_stamina_b64_assets(pile: Image.Image, avatar: Image.Image) -> Dict[
         "store_icon_b64": load_b64("结晶单质.png"),
         "liveness_icon_b64": load_b64("活跃度.png"),
         "bg_url_b64": load_b64("bg.jpg", quality=75),
-        "pile_b64": compress_and_b64(pile),
+        "pile_b64": fit_and_b64(pile),
         "avatar_b64": pil_to_b64(avatar, quality=75),
     }
 
@@ -513,7 +530,7 @@ async def _render_stamina_card(
     color_red = URGENT_COLOR
     color_yellow = "#FFCB3B"
     
-    b64_assets = await _prepare_stamina_b64_assets(pile, avatar)
+    b64_assets = await _prepare_stamina_b64_assets(pile, avatar, has_bg=has_bg)
     yes_icon_b64 = b64_assets["yes_icon_b64"]
     no_icon_b64 = b64_assets["no_icon_b64"]
     stamina_icon_b64 = b64_assets["stamina_icon_b64"]

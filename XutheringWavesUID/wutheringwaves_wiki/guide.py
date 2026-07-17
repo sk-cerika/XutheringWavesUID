@@ -98,6 +98,14 @@ async def get_guide(bot: Bot, ev: Event, char_name: str):
     await send_guide(config, imgs_result, bot)
 
 
+def _guide_sort_key(p: Path):
+    # 多图攻略: 基图(角色名.jpg)在前, 角色名-1/-2/...按序号升序跟在后面
+    m = re.fullmatch(r"(.+?)-(\d+)", p.stem)
+    if m:
+        return (m.group(1), 1, int(m.group(2)))
+    return (p.stem, 0, 0)
+
+
 async def get_guide_pic(guide_path: Path, pattern: re.Pattern, guide_author: str):
     imgs = []
     if not guide_path.is_dir():
@@ -108,9 +116,11 @@ async def get_guide_pic(guide_path: Path, pattern: re.Pattern, guide_author: str
         logger.warning(f"[鸣潮·百科攻略] 攻略路径不存在 {guide_path}")
         return imgs
 
-    for file in guide_path.iterdir():
-        if not pattern.search(file.name):
-            continue
+    files = sorted(
+        (f for f in guide_path.iterdir() if pattern.search(f.name)),
+        key=_guide_sort_key,
+    )
+    for file in files:
         imgs.extend(await process_images_new(file))
 
     if len(imgs) > 0:

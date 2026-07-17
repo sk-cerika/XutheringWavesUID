@@ -44,7 +44,7 @@ from ..utils.fonts.waves_fonts import (
     waves_font_40,
 )
 from ..utils.resource.constant import NORMAL_LIST
-from ..utils.resource.RESOURCE_PATH import PLAYER_PATH
+from ..utils.resource.RESOURCE_PATH import CARD_POLYGON_PATH, PLAYER_PATH
 from .get_gachalogs import gacha_type_meta_data
 
 TEXT_PATH = Path(__file__).parent / "texture2d"
@@ -77,7 +77,6 @@ NEWBIE_CARD_W = 250
 NEWBIE_CARD_H = 360
 NEWBIE_GAP = 30
 NEWBIE_ROW_GAP = 8
-NEWBIE_PER_ROW = 3
 
 
 def get_num_h(num: int, column: int):
@@ -366,15 +365,6 @@ def _render_gacha_card(
     show_mini = [n for n in total_data if n in MINI_POOLS and total_data[n]["total"] > 0]
     mini_cells = [(n, gold) for n in show_mini for gold in reversed(total_data[n]["rank_s_list"])]
     title_num = len(show_main)
-    mini_rows = get_num_h(len(mini_cells), NEWBIE_PER_ROW)
-    _newbielen = mini_rows * NEWBIE_CARD_H + max(0, mini_rows - 1) * NEWBIE_ROW_GAP + 35 if mini_cells else 0
-
-    def _content_h(col: int) -> int:
-        body = 0
-        for n in show_main:
-            _num = len(total_data[n]["rank_s_list"])
-            body += 50 if _num == 0 else row_h * get_num_h(_num, col)
-        return _header + title_num * oset + body + _newbielen + footer
 
     # 列数：让「角色精准调谐」池的 5 星网格接近 2:3（宽:高），图标原尺寸、列数 5~15。
     # 没有该池数据时退用展示池中金数最多者。
@@ -390,14 +380,7 @@ def _render_gacha_card(
             if best_diff is None or diff < best_diff:
                 column, best_diff = col, diff
     w = pitch * column + 190
-    h = _content_h(column)
 
-    card_img = get_waves_bg(w, h, bg="bg13")
-    card_draw = ImageDraw.Draw(card_img)
-
-    item_fg = Image.open(TEXT_PATH / "char_bg.png")
-    up_icon = Image.open(TEXT_PATH / "up_tag.png")
-    up_icon = up_icon.resize((68, 52))
     title_overlays = []
     for overlay_name in (
         "gacha_title_sky_overlay.png",
@@ -408,6 +391,28 @@ def _render_gacha_card(
         overlay_path = TEXT_PATH / overlay_name
         if overlay_path.exists():
             title_overlays.append(Image.open(overlay_path).convert("RGBA"))
+
+    # 迷你池每行个数按卡池 banner 可见面板宽自适应, 不超出 banner
+    banner_w = max(980, min(w - 20, min((o.width for o in title_overlays), default=w - 20)))
+    newbie_per_row = max(1, (banner_w - 140 + NEWBIE_GAP) // (NEWBIE_CARD_W + NEWBIE_GAP))
+    mini_rows = get_num_h(len(mini_cells), newbie_per_row)
+    _newbielen = mini_rows * NEWBIE_CARD_H + max(0, mini_rows - 1) * NEWBIE_ROW_GAP + 35 if mini_cells else 0
+
+    def _content_h(col: int) -> int:
+        body = 0
+        for n in show_main:
+            _num = len(total_data[n]["rank_s_list"])
+            body += 50 if _num == 0 else row_h * get_num_h(_num, col)
+        return _header + title_num * oset + body + _newbielen + footer
+
+    h = _content_h(column)
+
+    card_img = get_waves_bg(w, h, bg="bg13")
+    card_draw = ImageDraw.Draw(card_img)
+
+    item_fg = Image.open(TEXT_PATH / "char_bg.png")
+    up_icon = Image.open(TEXT_PATH / "up_tag.png")
+    up_icon = up_icon.resize((68, 52))
 
     def _shuffle_title_overlays() -> List[Image.Image]:
         overlay_pool = title_overlays.copy()
@@ -775,9 +780,9 @@ def _render_gacha_card(
         )
         newbie_bg_cp.paste(item_bg, ((newbie_card_w - 167) // 2, 142), item_bg)
 
-        row = nindex // NEWBIE_PER_ROW
-        col = nindex % NEWBIE_PER_ROW
-        row_count = min(NEWBIE_PER_ROW, len(mini_cells) - row * NEWBIE_PER_ROW)
+        row = nindex // newbie_per_row
+        col = nindex % newbie_per_row
+        row_count = min(newbie_per_row, len(mini_cells) - row * newbie_per_row)
         row_w = row_count * newbie_card_w + max(0, row_count - 1) * newbie_gap
         row_start_x = max(10, (w - row_w) // 2)
         card_img.paste(
@@ -804,7 +809,6 @@ async def draw_pic_with_ring(ev: Event):
 
 
 async def get_random_card_polygon(ev: Event):
-    CARD_POLYGON_PATH = TEXT_PATH / "card_polygon"
     path = random.choice(os.listdir(f"{CARD_POLYGON_PATH}"))
     card_img = Image.open(f"{CARD_POLYGON_PATH}/{path}").convert("RGBA")
 

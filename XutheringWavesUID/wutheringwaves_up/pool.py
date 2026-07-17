@@ -25,6 +25,7 @@ from ..utils.image import (
 from ..utils.api.wwapi import GET_POOL_LIST
 from ..utils.name_convert import char_name_to_char_id, easy_id_to_name, weapon_name_to_weapon_id
 from ..utils.fonts.waves_fonts import (
+    waves_font_20,
     waves_font_22,
     waves_font_26,
     waves_font_30,
@@ -223,6 +224,15 @@ def _render_pool_card(
     char_mask_temp.paste(share_bg_crop, (0, 0), char_mask)
 
     card_img.paste(char_mask_temp, (0, 0), char_mask_temp)
+
+    note_draw = ImageDraw.Draw(card_img)
+    note_draw.text(
+        (525, 498),
+        "周年庆、忆旅等特殊卡池不计入复刻次数",
+        (210, 210, 210),
+        waves_font_20,
+        "mm",
+    )
 
     _draw_pool_char_sync(data_list, query_type, pic_cache, card_img)
 

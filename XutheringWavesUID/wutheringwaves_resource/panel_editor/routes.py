@@ -757,6 +757,7 @@ async def api_preview(
     char_id: str,
     name: str,
     renderer: str = "html",
+    lq: int = 0,
     _: None = Depends(require_auth),
 ):
     """type=card -> 角色面板预览; type=bg/stamina -> MR 预览。
@@ -783,6 +784,10 @@ async def api_preview(
         raise HTTPException(500, f"render failed: {e}")
     if not data:
         raise HTTPException(500, "preview empty")
+    if lq:
+        lq_data = _lq_webp(data)
+        if lq_data is not None:
+            return Response(content=lq_data, media_type="image/webp", headers={"Cache-Control": "no-store"})
     return Response(content=data, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
 
 
@@ -793,6 +798,7 @@ async def api_preview_tmp(
     char_id: str,
     token: str,
     renderer: str = "html",
+    lq: int = 0,
     _: None = Depends(require_auth),
 ):
     """裁剪/上传过程中, 用 tmp 图渲染预览。"""
@@ -822,6 +828,10 @@ async def api_preview_tmp(
         raise HTTPException(500, f"render failed: {e}")
     if not data:
         raise HTTPException(500, "preview empty")
+    if lq:
+        lq_data = _lq_webp(data)
+        if lq_data is not None:
+            return Response(content=lq_data, media_type="image/webp", headers={"Cache-Control": "no-store"})
     return Response(content=data, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
 
 

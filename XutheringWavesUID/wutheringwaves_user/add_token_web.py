@@ -134,6 +134,7 @@ async def _add_token_web_other(bot: Bot, ev: Event, url: str):
         await send_login(bot, ev, f"{url}/waves/i/{token}")
 
         times = 3
+        kuro_token = ""
         try:
             async with timeout(180):
                 while True:
@@ -171,13 +172,15 @@ async def _add_token_web_other(bot: Bot, ev: Event, url: str):
                         await asyncio.sleep(1)
                         continue
 
-                    return await _finish_add_token(
-                        bot, ev, str(data.get("token") or "")
-                    )
+                    kuro_token = str(data.get("token") or "")
+                    break
         except asyncio.TimeoutError:
             return await bot.send("添加Token超时!", at_sender=at_sender)
         except Exception as e:
             logger.exception(f"[鸣潮·添加Token] 外置异常: {e}")
+            return
+
+    return await _finish_add_token(bot, ev, kuro_token)
 
 
 async def render_add_token_page(auth: str, state: Dict[str, Any]) -> HTMLResponse:
