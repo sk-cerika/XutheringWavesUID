@@ -14,6 +14,11 @@ from gsuid_core.utils.image.convert import convert_img
 
 from .rank_avatar import get_avatar
 from .rank_badge import draw_rank_badge
+from .pagination import (
+    group_rank_empty_page_message,
+    paginate_group_rank,
+    split_rank_page,
+)
 from ._permissions import get_rank_token_condition, filter_active_group_users
 from ..utils.util import build_uid_masker
 from ..utils.image import (
@@ -223,7 +228,7 @@ async def draw_rank_list(bot: Bot, ev: Event, threshold: int = 175) -> Union[str
     tokenLimitFlag, wavesTokenUsersMap = await get_rank_token_condition(ev)
 
     # 解析参数以获取阈值
-    text = ev.text.strip() if ev.text else ""
+    text, page = split_rank_page(ev.text or "")
     if text:
         # 支持 s/a/ss 或数字形式
         if text.lower() == "ss":
@@ -277,12 +282,11 @@ async def draw_rank_list(bot: Bot, ev: Event, threshold: int = 175) -> Union[str
     except Exception as _:
         pass
 
-    rank_length = 20  # 显示前20条
-    rankInfoList_display = rankInfoList[:rank_length]
-    display_rank_ids = list(range(1, len(rankInfoList_display) + 1))
-    if rankId and rankInfo and rankId > rank_length:
-        rankInfoList_display.append(rankInfo)
-        display_rank_ids.append(rankId)
+    rankInfoList_display, display_rank_ids, page_count, page_item_count = (
+        paginate_group_rank(rankInfoList, page, rankId, rankInfo)
+    )
+    if page_item_count == 0:
+        return group_rank_empty_page_message(page, page_count)
 
     _mask_uid = await build_uid_masker([(ri.uid, ri.qid) for ri in rankInfoList_display], ev.bot_id)
 

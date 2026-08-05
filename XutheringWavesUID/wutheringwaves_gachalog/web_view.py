@@ -34,6 +34,7 @@ from ..utils.resource.constant import NORMAL_LIST
 from ..utils.waves_api import waves_api
 from ..wutheringwaves_config import PREFIX, WutheringWavesConfig
 from .get_gachalogs import gacha_type_meta_data
+from .merge_utils import warn_gacha_pity_violations, has_history_gap_before
 
 GACHA_WEB_TTL = 600  # 10 分钟
 
@@ -334,6 +335,9 @@ def _build_pool_view(name: str, logs: List[Dict]) -> Dict:
     five_pos: List[int] = []  # 5 星出现位置（按从老到新计算）
 
     for log in asc:
+        if has_history_gap_before(log):
+            pity = 0
+            cur_period = {}
         pity += 1
         ql = log.get("qualityLevel")
         if ql == 4:
@@ -403,7 +407,9 @@ def _build_pool_view(name: str, logs: List[Dict]) -> Dict:
 
 async def _load_gacha_data(uid: str) -> Dict:
     path = PLAYER_PATH / str(uid) / "gacha_logs.json"
-    return await read_player_json(path) or {}
+    raw = await read_player_json(path) or {}
+    warn_gacha_pity_violations(raw.get("data", {}), f"uid={uid} ")
+    return raw
 
 
 # ----------------------------- 路由 -----------------------------

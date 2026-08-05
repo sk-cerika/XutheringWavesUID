@@ -2,13 +2,12 @@ import copy
 import json
 import base64
 import asyncio
-from collections import Counter
 from typing import Dict, List, Tuple, Union, Optional
-from pathlib import Path
 from datetime import datetime
+from collections import Counter, defaultdict
 
-import msgspec
 import aiohttp
+import msgspec
 from aiohttp import TCPConnector
 
 from gsuid_core.logger import logger
@@ -16,12 +15,20 @@ from gsuid_core.models import Event
 
 from .model import WWUIDGacha
 from ..version import XutheringWavesUID_version
+from ..utils.util import hide_uid, get_hide_uid_pref
+from .merge_utils import (
+    GACHA_HARD_PITY,
+    GachaMergeError,
+    clear_history_gap_before,
+    has_history_gap_before,
+    mark_history_gap_before,
+    warn_gacha_pity_violations,
+)
 from ..utils.api.model import GachaLog
-from ..utils.util import get_hide_uid_pref, hide_uid
 from ..utils.waves_api import waves_api
+from ..utils.player_store import write_gz_json, read_player_json, write_player_json, player_json_exists
 from .model_for_waves_plugin import WavesPluginGacha
-from ..utils.resource.RESOURCE_PATH import GACHA_BACKUP_PATH, PLAYER_PATH
-from ..utils.player_store import read_player_json, write_player_json, player_json_exists, write_gz_json
+from ..utils.resource.RESOURCE_PATH import PLAYER_PATH, GACHA_BACKUP_PATH
 
 GACHA_BACKUP_LIMIT = 10
 
@@ -62,62 +69,401 @@ gachalogs_history_meta = {
 ERROR_MSG_INVALID_LINK = "当前抽卡链接已经失效，请重新导入抽卡链接"
 
 
-# 找到两个数组中最长公共子串的下标（忽略resourceType字段差异）
+# 找到两个数组中最长公共子串的下标（忽略resourceType字段差异）。
+# 仅遍历 match_key 真正相同的位置，避免旧实现申请 n*m 的二维 Python 表。
 def find_longest_common_subarray_indices(
     a: List[GachaLog], b: List[GachaLog]
 ) -> Optional[Tuple[Tuple[int, int], Tuple[int, int]]]:
-    n, m = len(a), len(b)
-    dp = [[0] * (m + 1) for _ in range(n + 1)]
-    length = 0
-    a_end = b_end = 0
-
-    for i in range(n - 1, -1, -1):
-        for j in range(m - 1, -1, -1):
-            # 使用 match_key() 比较，忽略 resourceType 差异
-            if a[i].match_key() == b[j].match_key():
-                dp[i][j] = dp[i + 1][j + 1] + 1
-                if dp[i][j] > length:
-                    length = dp[i][j]
-                    a_end = i + length - 1
-                    b_end = j + length - 1
-            else:
-                dp[i][j] = 0
-
-    if length == 0:
+    if not a or not b:
         return None
 
-    return (a_end - length + 1, a_end), (b_end - length + 1, b_end)
+    positions: dict[tuple, list[int]] = defaultdict(list)
+    for index, item in enumerate(b):
+        positions[item.match_key()].append(index)
+
+    previous: dict[int, int] = {}
+    best_length = 0
+    best_a_end = best_b_end = -1
+    for a_index, item in enumerate(a):
+        current: dict[int, int] = {}
+        for b_index in positions.get(item.match_key(), []):
+            length = previous.get(b_index - 1, 0) + 1
+            current[b_index] = length
+            if length > best_length:
+                best_length = length
+                best_a_end = a_index
+                best_b_end = b_index
+        previous = current
+
+    if best_length == 0:
+        return None
+    return (
+        (best_a_end - best_length + 1, best_a_end),
+        (best_b_end - best_length + 1, best_b_end),
+    )
 
 
-# 根据最长公共子串递归合并两个GachaLog列表，按time排序
-def merge_gacha_logs_by_common_subarray(a: List[GachaLog], b: List[GachaLog]) -> List[GachaLog]:
-    common_indices = find_longest_common_subarray_indices(a, b)
-    if not common_indices:
-        # 无公共子串：保留单侧内部的重复抽数，只合并两侧之间的重叠记录。
-        target_counts = Counter(log.match_key() for log in a) | Counter(
-            log.match_key() for log in b
+def _time_bounds(logs: List[GachaLog]) -> Optional[Tuple[str, str]]:
+    if not logs:
+        return None
+    times = [log.time for log in logs]
+    return min(times), max(times)
+
+
+def _ranges_overlap(a: List[GachaLog], b: List[GachaLog]) -> bool:
+    a_bounds = _time_bounds(a)
+    b_bounds = _time_bounds(b)
+    if not a_bounds or not b_bounds:
+        return False
+    return max(a_bounds[0], b_bounds[0]) <= min(a_bounds[1], b_bounds[1])
+
+
+def _is_filler(log: GachaLog) -> bool:
+    return bool(getattr(log, "isFiller", False))
+
+
+def _five_star_cycles(
+    logs: List[GachaLog],
+) -> tuple[
+    dict[tuple[tuple, int], tuple[int, int, Optional[tuple]]],
+    Counter,
+]:
+    """Return newest-to-oldest five-star cycles with occurrence-aware keys.
+
+    A cycle starts at its five-star and contains the older pulls up to (but not
+    including) the next five-star.  The next five-star key is retained as the
+    older boundary so a partial 180-day cycle cannot masquerade as a complete
+    replacement for synthetic workshop/XHH fillers.
+    """
+    five_indices = [
+        index for index, log in enumerate(logs) if log.qualityLevel == 5
+    ]
+    key_counts = Counter(logs[index].match_key() for index in five_indices)
+    occurrences = Counter()
+    cycles: dict[tuple[tuple, int], tuple[int, int, Optional[tuple]]] = {}
+    for position, start in enumerate(five_indices):
+        key = logs[start].match_key()
+        token = (key, occurrences[key])
+        occurrences[key] += 1
+        end = (
+            five_indices[position + 1]
+            if position + 1 < len(five_indices)
+            else len(logs)
         )
-        used_counts = Counter()
-        merged = []
-        for log in a + b:
-            key = log.match_key()
-            if used_counts[key] >= target_counts[key]:
+        older_boundary = logs[end].match_key() if end < len(logs) else None
+        cycles[token] = (start, end, older_boundary)
+    return cycles, key_counts
+
+
+def _is_key_subsequence(smaller: List[GachaLog], larger: List[GachaLog]) -> bool:
+    if not smaller:
+        return True
+    target = [log.match_key() for log in smaller]
+    index = 0
+    for log in larger:
+        if log.match_key() == target[index]:
+            index += 1
+            if index == len(target):
+                return True
+    return False
+
+
+def _real_cycle_details_are_preserved(
+    removed_cycle: List[GachaLog], kept_cycle: List[GachaLog]
+) -> bool:
+    """Ensure replacing placeholders never discards known real local pulls."""
+    removed_real = [
+        log for log in removed_cycle[1:] if not _is_filler(log)
+    ]
+    kept_real = [log for log in kept_cycle[1:] if not _is_filler(log)]
+    return _is_key_subsequence(removed_real, kept_real)
+
+
+def _truncated_cycle_matches_local(
+    local_cycle: List[GachaLog], incoming_cycle: List[GachaLog]
+) -> bool:
+    """截断侧逐抽须与本地同位置的已知真实记录一致，占位可匹配任意。"""
+    for local_log, incoming_log in zip(local_cycle[1:], incoming_cycle[1:]):
+        if _is_filler(local_log):
+            continue
+        if local_log.match_key() != incoming_log.match_key():
+            return False
+    return True
+
+
+def _reconcile_filler_cycles(
+    local: List[GachaLog],
+    incoming: List[GachaLog],
+    *,
+    incoming_may_be_truncated: bool = False,
+) -> tuple[List[GachaLog], List[GachaLog]]:
+    """Replace a complete synthetic cycle with a complete real cycle.
+
+    Synthetic fillers encode a known cycle length, not additional pulls.  A
+    plain multiset union would count both the placeholders and later imported
+    real records.  Replacement is only safe when both five-star boundaries and
+    the complete cycle length agree; otherwise the import is rejected.
+    """
+    local_cycles, local_key_counts = _five_star_cycles(local)
+    incoming_cycles, incoming_key_counts = _five_star_cycles(incoming)
+    remove_local: set[int] = set()
+    remove_incoming: set[int] = set()
+
+    for token in local_cycles.keys() & incoming_cycles.keys():
+        local_start, local_end, local_older = local_cycles[token]
+        incoming_start, incoming_end, incoming_older = incoming_cycles[token]
+        local_cycle = local[local_start:local_end]
+        incoming_cycle = incoming[incoming_start:incoming_end]
+        local_has_filler = any(_is_filler(log) for log in local_cycle)
+        incoming_has_filler = any(_is_filler(log) for log in incoming_cycle)
+        if not local_has_filler and not incoming_has_filler:
+            continue
+
+        key = token[0]
+        if (
+            local_key_counts[key] != incoming_key_counts[key]
+            and max(local_key_counts[key], incoming_key_counts[key]) > 1
+        ):
+            raise GachaMergeError(
+                "同秒重复五星对应的占位周期无法唯一对齐"
+            )
+
+        if local_older != incoming_older:
+            if any(
+                has_history_gap_before(log)
+                for log in local_cycle + incoming_cycle
+            ):
+                raise GachaMergeError(
+                    "占位周期边界存在历史断档，无法安全对齐"
+                )
+            # A 180-day source commonly ends halfway through its oldest cycle.
+            # The side that reaches the next older five-star has the complete
+            # cycle; retain it and discard only the partial side's non-anchor
+            # records.  This keeps the known pity length without double-counting
+            # placeholders and real pulls.
+            if local_older is not None and incoming_older is None:
+                remove_incoming.update(
+                    range(incoming_start + 1, incoming_end)
+                )
                 continue
-            used_counts[key] += 1
-            merged.append(log)
-        return sorted(
-            merged,
-            key=lambda log: datetime.strptime(log.time, "%Y-%m-%d %H:%M:%S"),
+            if incoming_older is not None and local_older is None:
+                if not _real_cycle_details_are_preserved(
+                    local_cycle, incoming_cycle
+                ):
+                    raise GachaMergeError(
+                        "导入的完整周期不能覆盖本地已有且无法对齐的真实逐抽"
+                    )
+                remove_local.update(range(local_start + 1, local_end))
+                continue
+            raise GachaMergeError(
+                "占位周期的前后五星边界不一致，无法安全合并"
+            )
+
+        # 两侧都含占位数据时，只有完全同一周期才能普通去重；否则
+        # 无法判断哪些占位应被哪一侧的真实记录替换。
+        if local_has_filler and incoming_has_filler:
+            if [log.match_key() for log in local_cycle] != [
+                log.match_key() for log in incoming_cycle
+            ]:
+                raise GachaMergeError(
+                    "两份数据的占位周期内容不一致，无法安全合并"
+                )
+            continue
+        if len(local_cycle) != len(incoming_cycle):
+            # 官方链接只返回近180天：最老周期常被窗口截断，真实长度不可知。
+            # 此时本地占位周期长度来自完整历史，保留本地，仅丢弃截断侧逐抽；
+            # 文件导入不放宽，两侧都有更老五星边界时也不放宽。
+            if (
+                incoming_may_be_truncated
+                and incoming_older is None
+                and local_has_filler
+                and not incoming_has_filler
+                and len(incoming_cycle) < len(local_cycle)
+                and not any(
+                    has_history_gap_before(log)
+                    for log in local_cycle + incoming_cycle
+                )
+            ):
+                if not _truncated_cycle_matches_local(
+                    local_cycle, incoming_cycle
+                ):
+                    raise GachaMergeError(
+                        "导入的截断周期与本地已知逐抽记录冲突，已拒绝合并"
+                    )
+                remove_incoming.update(
+                    range(incoming_start + 1, incoming_end)
+                )
+                continue
+            raise GachaMergeError(
+                f"占位周期为{len(local_cycle)}抽，导入的真实周期为"
+                f"{len(incoming_cycle)}抽，已拒绝合并"
+            )
+        if any(
+            has_history_gap_before(log)
+            for log in local_cycle + incoming_cycle
+        ):
+            raise GachaMergeError(
+                "占位周期内存在历史断档，无法安全替换真实记录"
+            )
+        if local_has_filler:
+            if not _real_cycle_details_are_preserved(
+                local_cycle, incoming_cycle
+            ):
+                raise GachaMergeError(
+                    "真实替换周期与本地已有逐抽冲突，已拒绝覆盖"
+                )
+            # Keep the shared five-star itself as an overlap anchor.  Removing
+            # the entire cycle would make the remaining adjacent segments look
+            # disjoint and incorrectly add a history-gap marker.
+            remove_local.update(range(local_start + 1, local_end))
+        else:
+            remove_incoming.update(range(incoming_start + 1, incoming_end))
+
+    return (
+        [
+            log
+            for index, log in enumerate(local)
+            if index not in remove_local
+        ],
+        [
+            log
+            for index, log in enumerate(incoming)
+            if index not in remove_incoming
+        ],
+    )
+
+
+def _merge_timestamp_groups(
+    a: List[GachaLog], b: List[GachaLog]
+) -> List[GachaLog]:
+    """Merge records without inventing an order inside a one-second bucket."""
+    a_groups: dict[str, List[GachaLog]] = defaultdict(list)
+    b_groups: dict[str, List[GachaLog]] = defaultdict(list)
+    for log in a:
+        a_groups[log.time].append(log)
+    for log in b:
+        b_groups[log.time].append(log)
+
+    try:
+        times = sorted(
+            a_groups.keys() | b_groups.keys(),
+            key=lambda value: datetime.strptime(value, "%Y-%m-%d %H:%M:%S"),
             reverse=True,
         )
+    except ValueError as exc:
+        raise GachaMergeError("抽卡记录时间格式异常，无法安全合并") from exc
 
-    (a_start, a_end), (b_start, b_end) = common_indices
+    merged: List[GachaLog] = []
+    for time_value in times:
+        local_group = a_groups.get(time_value, [])
+        incoming_group = b_groups.get(time_value, [])
+        if not local_group:
+            chosen = incoming_group
+        elif not incoming_group:
+            chosen = local_group
+        elif _is_key_subsequence(local_group, incoming_group):
+            chosen = incoming_group
+        elif _is_key_subsequence(incoming_group, local_group):
+            chosen = local_group
+        else:
+            raise GachaMergeError(
+                f"{time_value}同秒记录在两份数据中的先后顺序无法唯一确定"
+            )
+        merged.extend(log.model_copy(deep=True) for log in chosen)
+    return merged
 
-    prefix = merge_gacha_logs_by_common_subarray(a[:a_start], b[:b_start])
-    common_subarray = a[a_start : a_end + 1]
-    suffix = merge_gacha_logs_by_common_subarray(a[a_end + 1 :], b[b_end + 1 :])
 
-    return prefix + common_subarray + suffix
+def _merge_without_common_anchor(
+    a: List[GachaLog],
+    b: List[GachaLog],
+    *,
+    reject_overlapping: bool,
+) -> List[GachaLog]:
+    if not a:
+        return [log.model_copy(deep=True) for log in b]
+    if not b:
+        return [log.model_copy(deep=True) for log in a]
+    if reject_overlapping and _ranges_overlap(a, b):
+        raise GachaMergeError("两份抽卡记录时间范围重叠，但没有任何可靠公共记录")
+
+    # 保留单侧内部合法的同秒重复，只去掉两侧重复的多重集合部分。
+    target_counts = Counter(log.match_key() for log in a) | Counter(
+        log.match_key() for log in b
+    )
+    marker_flags: dict[tuple, list[bool]] = {
+        key: [False] * count for key, count in target_counts.items()
+    }
+    for source in (a, b):
+        source_ordinals = Counter()
+        for log in source:
+            key = log.match_key()
+            ordinal = source_ordinals[key]
+            source_ordinals[key] += 1
+            if has_history_gap_before(log):
+                marker_flags[key][ordinal] = True
+
+    merged = _merge_timestamp_groups(a, b)
+    if Counter(log.match_key() for log in merged) != target_counts:
+        raise GachaMergeError("两份抽卡记录的同秒多重数据无法安全对齐")
+
+    output_ordinals = Counter()
+    for item in merged:
+        key = item.match_key()
+        ordinal = output_ordinals[key]
+        output_ordinals[key] += 1
+        if marker_flags[key][ordinal]:
+            mark_history_gap_before(item)
+        elif has_history_gap_before(item):
+            clear_history_gap_before(item)
+
+    if not _ranges_overlap(a, b):
+        a_bounds = _time_bounds(a)
+        b_bounds = _time_bounds(b)
+        assert a_bounds and b_bounds
+        newer = a if a_bounds[0] > b_bounds[1] else b
+        newer_keys = Counter(log.match_key() for log in newer)
+        # 新段最老的一抽，是按旧到新遍历时越过未知缺口后的第一抽。
+        for item in reversed(merged):
+            if newer_keys[item.match_key()] <= 0:
+                continue
+            mark_history_gap_before(item)
+            break
+    return merged
+
+
+# 两侧已由调用方确认可合并后，按记录多重集合一次完成合并。
+# 不再围绕每个公共片段递归，避免长历史或交错记录触发递归深度风险。
+def merge_gacha_logs_by_common_subarray(a: List[GachaLog], b: List[GachaLog]) -> List[GachaLog]:
+    return _merge_without_common_anchor(a, b, reject_overlapping=False)
+
+
+def _merge_gacha_pool_records(
+    local: List[GachaLog],
+    incoming: List[GachaLog],
+    *,
+    incoming_may_be_truncated: bool = False,
+) -> tuple[List[GachaLog], int]:
+    """统一合并官方链接与文件的单池记录，并返回真实新增数。"""
+    common_indices = find_longest_common_subarray_indices(local, incoming)
+    reconciled_local, reconciled_incoming = _reconcile_filler_cycles(
+        local, incoming, incoming_may_be_truncated=incoming_may_be_truncated
+    )
+    if local and incoming and not common_indices:
+        merged = _merge_without_common_anchor(
+            reconciled_local,
+            reconciled_incoming,
+            reject_overlapping=True,
+        )
+    else:
+        # 有锚点时必须合并整个多重集合；只拼 incoming 的公共段前缀会复制
+        # 本地前缀，并漏掉公共段中间恰好缺失的记录。
+        merged = merge_gacha_logs_by_common_subarray(
+            reconciled_local, reconciled_incoming
+        )
+
+    local_counts = Counter(log.match_key() for log in local)
+    merged_counts = Counter(log.match_key() for log in merged)
+    return merged, sum((merged_counts - local_counts).values())
 
 
 async def get_new_gachalog(
@@ -143,14 +489,19 @@ async def get_new_gachalog(
             if log.cardPoolType != card_pool_type:
                 log.cardPoolType = card_pool_type
         link_source_data[gacha_name] = list(gacha_log)
-        common_indices = find_longest_common_subarray_indices(full_data[gacha_name], gacha_log)
-        if not common_indices:
-            _add = gacha_log
-        else:
-            (_, _), (b_start, b_end) = common_indices
-            _add = gacha_log[:b_start]
-        new[gacha_name] = _add + copy.deepcopy(full_data[gacha_name])
-        new_count[gacha_name] = len(_add)
+        try:
+            new[gacha_name], new_count[gacha_name] = _merge_gacha_pool_records(
+                full_data[gacha_name],
+                gacha_log,
+                incoming_may_be_truncated=True,
+            )
+        except GachaMergeError as exc:
+            return (
+                f"卡池[{gacha_name}]的新记录与本地历史无法安全对齐：{exc}",
+                None,
+                None,
+                link_source_data,
+            )  # type: ignore
         await asyncio.sleep(1)
 
     return None, new, new_count, link_source_data
@@ -163,23 +514,24 @@ async def get_new_gachalog_for_file(
     new = {}
     new_count = {}
 
-    if is_same_gachalogs(full_data, import_data):
-        for gacha_name, logs in full_data.items():
-            new[gacha_name] = list(logs)
-            new_count[gacha_name] = 0
-        return None, new, new_count
-
     for cardPoolType, item in import_data.items():
         item: List[GachaLog]
         if cardPoolType not in gacha_type_meta_data:
             continue
         gacha_name = cardPoolType
         gacha_log = [GachaLog(**log.model_dump()) for log in item]
-        new_gacha_log = merge_gacha_logs_by_common_subarray(full_data[gacha_name], gacha_log)
+        try:
+            new_gacha_log, added = _merge_gacha_pool_records(
+                full_data[gacha_name], gacha_log
+            )
+        except GachaMergeError as exc:
+            return (
+                f"卡池[{gacha_name}]的导入文件与本地历史无法安全对齐：{exc}",
+                None,
+                None,
+            )  # type: ignore
         new[gacha_name] = new_gacha_log
-        full_logs = Counter(log.match_key() for log in full_data[gacha_name])
-        import_logs = Counter(log.match_key() for log in gacha_log)
-        new_count[gacha_name] = sum((import_logs - full_logs).values())
+        new_count[gacha_name] = added
     return None, new, new_count
 
 
@@ -193,18 +545,6 @@ def count_new_gachalogs(
         import_logs = Counter(log.match_key() for log in import_data.get(gacha_name, []))
         new_count[gacha_name] = sum((import_logs - full_logs).values())
     return new_count
-
-
-def is_same_gachalogs(
-    full_data: Dict[str, List[GachaLog]],
-    import_data: Dict[str, List[GachaLog]],
-) -> bool:
-    for gacha_name in gacha_type_meta_data:
-        full_logs = Counter(log.match_key() for log in full_data.get(gacha_name, []))
-        import_logs = Counter(log.match_key() for log in import_data.get(gacha_name, []))
-        if full_logs != import_logs:
-            return False
-    return True
 
 
 def prune_gacha_backups(uid: str, type: str, limit: int = GACHA_BACKUP_LIMIT):
@@ -325,20 +665,24 @@ async def save_gachalogs(
     # 获取当前时间
     current_time = datetime.now().strftime("%Y-%m-%d %H-%M-%S")
 
-    # 检查并修正时间降序
+    # 检查时间降序。异常数据直接拒绝，不能通过截断一整段历史来“修正”。
     for gacha_name in gacha_type_meta_data.keys():
         logs = gachalogs_new.get(gacha_name, [])
         if len(logs) > 1:
-            # 从末尾倒着检查时间顺序
             for i in range(len(logs) - 1, 0, -1):
                 time_current = datetime.strptime(logs[i].time, "%Y-%m-%d %H:%M:%S")
                 time_prev = datetime.strptime(logs[i - 1].time, "%Y-%m-%d %H:%M:%S")
 
-                # 如果第 i-1 个的时间小于第 i 个，说明顺序不对，舍弃 i-1 及之前的所有记录
                 if time_prev < time_current:
-                    logger.warning(f"[鸣潮·抽卡导入] 卡池[{gacha_name}] 发现时间顺序异常，舍弃索引 {i - 1} 及之前的 {i} 条记录")
-                    gachalogs_new[gacha_name] = logs[i:]
-                    break
+                    logger.warning(
+                        f"[鸣潮·抽卡导入] 卡池[{gacha_name}] "
+                        f"索引{i - 1}/{i}时间顺序异常，拒绝写入"
+                    )
+                    return (
+                        f"卡池[{gacha_name}]记录时间顺序异常，导入已中止，原记录未修改"
+                    )
+
+    pity_violations = warn_gacha_pity_violations(gachalogs_new, f"uid={uid} ")
 
     # 初始化最后保存的数据
     result = {"uid": uid, "data_time": current_time}
@@ -351,6 +695,9 @@ async def save_gachalogs(
         gacha_name: [log.model_dump() for log in gachalogs_new.get(gacha_name, [])]
         for gacha_name in gacha_type_meta_data.keys()
     }
+
+    if record_id and temp_gachalogs_history:
+        await backup_gachalogs(uid, temp_gachalogs_history, type="update")
 
     vo = msgspec.to_builtins(result)
     await write_player_json(gachalogs_path, vo)
@@ -375,6 +722,22 @@ async def save_gachalogs(
         from ..wutheringwaves_config import PREFIX as _gw_prefix
         if _gw_enabled():
             im.append(f"可发送 {_gw_prefix}抽卡页面 查看更具体记录")
+    gap_pools = [
+        name
+        for name, logs in gachalogs_new.items()
+        if any(has_history_gap_before(log) for log in logs)
+    ]
+    if gap_pools:
+        im.append(
+            "⚠️检测到历史断档，已在断点处重新计算保底，避免跨缺失记录产生80抽以上数据："
+            + "、".join(gap_pools)
+        )
+    if pity_violations:
+        im.append(
+            f"⚠️以下卡池存在超过{GACHA_HARD_PITY}抽的区间（历史记录缺失所致），"
+            "已照常合并，保底统计仅供参考："
+            + "、".join(sorted({v.pool for v in pity_violations}))
+        )
     im = "\n".join(im)
     return im
 

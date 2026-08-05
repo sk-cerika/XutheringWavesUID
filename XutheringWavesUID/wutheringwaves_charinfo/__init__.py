@@ -246,12 +246,7 @@ async def _send_char_card_single(bot: Bot, ev: Event, char, hash_id, card_type):
             return await bot.send((" " if at_sender else "") + msg, at_sender)
         hash_id = match[0]
     if not char:
-        return await send_custom_card_single_by_id(
-            bot,
-            ev,
-            hash_id,
-            target_type=TYPE_MAP.get(card_type, "card"),
-        )
+        return await send_custom_card_single_by_id(bot, ev, hash_id)
     return await send_custom_card_single(
         bot,
         ev,

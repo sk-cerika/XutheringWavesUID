@@ -1,16 +1,35 @@
-from typing import Optional
+from typing import List, Optional
 
 from pydantic import BaseModel
 
 from gsuid_core.logger import logger
 
-from .calculate import get_calc_map, calc_phantom_score, get_total_score_bg
-from .damage.utils import comma_separated_number
+from .calculate import get_calc_map, calc_phantom_entry, calc_phantom_score, get_total_score_bg
+from .damage.utils import Hack_Shifting_Role_Ids, comma_separated_number
 from .char_info_utils import get_all_role_detail_info
 from .damage.abstract import DamageRankRegister, ScoreDetailRegister
 from .damage.modal import get_role_modal, get_modal_name
 from .api.model import RoleDetailData
 from .ascension.sonata import detect_combo_sonata
+
+
+class WavesPhantomProp(BaseModel):
+    name: str  # 词条名 (Props.attributeName)
+    value: str  # 词条值 (Props.attributeValue)
+    score: float = 0  # 单词条分数
+
+
+class WavesPhantomRank(BaseModel):
+    phantom_id: int  # 声骸id
+    name: str  # 声骸名
+    icon_url: str  # 声骸图标
+    cost: int
+    level: int
+    set: str  # 套装名
+    main_props: List[WavesPhantomProp] = []
+    sub_props: List[WavesPhantomProp] = []
+    score: float  # 单声骸分数
+    grade: str  # 单声骸评级
 
 
 class WavesCharRank(BaseModel):
@@ -32,9 +51,10 @@ class WavesCharRank(BaseModel):
     expected_name: str  # 期望伤害名字
     modal: str = ""  # 模态 key (无模态角色为空)
     modal_name: str = ""
+    phantoms: Optional[List[WavesPhantomRank]] = None  # 单声骸评分明细 (仅有效套装时上传)
 
     def to_rank_dict(self):
-        return {
+        data = {
             "char_id": self.roleId,
             "level": self.level,
             "chain": self.chain,
@@ -50,6 +70,9 @@ class WavesCharRank(BaseModel):
             "modal": self.modal,
             "modal_name": self.modal_name,
         }
+        if self.phantoms:
+            data["phantoms"] = [p.model_dump() for p in self.phantoms]
+        return data
 
 
 async def get_waves_char_rank(uid, all_role_detail, need_expected_damage=False, need_overall_score=False):
@@ -74,6 +97,7 @@ def _compute_one_char_rank(role_detail, need_expected_damage=False, need_overall
 
     sonataName = ""
     expected_name = ""
+    phantom_ranks: List[WavesPhantomRank] = []
     if role_detail.phantomData and role_detail.phantomData.equipPhantomList:
         equipPhantomList = role_detail.phantomData.equipPhantomList
 
@@ -86,10 +110,49 @@ def _compute_one_char_rank(role_detail, need_expected_damage=False, need_overall
             get_role_modal(role_detail),
         )
         for i, _phantom in enumerate(equipPhantomList):
-            if _phantom and _phantom.phantomProp:
-                props = _phantom.get_props()
-                _score, _bg = calc_phantom_score(role_detail.role.roleId, props, _phantom.cost, calc.calc_temp)
-                phantom_score += _score
+            if not (_phantom and _phantom.phantomProp):
+                continue
+            props = _phantom.get_props()
+            _score, _bg = calc_phantom_score(role_detail.role.roleId, props, _phantom.cost, calc.calc_temp)
+            phantom_score += _score
+            # 声骸总排行仅统计满 5 副词条的声骸
+            if len(_phantom.subProps or []) != 5:
+                continue
+            _char_attr = role_detail.role.attributeName or ""
+            _scored_props = []
+            for _pi, _prop in enumerate(props):
+                _entry_score = 0.0
+                if calc.calc_temp:
+                    try:
+                        _, _entry_score = calc_phantom_entry(
+                            _pi, _prop, _phantom.cost, calc.calc_temp, _char_attr
+                        )
+                    except Exception as e:
+                        logger.debug(f"[鸣潮·评分] 单词条分数计算失败: {e}")
+                _scored_props.append(
+                    {
+                        "name": _prop.attributeName,
+                        "value": _prop.attributeValue,
+                        "score": _entry_score,
+                    }
+                )
+            _main_len = len(_phantom.mainProps or [])
+            phantom_ranks.append(
+                WavesPhantomRank(
+                    **{
+                        "phantom_id": _phantom.phantomProp.phantomId,
+                        "name": _phantom.phantomProp.name,
+                        "icon_url": _phantom.phantomProp.iconUrl,
+                        "cost": _phantom.cost,
+                        "level": _phantom.level,
+                        "set": _phantom.fetterDetail.name,
+                        "main_props": _scored_props[:_main_len],
+                        "sub_props": _scored_props[_main_len:],
+                        "score": _score,
+                        "grade": _bg,
+                    }
+                )
+            )
 
         if need_expected_damage:
             rankDetail = DamageRankRegister.find_class(str(role_detail.role.roleId))
@@ -118,6 +181,9 @@ def _compute_one_char_rank(role_detail, need_expected_damage=False, need_overall
                 break
 
             if ph_detail.get("ph_name") and ph_detail.get("isFull"):
+                # 1件套(碎梦亡鬼之魇)仅露西/丽贝卡算完整套装, 其他角色需凑齐3/5件
+                if ph_detail.get("ph_num") == 1 and role_detail.role.roleId not in Hack_Shifting_Role_Ids:
+                    continue
                 sonataName = ph_detail["ph_name"]
                 break
 
@@ -146,6 +212,7 @@ def _compute_one_char_rank(role_detail, need_expected_damage=False, need_overall
             "expected_name": expected_name,
             "modal": modal,
             "modal_name": get_modal_name(role_detail.role.roleId, modal),
+            "phantoms": phantom_ranks if sonataName else None,
         }
     )
 

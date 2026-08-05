@@ -14,6 +14,10 @@ from gsuid_core.utils.image.image_tools import crop_center_img
 
 from .rank_avatar import get_avatar
 from .rank_badge import draw_rank_badge
+from .pagination import (
+    group_rank_empty_page_message,
+    paginate_group_rank,
+)
 from ._permissions import get_rank_token_condition, filter_active_group_users
 from ..utils.util import build_uid_masker
 from ..utils.image import (
@@ -57,7 +61,6 @@ from ..utils.fonts.waves_fonts import (
 )
 from ..utils.resource.constant import SPECIAL_CHAR, SPECIAL_CHAR_NAME, SPECIAL_CHAR_RANK_MAP
 
-rank_length = 20  # 排行长度
 TEXT_PATH = Path(__file__).parent / "texture2d"
 TITLE_I = Image.open(TEXT_PATH / "title.png")
 TITLE_II = Image.open(TEXT_PATH / "title2.png")
@@ -251,7 +254,13 @@ async def get_all_rank_info(
 
 
 # TODO: PIL 卸到线程池 (loop body 多处 await get_attribute / get_square_weapon / get_attribute_effect, 重构成本大)
-async def draw_rank_img(bot: Bot, ev: Event, char: str, rank_type: str) -> Union[str, bytes]:
+async def draw_rank_img(
+    bot: Bot,
+    ev: Event,
+    char: str,
+    rank_type: str,
+    page: int = 1,
+) -> Union[str, bytes]:
     char_id = char_name_to_char_id(char)
     if not char_id:
         return "未找到指定角色, 请检查输入是否正确！"
@@ -267,7 +276,15 @@ async def draw_rank_img(bot: Bot, ev: Event, char: str, rank_type: str) -> Union
         member_uids = list(dict.fromkeys(member_uids))
         if not member_uids:
             return f"[鸣潮] 群【{ev.group_id}】暂无面板数据\n请【登录】并【{PREFIX}刷新单角色面板】后再使用"
-        return await draw_all_rank_card(bot, ev, char, rank_type, 1, "", group_uids=member_uids)
+        return await draw_all_rank_card(
+            bot,
+            ev,
+            char,
+            rank_type,
+            page,
+            "",
+            group_uids=member_uids,
+        )
 
     rankDetail = DamageRankRegister.find_class(char_id)
     if not rankDetail and rank_type == "伤害":
@@ -348,9 +365,14 @@ async def draw_rank_img(bot: Bot, ev: Event, char: str, rank_type: str) -> Union
             (None, None),
         )
 
-    rankInfoList = rankInfoList[:rank_length]
-    if rankId and rankInfo and rankId > rank_length:
-        rankInfoList.append(rankInfo)
+    rankInfoList, display_rank_ids, page_count, page_item_count = paginate_group_rank(
+        rankInfoList,
+        page,
+        rankId,
+        rankInfo,
+    )
+    if page_item_count == 0:
+        return group_rank_empty_page_message(page, page_count)
 
     totalNum = len(rankInfoList)
     title_h = 500
@@ -461,9 +483,7 @@ async def draw_rank_img(bot: Bot, ev: Event, char: str, rank_type: str) -> Union
             bar_star_draw.text((870, 75), f"{damage_title}", "white", waves_font_16, "mm")
 
         # 排名
-        rank_id = index + 1
-        if rankId is not None and rank_id > rank_length:
-            rank_id = rankId
+        rank_id = display_rank_ids[index]
         draw_rank_badge(bar_bg, rank_id or 0)
 
         # uid
@@ -475,12 +495,11 @@ async def draw_rank_img(bot: Bot, ev: Event, char: str, rank_type: str) -> Union
         # 贴到背景
         card_img.paste(bar_bg, (0, title_h + index * bar_star_h), bar_bg)
 
-        if rank_id is not None and rank_id <= rank_length:
+        if index < page_item_count:
             total_score += rank.score
             total_damage += rank.expected_damage_int
 
-    if rankId is not None and rankId > rank_length:
-        totalNum -= 1
+    totalNum = page_item_count
 
     avg_score = f"{total_score / totalNum:.1f}" if totalNum != 0 else "0"
     avg_damage = f"{total_damage / totalNum:,.0f}" if totalNum != 0 else "0"

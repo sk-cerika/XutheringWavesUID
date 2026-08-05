@@ -1,11 +1,9 @@
 import os
-import json
 import random
 import warnings
 from typing import Dict, List
 from pathlib import Path
 
-import aiofiles
 from PIL import Image, ImageDraw, ImageFilter
 
 # 忽略PIL解压缩炸弹警告
@@ -18,7 +16,11 @@ from gsuid_core.utils.image.image_tools import crop_center_img
 
 from ..utils import hint
 from ..utils.util import hide_uid, get_hide_uid_pref
-from ..utils.player_store import read_player_json, player_json_exists
+from ..utils.player_store import (
+    read_player_json,
+    write_player_json,
+    resolve_player_path,
+)
 from ..utils.imagetool import draw_base_info_bg
 from ..utils.image import (
     GOLD,
@@ -46,6 +48,10 @@ from ..utils.fonts.waves_fonts import (
 from ..utils.resource.constant import NORMAL_LIST
 from ..utils.resource.RESOURCE_PATH import CARD_POLYGON_PATH, PLAYER_PATH
 from .get_gachalogs import gacha_type_meta_data
+from .merge_utils import (
+    has_history_gap_before,
+    warn_gacha_pity_violations,
+)
 
 TEXT_PATH = Path(__file__).parent / "texture2d"
 HOMO_TAG = ["非到极致", "运气不好", "平稳保底", "小欧一把", "欧狗在此"]
@@ -108,9 +114,11 @@ async def draw_card_help():
             f"2. 传统方法：使用命令【{PREFIX}导入抽卡链接 + 你复制的内容】即可开始进行抽卡分析",
             "抽卡链接具有有效期，请在有效期内尽快导入",
             "",
-            f"3. 导入有效数据后，可以从其他来源合并较旧抽卡数据，只能合并一次",
+            "3. 导入有效数据后，可以从工坊/小黑盒补充较旧抽卡数据",
             "工坊/小黑盒导入：",
             "要求先使用任意方式更新最近180天记录后，",
+            "官方链接/文件的两段历史若不相交，会标记断档并从断点重算保底；",
+            "工坊/小黑盒无法可靠对齐，或覆盖区间冲突时会拒绝合并，不覆盖原记录。",
             f"{PREFIX}导入工坊抽卡记录UID（9位特征码）",
             f"{PREFIX}导入小黑盒抽卡记录ID（8位小黑盒ID）",
             "",
@@ -194,6 +202,8 @@ def _compute_pool_stats(gachalogs: Dict) -> Dict:
         current_data = total_data[gacha_name]
 
         for index, data in enumerate(gacha_data[::-1]):
+            if has_history_gap_before(data):
+                num = 1
             if index == 0:
                 current_data["time_range"] = data["time"]
             if index == len(gacha_data) - 1:
@@ -242,38 +252,81 @@ def _compute_pool_stats(gachalogs: Dict) -> Dict:
     return total_data
 
 
+def _gacha_source_version(gacha_log_path: Path) -> Dict | None:
+    """Return a cheap version token for the actual raw (.json/.gz) file."""
+    try:
+        actual_path = resolve_player_path(gacha_log_path)
+        if actual_path is None:
+            return None
+        stat = actual_path.stat()
+        return {
+            "name": actual_path.name,
+            "inode": stat.st_ino,
+            "mtime_ns": stat.st_mtime_ns,
+            "size": stat.st_size,
+        }
+    except OSError:
+        return None
+
+
+def _is_valid_stats_cache(stats: object) -> bool:
+    if not isinstance(stats, dict):
+        return False
+    return all(
+        isinstance(value, dict)
+        and isinstance(value.get("avg"), (int, float))
+        and isinstance(value.get("avg_up"), (int, float))
+        and isinstance(value.get("remain"), int)
+        and 0 <= value["remain"] < 80
+        and all(
+            isinstance(pity, int) and 1 <= pity <= 80
+            for pity in value.get("r_num", [])
+        )
+        for value in stats.values()
+    )
+
+
 async def get_gacha_stats(uid: str) -> Dict:
-    """获取抽卡统计信息，优先从缓存读取，否则从原始数据计算"""
+    """获取抽卡统计；缓存必须与原始抽卡文件的版本严格一致。"""
     _dir = PLAYER_PATH / str(uid)
     _dir.mkdir(parents=True, exist_ok=True)
 
     gacha_log_path = _dir / "gacha_logs.json"
     stats_path = _dir / "gachaStats.json"
-    if player_json_exists(gacha_log_path) and stats_path.exists():
+    source_version = _gacha_source_version(gacha_log_path)
+    if source_version is None:
+        return {}
+
+    cached = await read_player_json(stats_path)
+    if (
+        isinstance(cached, dict)
+        and cached.get("source_version") == source_version
+        and _is_valid_stats_cache(cached.get("stats"))
+        and _gacha_source_version(gacha_log_path) == source_version
+    ):
+        return cached["stats"]
+
+    # A raw import can replace the file while stats are being calculated.
+    # Read and stat on both sides, and retry instead of publishing stale data.
+    for _ in range(3):
+        before = _gacha_source_version(gacha_log_path)
+        if before is None:
+            return {}
+        raw_data = await read_player_json(gacha_log_path)
+        after = _gacha_source_version(gacha_log_path)
+        if raw_data is None or before != after:
+            continue
+
         try:
-            async with aiofiles.open(stats_path, "r", encoding="utf-8") as f:
-                cached = json.loads(await f.read())
-            if all(
-                isinstance(v.get("avg"), (int, float))
-                and isinstance(v.get("avg_up"), (int, float))
-                for v in cached.values()
-                if isinstance(v, dict)
-            ):
-                return cached
+            warn_gacha_pity_violations(raw_data.get("data", {}), f"uid={uid} ")
+            total_data = _compute_pool_stats(raw_data.get("data", {}))
+            stats_data = _total_to_stats(total_data)
         except Exception:
-            pass
+            return {}
 
-    raw_data = await read_player_json(gacha_log_path)
-    if raw_data is None:
-        return {}
-
-    try:
-        total_data = _compute_pool_stats(raw_data.get("data", {}))
-        stats_data = _total_to_stats(total_data)
-        await save_gacha_stats(uid, total_data)
-        return stats_data
-    except Exception:
-        return {}
+        if await save_gacha_stats(uid, total_data, after):
+            return stats_data
+    return {}
 
 
 def _total_to_stats(total_data: Dict) -> Dict:
@@ -296,17 +349,32 @@ def _total_to_stats(total_data: Dict) -> Dict:
     return stats_data
 
 
-async def save_gacha_stats(uid: str, total_data: Dict):
-    """保存抽卡统计信息到本地文件"""
+async def save_gacha_stats(
+    uid: str,
+    total_data: Dict,
+    source_version: Dict | None = None,
+) -> bool:
+    """原子保存带来源版本的统计；原始文件变化时丢弃旧结果。"""
     try:
         _dir = PLAYER_PATH / str(uid)
         _dir.mkdir(parents=True, exist_ok=True)
         path = _dir / "gachaStats.json"
+        gacha_log_path = _dir / "gacha_logs.json"
+        expected = source_version or _gacha_source_version(gacha_log_path)
+        if expected is None or _gacha_source_version(gacha_log_path) != expected:
+            return False
         stats_data = _total_to_stats(total_data)
-        async with aiofiles.open(path, "w", encoding="utf-8") as file:
-            await file.write(json.dumps(stats_data, ensure_ascii=False))
+        envelope = {"source_version": expected, "stats": stats_data}
+        await write_player_json(path, envelope)
+
+        if _gacha_source_version(gacha_log_path) != expected:
+            # A stale envelope is harmless: readers compare source_version and
+            # atomically replace it on the next rebuild.  Do not unlink here,
+            # otherwise a newer concurrent writer could be removed by TOCTOU.
+            return False
+        return True
     except Exception:
-        pass
+        return False
 
 
 async def draw_card(uid: str, ev: Event):
@@ -317,12 +385,10 @@ async def draw_card(uid: str, ev: Event):
         return f"[鸣潮] 你还没有抽卡记录噢!\n 请查看 {PREFIX}抽卡帮助 中的提示导入!"
 
     gachalogs = raw_data["data"]
+    warn_gacha_pity_violations(gachalogs, f"uid={uid} ")
     title_num = len([1 for i in gachalogs.keys() if "新手" not in i])
 
     total_data = _compute_pool_stats(gachalogs)
-    stats_path = PLAYER_PATH / str(uid) / "gachaStats.json"
-    if not stats_path.exists():
-        await save_gacha_stats(uid, total_data)
 
     # 预加载所有抽卡物品的图标
     item_icon_cache: Dict[str, Image.Image] = {}

@@ -24,6 +24,23 @@ sv_waves_rank_matrix = SV("waves矩阵总排行", priority=0)
 sv_waves_rank_matrix_list = SV("waves矩阵排行", priority=0)
 
 
+def _is_matrix_single_team_command(ev: Event) -> bool:
+    return "单队" in ev.raw_text or "队伍" in ev.raw_text or "dd" in ev.raw_text or "dw" in ev.raw_text
+
+
+def _parse_matrix_rank_args(ev: Event, strict: bool):
+    """返回 (char_ids, page, 错误提示); strict=False 时队伍解析失败按无队伍参数处理"""
+    from ..utils.team_query import parse_matrix_team, split_team_and_page
+    from ..wutheringwaves_rank.pagination import normalize_rank_page
+
+    team_text, tail_page = split_team_and_page(ev.regex_dict.get("team"))
+    page = normalize_rank_page(ev.regex_dict.get("pages") or tail_page)
+    char_ids, err = parse_matrix_team(team_text)
+    if err and not strict:
+        return [], page, None
+    return char_ids, page, err
+
+
 @sv_waves_abyss.on_fullmatch(
     (
         "查询深渊",
@@ -60,6 +77,7 @@ async def send_waves_abyss_info(bot: Bot, ev: Event):
     if is_intl_uid(uid):
         return await bot.send(intl_unavailable_msg(uid))
     await bot.logger.info(f"[鸣潮·查询深塔] user_id={user_id} uid={uid}")
+    await WavesBind.insert_waves_uid(user_id, ev.bot_id, uid, ev.group_id, lenth_limit=9)
 
     im = await draw_abyss_img(ev, uid, user_id)
     if isinstance(im, str):
@@ -104,6 +122,7 @@ async def send_waves_challenge_info(bot: Bot, ev: Event):
     if is_intl_uid(uid):
         return await bot.send(intl_unavailable_msg(uid))
     await bot.logger.info(f"[鸣潮·查询全息] user_id={user_id} uid={uid}")
+    await WavesBind.insert_waves_uid(user_id, ev.bot_id, uid, ev.group_id, lenth_limit=9)
 
     im = await draw_challenge_img(ev, uid, user_id)
     at_sender = True if ev.group_id else False
@@ -148,6 +167,7 @@ async def send_waves_slash_info(bot: Bot, ev: Event):
         return await bot.send(error_reply(WAVES_CODE_103))
     if is_intl_uid(uid):
         return await bot.send(intl_unavailable_msg(uid))
+    await WavesBind.insert_waves_uid(user_id, ev.bot_id, uid, ev.group_id, lenth_limit=9)
 
     im = await draw_slash_img(ev, uid, user_id)
     if isinstance(im, str):
@@ -193,6 +213,7 @@ async def send_waves_matrix_info(bot: Bot, ev: Event):
         return await bot.send(error_reply(WAVES_CODE_103))
     if is_intl_uid(uid):
         return await bot.send(intl_unavailable_msg(uid))
+    await WavesBind.insert_waves_uid(user_id, ev.bot_id, uid, ev.group_id, lenth_limit=9)
 
     im = await draw_matrix_img(ev, uid, user_id)
     if isinstance(im, str):
@@ -202,105 +223,89 @@ async def send_waves_matrix_info(bot: Bot, ev: Event):
         return await bot.send(im)
 
 
-@sv_waves_rank_slash.on_command(
-    (
-        "无尽总排行",
-        "wjzph",
-        "wjzpm",
-        "无尽总排行榜",
-        "冥海总排行",
-        "冥海总排行榜",
-    ),
+@sv_waves_rank_slash.on_regex(
+    r"^(?:无尽总排行|wjzph|wjzpm|无尽总排行榜|冥海总排行|冥海总排行榜)(?P<pages>\d+)?$",
     block=True,
     to_ai='''查询全体冥歌海墟无尽层总排行（跨群）。
 
 当用户问「无尽总排行 / 冥海总排行」时调用。
 
 Args:
-    text: 无需参数，留空即可。
+    text: 可在命令末尾加页码。例: "无尽总排行2"。
 ''',
 )
 async def send_waves_rank_slash_info(bot: Bot, ev: Event):
     from ..wutheringwaves_rank.slash_rank import draw_all_slash_rank_card
+    from ..wutheringwaves_rank.pagination import normalize_rank_page
 
-    im = await draw_all_slash_rank_card(bot, ev)
+    page = normalize_rank_page(ev.regex_dict.get("pages"))
+    im = await draw_all_slash_rank_card(bot, ev, page)
     return await bot.send(im)
 
 
-@sv_waves_rank_slash_list.on_fullmatch(
-    (
-        "无尽排行",
-        "wjph",
-        "wjpm",
-        "无尽排行榜",
-        "无尽排名",
-        "无尽群排行",
-        "无尽群排行榜",
-        "无尽群排名",
-        "群无尽排行",
-        "群无尽排名",
-    ),
+@sv_waves_rank_slash_list.on_regex(
+    r"^(?:无尽排行|wjph|wjpm|无尽排行榜|无尽排名|无尽群排行|无尽群排行榜|无尽群排名|群无尽排行|群无尽排名)(?P<pages>\d+)?$",
     block=True,
     to_ai='''查询本群冥歌海墟无尽层排行，仅群聊可用。
 
 当用户在群里问「群里谁海墟最强 / 无尽排行」时调用。私聊会被拒绝。
 
 Args:
-    text: 无需参数，留空即可。
+    text: 可在命令末尾加页码。例: "无尽排行2"。
 ''',
 )
 async def send_waves_rank_slash_list_info(bot: Bot, ev: Event):
     if not ev.group_id:
         return await bot.send("请在群聊中使用")
     from ..wutheringwaves_rank.slash_rank import draw_slash_rank_list
+    from ..wutheringwaves_rank.pagination import normalize_rank_page
 
-    im = await draw_slash_rank_list(bot, ev)
+    page = normalize_rank_page(ev.regex_dict.get("pages"))
+    im = await draw_slash_rank_list(bot, ev, page)
     return await bot.send(im)
 
 
-@sv_waves_rank_matrix.on_command(
-    (
-        "矩阵总排行",
-        "jzzph",
-        "jzzpm",
-        "矩阵总排行榜",
-    ),
+@sv_waves_rank_matrix.on_regex(
+    r"^(?:矩阵总排行|jzzph|jzzpm|jzddzph|jzddzpm|jzdwzph|jzdwzpm|矩阵总排行榜|矩阵单队总排行|矩阵单队总排行榜|矩阵队伍总排行|矩阵队伍总排行榜)(?P<pages>\d+)?(?P<team>[\s,，、/|]*[一-鿿\d][\s\S]*)?$",
     block=True,
     to_ai='''查询全体终焉矩阵积分总排行（跨群）。
 
-当用户问「矩阵总排行 / 全体矩阵积分」时调用。
+当用户问「矩阵总排行 / 全体矩阵积分」时调用；问「矩阵单队总排行 / 矩阵队伍总排行」时按最高单队积分查询。
 
 Args:
-    text: 无需参数，留空即可。
+    text: 可加页码（命令后或末尾均可）。带三个角色名 / 三字首字缩写时只排该队伍（顺序无关、buff 不限）。
+        例: "矩阵总排行2"、"矩阵单队总排行 今汐 折枝 守岸人"、"矩阵单队总排行 今折守 2"。
 ''',
 )
 async def send_waves_rank_matrix_info(bot: Bot, ev: Event):
     from ..wutheringwaves_rank.matrix_rank import draw_all_matrix_rank_card
 
-    im = await draw_all_matrix_rank_card(bot, ev)
+    single_team_cmd = _is_matrix_single_team_command(ev)
+    char_ids, page, err = _parse_matrix_rank_args(ev, single_team_cmd)
+    if err:
+        return await bot.send(err)
+
+    single_team = single_team_cmd or bool(char_ids)
+    im = await draw_all_matrix_rank_card(
+        bot,
+        ev,
+        single_team=single_team,
+        page=page,
+        char_ids=char_ids,
+    )
     return await bot.send(im)
 
 
-@sv_waves_rank_matrix_list.on_fullmatch(
-    (
-        "矩阵排行",
-        "jzph",
-        "jzpm",
-        "矩阵排行榜",
-        "矩阵排名",
-        "矩阵群排行",
-        "矩阵群排行榜",
-        "矩阵群排名",
-        "群矩阵排行",
-        "群矩阵排名",
-    ),
+@sv_waves_rank_matrix_list.on_regex(
+    r"^(?:矩阵排行|jzph|jzpm|jzddph|jzddpm|jzdwph|jzdwpm|矩阵排行榜|矩阵排名|矩阵群排行|矩阵群排行榜|矩阵群排名|群矩阵排行|群矩阵排名|矩阵单队排行|矩阵单队排行榜|矩阵队伍排行|矩阵队伍排行榜)(?P<pages>\d+)?(?P<team>[\s,，、/|]*[一-鿿\d][\s\S]*)?$",
     block=True,
     to_ai='''查询本群终焉矩阵积分排行，仅群聊可用。
 
-当用户在群里问「群里谁矩阵积分最高 / 矩阵排行」时调用。私聊会被拒绝。
+当用户在群里问「群里谁矩阵积分最高 / 矩阵排行」时调用；问「矩阵单队排行 / 矩阵队伍排行」时按最高单队积分查询。私聊会被拒绝。
 
 Args:
-    text: 无需参数，留空即可。
+    text: 可加页码（命令后或末尾均可）。带三个角色名 / 三字首字缩写时只排该队伍（顺序无关、buff 不限）。
+        例: "矩阵排行2"、"矩阵单队排行 今汐 折枝 守岸人"、"矩阵单队排行 今折守 2"。
 ''',
 )
 async def send_waves_rank_matrix_list_info(bot: Bot, ev: Event):
@@ -308,5 +313,13 @@ async def send_waves_rank_matrix_list_info(bot: Bot, ev: Event):
         return await bot.send("请在群聊中使用")
     from ..wutheringwaves_rank.matrix_rank import draw_matrix_rank_list
 
-    im = await draw_matrix_rank_list(bot, ev)
+    single_team_cmd = _is_matrix_single_team_command(ev)
+    char_ids, page, err = _parse_matrix_rank_args(ev, single_team_cmd)
+    if err:
+        return await bot.send(err)
+
+    single_team = single_team_cmd or bool(char_ids)
+    im = await draw_matrix_rank_list(
+        bot, ev, single_team=single_team, page=page, char_ids=char_ids
+    )
     return await bot.send(im)

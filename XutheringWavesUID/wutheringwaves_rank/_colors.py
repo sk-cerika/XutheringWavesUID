@@ -13,7 +13,6 @@ import math
 
 from PIL import Image, ImageDraw
 
-
 CRYSTAL_SENTINEL = (-1, -1, -1)
 
 CRYSTAL_COLORS = (
@@ -102,6 +101,36 @@ def get_matrix_local_rank_color(score: int) -> tuple:
     if score >= 21000:
         return (206, 147, 216)
     if score >= 12000:
+        return (100, 200, 255)
+    return (138, 138, 138)
+
+
+def get_matrix_single_total_rank_color(score: int) -> tuple:
+    """矩阵单队总排行分档颜色（也供矩阵总榜的单队分数复用）。"""
+    if score >= 90000:
+        return CRYSTAL_SENTINEL
+    if score >= 60000:
+        return (255, 82, 82)
+    if score >= 40000:
+        return (255, 213, 79)
+    if score >= 25000:
+        return (206, 147, 216)
+    if score >= 15000:
+        return (100, 200, 255)
+    return (138, 138, 138)
+
+
+def get_matrix_single_local_rank_color(score: int) -> tuple:
+    """矩阵单队群排行分档颜色（也供矩阵群榜的单队分数复用）。"""
+    if score >= 35000:
+        return CRYSTAL_SENTINEL
+    if score >= 25000:
+        return (255, 82, 82)
+    if score >= 15000:
+        return (255, 213, 79)
+    if score >= 7500:
+        return (206, 147, 216)
+    if score >= 3000:
         return (100, 200, 255)
     return (138, 138, 138)
 

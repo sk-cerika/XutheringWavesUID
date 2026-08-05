@@ -1,4 +1,3 @@
-import re
 import time
 import asyncio
 from typing import Dict, List, Tuple, Optional
@@ -26,6 +25,11 @@ from ..utils.image import (
     pic_download_from_url,
 )
 from .rank_badge import draw_bot_name_badge, draw_rank_badge
+from .pagination import (
+    RANK_PAGE_SIZE,
+    group_rank_empty_page_message,
+    paginate_group_rank,
+)
 from ..utils.api.model import SlashDetail
 from ..utils.api.wwapi import (
     GET_SLASH_RANK_URL,
@@ -38,7 +42,10 @@ from ..utils.database.models import WavesBind, WavesUser
 from ..utils.resource.constant import SPECIAL_CHAR_INT_ALL, NORMAL_LIST_IDS, randomize_special_char_id
 from ..wutheringwaves_config import PREFIX, WutheringWavesConfig
 from ..utils.fonts.waves_fonts import (
+    fit_text,
     waves_font_12,
+    waves_font_14,
+    waves_font_16,
     waves_font_18,
     waves_font_20,
     waves_font_34,
@@ -121,21 +128,14 @@ def is_limited_5star(char_id: int) -> bool:
 
 
 # TODO: PIL 卸到线程池 (loop 内 await get_square_avatar / pic_download_from_url 较多, 需要批量预取重构)
-async def draw_all_slash_rank_card(bot: Bot, ev: Event):
+async def draw_all_slash_rank_card(bot: Bot, ev: Event, page: int = 1):
     waves_id = await WavesBind.get_uid_by_game(ev.user_id, ev.bot_id)
-    match = re.search(r"(\d+)", ev.raw_text)
-    if match:
-        pages = int(match.group(1))
-    else:
-        pages = 1
-    pages = max(pages, 1)  # 最小为1
-    pages = min(pages, 50)  # 最大为50
-    page_num = 20
+    page_num = RANK_PAGE_SIZE
     item = SlashRankItem(
-        page=pages,
+        page=page,
         page_num=page_num,
         waves_id=waves_id or "",
-        version=get_version(dynamic=True, waves_id=waves_id or "", pages=pages),
+        version=get_version(dynamic=True, waves_id=waves_id or "", pages=page),
     )
 
     rankInfoList = await get_rank(item)
@@ -145,8 +145,8 @@ async def draw_all_slash_rank_card(bot: Bot, ev: Event):
     if rankInfoList.message and not rankInfoList.data:
         return rankInfoList.message
 
-    if not rankInfoList.data:
-        return "获取排行失败"
+    if not rankInfoList.data or not rankInfoList.data.rank_list:
+        return "暂无排行数据"
 
     # 设置图像尺寸
     width = 1300
@@ -224,7 +224,13 @@ async def draw_all_slash_rank_card(bot: Bot, ev: Event):
         draw_rank_badge(role_bg, rank_id)
 
         # 名字
-        role_bg_draw.text((210, 75), f"{rank_temp.kuro_name}", "white", waves_font_20, "lm")
+        name_font, name_text = fit_text(
+            role_bg_draw,
+            str(rank_temp.kuro_name),
+            130,
+            (waves_font_20, waves_font_18, waves_font_16, waves_font_14, waves_font_12),
+        )
+        role_bg_draw.text((210, 75), name_text, "white", name_font, "lm")
 
         # uid
         uid_color = "white"
@@ -449,7 +455,7 @@ async def get_five_star_chain_total(uid: str) -> int:
 
 
 # TODO: PIL 卸到线程池 (loop 内 await get_role_chain_count / get_square_avatar / pic_download_from_url 频繁, 需要批量预取重构)
-async def draw_slash_rank_list(bot: Bot, ev: Event):
+async def draw_slash_rank_list(bot: Bot, ev: Event, page: int = 1):
     """绘制无尽排行"""
     start_time = time.time()
     logger.info(f"[鸣潮·冥海排行] 群排行 start: {start_time}")
@@ -499,10 +505,11 @@ async def draw_slash_rank_list(bot: Bot, ev: Event):
     except Exception as _:
         pass
 
-    rank_length = 20  # 显示前20条
-    rankInfoList_display = rankInfoList[:rank_length]
-    if rankId and rankInfo and rankId > rank_length:
-        rankInfoList_display.append(rankInfo)
+    rankInfoList_display, display_rank_ids, page_count, page_item_count = (
+        paginate_group_rank(rankInfoList, page, rankId, rankInfo)
+    )
+    if page_item_count == 0:
+        return group_rank_empty_page_message(page, page_count)
 
     _mask_uid = await build_uid_masker([(ri.uid, ri.user_id) for ri in rankInfoList_display], ev.bot_id)
 
@@ -568,7 +575,7 @@ async def draw_slash_rank_list(bot: Bot, ev: Event):
         role_bg_draw = ImageDraw.Draw(role_bg)
 
         # 排名
-        rank_id = rank_temp_index + 1
+        rank_id = display_rank_ids[rank_temp_index]
         draw_rank_badge(role_bg, rank_id)
 
         char_gold_total = 0

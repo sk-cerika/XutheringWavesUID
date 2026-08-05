@@ -39,6 +39,7 @@ import httpx
 
 from gsuid_core.bot import Bot
 from gsuid_core.models import Event
+from gsuid_core.segment import MessageSegment
 from gsuid_core.utils.image.convert import convert_img
 
 from ..utils.name_convert import alias_to_char_name, char_name_to_char_id, easy_id_to_name
@@ -66,6 +67,13 @@ CUSTOM_PATH_NAME_MAP = {
     "bg": "背景",
     "stamina": "体力",
 }
+
+_ROVER_ID_FULL_NAME = {v: k for k, v in SPECIAL_CHAR_ID.items()}
+
+
+def _listing_char_name(char_id) -> str:
+    cid = str(char_id)
+    return _ROVER_ID_FULL_NAME.get(cid) or easy_id_to_name(cid, cid)
 
 
 def get_char_id_and_name(char: str) -> tuple[Optional[str], str, str]:
@@ -740,6 +748,24 @@ def _trim_card_file(path: Path) -> Optional[Image.Image]:
         return None
 
 
+async def _one_card_img(t: str, path: Path):
+    trimmed = await _trim_card_file(path) if t == "card" else None
+    return await convert_img(trimmed if trimmed is not None else path)
+
+
+async def _send_found_matches(bot: Bot, matches) -> None:
+    """命中非空: 单张直接发; 多张走转发消息 (来源「xx角色的xx图」+ 图)。"""
+    if len(matches) == 1:
+        t, _cid, path = matches[0]
+        return await bot.send(await _one_card_img(t, path))
+    imgs = []
+    for t, other_char_id, path in matches:
+        type_name = CUSTOM_PATH_NAME_MAP.get(t, t)
+        imgs.append(f"{_listing_char_name(other_char_id)}的{type_name}图")
+        imgs.append(await _one_card_img(t, path))
+    await bot.send(MessageSegment.node(imgs))
+
+
 async def send_custom_card_single(
     bot: Bot,
     ev: Event,
@@ -754,66 +780,28 @@ async def send_custom_card_single(
 
     type_label = CUSTOM_PATH_NAME_MAP.get(target_type, target_type)
     target = card_hash_index.lookup_in(target_type, char_id, hash_id)
-    if target is None:
-        if not card_hash_index.list_dir(target_type, char_id):
-            msg = f"[鸣潮] 角色【{char}】暂未上传过{type_label}图！"
-            return await bot.send((" " if at_sender else "") + msg, at_sender)
-        matches = card_hash_index.find(hash_id)
-        if matches:
-            info = []
-            for t, other_char_id, _ in matches:
-                char_name = easy_id_to_name(other_char_id, other_char_id)
-                type_name = CUSTOM_PATH_NAME_MAP.get(t, t)
-                info.append(f"{char_name}的{type_name}图")
-            msg = (
-                f"[鸣潮] 角色【{char}】未找到id为【{hash_id}】的{type_label}图，"
-                f"但在以下位置找到：{'；'.join(info)}"
-            )
-            return await bot.send((" " if at_sender else "") + msg, at_sender)
-        msg = f"[鸣潮] 角色【{char}】未找到id为【{hash_id}】的{type_label}图！"
-        return await bot.send((" " if at_sender else "") + msg, at_sender)
+    if target is not None:
+        return await bot.send(await _one_card_img(target_type, target))
 
-    trimmed = await _trim_card_file(target) if target_type == "card" else None
-    img = await convert_img(trimmed if trimmed is not None else target)
-    await bot.send(img)
+    matches = card_hash_index.find(hash_id)
+    if matches:
+        return await _send_found_matches(bot, matches)
+
+    if not card_hash_index.list_dir(target_type, char_id):
+        msg = f"[鸣潮] 角色【{char}】暂未上传过{type_label}图！"
+    else:
+        msg = f"[鸣潮] 角色【{char}】未找到id为【{hash_id}】的{type_label}图！"
+    return await bot.send((" " if at_sender else "") + msg, at_sender)
 
 
 async def send_custom_card_single_by_id(
     bot: Bot,
     ev: Event,
     hash_id: str,
-    target_type: Optional[str] = None,
 ) -> None:
     at_sender = True if ev.group_id else False
     matches = card_hash_index.find(hash_id)
-    filtered = matches
-    if target_type:
-        filtered = [m for m in matches if m[0] == target_type]
-
-    if not filtered:
-        if target_type and matches:
-            lines = [
-                f"[鸣潮] 未找到id为【{hash_id}】的{CUSTOM_PATH_NAME_MAP.get(target_type, target_type)}图，已在以下位置找到："
-            ]
-            for t, other_char_id, _ in matches:
-                char_name = easy_id_to_name(other_char_id, other_char_id)
-                type_name = CUSTOM_PATH_NAME_MAP.get(t, t)
-                lines.append(f"{char_name}的{type_name}图")
-            msg = "\n".join(lines)
-            return await bot.send((" " if at_sender else "") + msg, at_sender)
+    if not matches:
         msg = f"[鸣潮] 未找到id为【{hash_id}】的图片！"
         return await bot.send((" " if at_sender else "") + msg, at_sender)
-
-    if len(filtered) > 1:
-        lines = ["[鸣潮] 找到多个匹配，请指定角色："]
-        for t, other_char_id, _ in filtered:
-            char_name = easy_id_to_name(other_char_id, other_char_id)
-            type_name = CUSTOM_PATH_NAME_MAP.get(t, t)
-            lines.append(f"{char_name}的{type_name}图")
-        msg = "\n".join(lines)
-        return await bot.send((" " if at_sender else "") + msg, at_sender)
-
-    t, other_char_id, path = filtered[0]
-    trimmed = await _trim_card_file(path) if t == "card" else None
-    img = await convert_img(trimmed if trimmed is not None else path)
-    await bot.send(img)
+    await _send_found_matches(bot, matches)
