@@ -15,13 +15,12 @@ from gsuid_core.utils.database.base_models import (
     BaseModel,
     with_session,
 )
-from gsuid_core.utils.database.models import Subscribe
 
 from .waves_subscribe import WavesSubscribe
 from .waves_user_activity import WavesUserActivity
-from .waves_group_activity import WavesGroupActivity
 from .waves_user_sdk import WavesUserSdk
 from .waves_gacha_cloud import WavesGachaCloud
+from .waves_custom_weight import WavesCustomWeight, WavesGroupWeight, ensure_tables as _ensure_custom_weight_tables
 
 from gsuid_core.server import on_core_start
 from .auto_migrate import auto_add_missing_columns
@@ -259,9 +258,22 @@ class WavesUser(User, table=True):
     @classmethod
     @with_session
     async def select_data_by_cookie(
-        cls: Type[T_WavesUser], session: AsyncSession, cookie: str
+        cls: Type[T_WavesUser], session: AsyncSession, cookie: str, game_id: Optional[int] = None
     ) -> Optional[T_WavesUser]:
-        sql = select(cls).where(cls.cookie == cookie)
+        filters = [cls.cookie == cookie]
+        if game_id is not None:
+            filters.append(cls.game_id == game_id)
+        sql = select(cls).where(*filters)
+        result = await session.execute(sql)
+        data = result.scalars().all()
+        return data[0] if data else None
+
+    @classmethod
+    @with_session
+    async def select_data_by_bat(
+        cls: Type[T_WavesUser], session: AsyncSession, bat: str
+    ) -> Optional[T_WavesUser]:
+        sql = select(cls).where(cls.bat == bat)
         result = await session.execute(sql)
         data = result.scalars().all()
         return data[0] if data else None
@@ -504,6 +516,26 @@ class WavesUser(User, table=True):
         )
         result = await session.execute(sql)
         return result.rowcount
+
+    @classmethod
+    @with_session
+    async def update_avatar_many(
+        cls: Type[T_WavesUser],
+        session: AsyncSession,
+        rows: List[tuple[str, str, str]],
+    ) -> None:
+        for user_id, bot_id, avatar_url in rows:
+            await session.execute(
+                update(cls)
+                .where(
+                    and_(
+                        col(cls.user_id) == user_id,
+                        col(cls.bot_id) == bot_id,
+                        or_(col(cls.avatar_url).is_(None), col(cls.avatar_url) != avatar_url),
+                    )
+                )
+                .values(avatar_url=avatar_url)
+            )
 
     @classmethod
     @with_session
@@ -810,4 +842,8 @@ class WavesGachaCloudAdmin(GsAdminModel):
 
 @on_core_start
 async def _waves_auto_migrate():
+    try:
+        await _ensure_custom_weight_tables()
+    except Exception as e:
+        logger.warning(f"[鸣潮·补列] 自定义权重表创建失败: {e}")
     await auto_add_missing_columns(__name__, log_prefix="[鸣潮·补列]")

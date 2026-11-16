@@ -15,9 +15,11 @@ CANVAS_W = 750
 BOX_W = 690
 BOX_MARGIN_X = (CANVAS_W - BOX_W) // 2
 
-CYCLE_H = 258
-CYCLE_PAD_TOP = 20
-CYCLE_PAD_BOTTOM = 20
+CYCLE_PAD_TOP = 24
+CYCLE_PAD_BOTTOM = 50
+CYCLE_TITLE_H = 30
+CYCLE_TIME_H = 22
+CYCLE_TIME_GAP = 34
 CYCLE_MARGIN_TOP = 20
 CYCLE_MARGIN_BOTTOM = 30
 BOX_BOTTOM_CROP_TOP = 36
@@ -33,6 +35,11 @@ BOX_BOTTOM_OVERLAP = 30
 
 LOOP_CELL_SIZE = 78
 LOOP_MARK_H = 30
+LOOP_CELL_H = LOOP_CELL_SIZE + 8 + LOOP_MARK_H + 6 + 20
+
+CYCLE_H = (
+    CYCLE_PAD_TOP + CYCLE_TITLE_H + CYCLE_TIME_H + CYCLE_TIME_GAP + LOOP_CELL_H + CYCLE_PAD_BOTTOM
+)
 
 
 def _hex(s: Optional[str], default: str = "#FFFFFF") -> Tuple[int, int, int]:
@@ -52,6 +59,15 @@ def _format_loop_range(start: str, end: str) -> str:
     if not start or not end:
         return ""
     return f"{_strip_year(start)} ~ {_strip_year(end)}"
+
+
+def _has_loop(sign_data: SignInInitData) -> bool:
+    if not sign_data.signLoopGoodsList:
+        return False
+    if sign_data.loopSignNum > 0:
+        return True
+    now = sign_data.nowServerTimes
+    return bool(now) and sign_data.loopStartTimes <= now <= sign_data.loopEndTimes
 
 
 async def _load(url: str) -> Optional[Image.Image]:
@@ -154,7 +170,7 @@ def _render_loop_cell(
     col_w: int,
     day_color: Tuple[int, int, int],
 ) -> Image.Image:
-    cell_h = LOOP_CELL_SIZE + 8 + LOOP_MARK_H + 6 + 20
+    cell_h = LOOP_CELL_H
     cell = Image.new("RGBA", (col_w, cell_h), (0, 0, 0, 0))
 
     card_x = (col_w - LOOP_CELL_SIZE) // 2
@@ -179,7 +195,15 @@ def _render_loop_cell(
     )
 
     if item["is_gained"] and had_sign_in_bg is not None:
-        overlay = _fit(had_sign_in_bg, (LOOP_CELL_SIZE, LOOP_CELL_SIZE))
+        w, h = had_sign_in_bg.size
+        icon_h = h * CELL_H_MONTH // (CELL_H_MONTH + CELL_DAY_H_MONTH)
+        side = min(w, icon_h)
+        top = (icon_h - side) // 2
+        left = (w - side) // 2
+        overlay = _fit(
+            had_sign_in_bg.crop((left, top, left + side, top + side)),
+            (LOOP_CELL_SIZE, LOOP_CELL_SIZE),
+        )
         _paste(cell, overlay, (card_x, 0))
 
     mark = process_light if item["is_gained"] else process_grey
@@ -208,7 +232,7 @@ async def render_sign_calendar_pil(
     uid_display: str,
     month: int,
 ) -> bytes:
-    has_loop = bool(sign_data.signLoopGoodsList and sign_data.loopSignNum > 0)
+    has_loop = _has_loop(sign_data)
 
     cover = await _load(img_info.get("main_coverBg", ""))
     box_top = await _load(img_info.get("common_boxTopBg", ""))
@@ -332,18 +356,18 @@ def _render_sign_calendar_sync(
             _paste(canvas, scaled_bg, (cx, y))
 
         y_cur = y + CYCLE_PAD_TOP
-        title_h = 30
+        title_h = CYCLE_TITLE_H
         f_title = waves_font_origin(26)
         _draw_center(
             canvas, CANVAS_W // 2, y_cur + title_h // 2, sign_data.loopSignName, f_title, cycle_title_c
         )
         y_cur += title_h
 
-        time_h = 22
+        time_h = CYCLE_TIME_H
         f_time = waves_font_origin(18)
         time_str = _format_loop_range(sign_data.loopStartTimes, sign_data.loopEndTimes)
         _draw_center(canvas, CANVAS_W // 2, y_cur + time_h // 2, time_str, f_time, cycle_time_c)
-        y_cur += time_h + 24
+        y_cur += time_h + CYCLE_TIME_GAP
 
         strip_y = y_cur
         col_w = (BOX_W - 60) // 7

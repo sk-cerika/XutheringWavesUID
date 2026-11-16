@@ -25,6 +25,7 @@ from gsuid_core.models import Event
 from gsuid_core.utils.image.utils import sget
 from gsuid_core.utils.image.image_tools import crop_center_img
 
+from .image_meta import open_meta_image, read_pile_only
 from .resource.RESOURCE_PATH import (
     AVATAR_PATH,
     CACHE_PATH,
@@ -303,12 +304,21 @@ def get_bot_bg(background: str) -> Optional[Image.Image]:
     return img
 
 
-def _random_image_from_dir(directory: str) -> Optional[str]:
-    """Return a random image filename from a directory, skipping hidden/non-image files."""
+def _pile_usable(path: str, use: Optional[str]) -> bool:
+    if use is None:
+        return True
+    only = read_pile_only(Path(path))
+    return only is None or only == use
+
+
+def _random_image_from_dir(directory: str, use: Optional[str] = None) -> Optional[str]:
+    """Return a random image filename from a directory, skipping hidden/non-image files.
+    use: stamina/rank 时跳过 meta only 标成另一用途的体力立绘。"""
     valid_files = [
         f
         for f in os.listdir(directory)
         if not f.startswith(".") and f.lower().endswith((".png", ".jpg", ".jpeg", ".webp"))
+        and _pile_usable(f"{directory}/{f}", use)
     ]
     return random.choice(valid_files) if valid_files else None
 
@@ -375,6 +385,7 @@ def _mr_pool(
     force_not_use_custom: bool,
     include_official: bool,
     official_fallback: bool = True,
+    use: Optional[str] = None,
 ) -> list:
     """构建一侧(立绘或背景)的候选池, 每张图一个条目(逐张等权)。
 
@@ -385,13 +396,10 @@ def _mr_pool(
     """
     pool: list = []
     if not force_not_use_custom:
-        if char_id:
-            d = f"{custom_base}/{char_id}"
-            pool += [f"{d}/{f}" for f in _list_official_image_files(d)]
-        else:
-            for cid in _list_custom_char_dirs(custom_base):
-                d = f"{custom_base}/{cid}"
-                pool += [f"{d}/{f}" for f in _list_official_image_files(d)]
+        dirs = [char_id] if char_id else _list_custom_char_dirs(custom_base)
+        for cid in dirs:
+            d = f"{custom_base}/{cid}"
+            pool += [f"{d}/{f}" for f in _list_official_image_files(d) if _pile_usable(f"{d}/{f}", use)]
     if include_official or force_not_use_custom or (official_fallback and not pool):
         if char_id:
             p = f"{official_base}/{official_name}"
@@ -413,6 +421,7 @@ def _mr_pool_pile(char_id, force_not_use_custom, include_official, official_fall
     return _mr_pool(
         str(CUSTOM_MR_CARD_PATH), str(ROLE_PILE_PATH), char_id,
         f"role_pile_{char_id}.png", force_not_use_custom, include_official, official_fallback,
+        use="stamina",
     )
 
 
@@ -446,14 +455,14 @@ async def get_random_waves_role_pile(
 ) -> tuple[Image.Image, Optional[Path]]:
     forced = _force_pile_path.get()
     if forced is not None and forced.exists():
-        return Image.open(forced).convert("RGBA"), forced
+        return open_meta_image(forced), forced
     pool = _mr_pool_pile(char_id, force_not_use_custom, _include_official_pile())
     if not pool and char_id:
         # 该角色 custom/官方立绘全缺: 从全库可用立绘里抽
         pool = _mr_pool_pile(None, force_not_use_custom, True)
     if pool:
         full = Path(random.choice(pool))
-        return Image.open(full).convert("RGBA"), full
+        return open_meta_image(full), full
     full = ROLE_PILE_PATH / "role_pile_1503.png"
     return Image.open(full).convert("RGBA"), full
 
@@ -464,11 +473,11 @@ async def get_random_waves_bg(
 ) -> tuple[Image.Image, bool, Optional[Path]]:
     forced = _force_bg_path.get()
     if forced is not None and forced.exists():
-        return Image.open(forced).convert("RGBA"), True, forced
+        return open_meta_image(forced), True, forced
     pool = _mr_pool_bg(char_id, force_not_use_custom, _include_official_bg())
     if pool:
         full = Path(random.choice(pool))
-        return Image.open(full).convert("RGBA"), True, full
+        return open_meta_image(full), True, full
     pile, pile_path = await get_random_waves_role_pile(char_id, force_not_use_custom)
     return pile, False, pile_path
 
@@ -479,7 +488,7 @@ async def get_role_pile(resource_id: Union[int, str], custom: bool = False) -> t
         if os.path.isdir(custom_dir) and len(os.listdir(custom_dir)) > 0:
             path = _random_image_from_dir(custom_dir)
             if path:
-                return True, Image.open(f"{custom_dir}/{path}").convert("RGBA")
+                return True, open_meta_image(Path(custom_dir) / path)
 
     name = f"role_pile_{resource_id}.png"
     path = ROLE_PILE_PATH / name
@@ -493,14 +502,14 @@ async def get_role_pile_with_path(
 ) -> tuple[bool, Image.Image, Optional[Path]]:
     forced = _force_pile_path.get()
     if forced is not None and forced.exists():
-        return True, Image.open(forced).convert("RGBA"), forced
+        return True, open_meta_image(forced), forced
     if custom:
         custom_dir = f"{CUSTOM_CARD_PATH}/{resource_id}"
         if os.path.isdir(custom_dir) and len(os.listdir(custom_dir)) > 0:
             name = _random_image_from_dir(custom_dir)
             if name:
                 path = Path(custom_dir) / name
-                return True, Image.open(path).convert("RGBA"), path
+                return True, open_meta_image(path), path
 
     name = f"role_pile_{resource_id}.png"
     path = ROLE_PILE_PATH / name
@@ -514,14 +523,14 @@ async def get_role_pile_default(
 ) -> tuple[Image.Image, Optional[Path]]:
     forced = _force_pile_path.get()
     if forced is not None and forced.exists():
-        return Image.open(forced).convert("RGBA"), forced
+        return open_meta_image(forced), forced
     if custom:
         custom_dir = f"{CUSTOM_MR_CARD_PATH}/{resource_id}"
         if os.path.isdir(custom_dir) and len(os.listdir(custom_dir)) > 0:
-            name = _random_image_from_dir(custom_dir)
+            name = _random_image_from_dir(custom_dir, use="rank")
             if name:
                 full = Path(custom_dir) / name
-                return Image.open(full).convert("RGBA"), full
+                return open_meta_image(full), full
 
     name = f"role_pile_{resource_id}.png"
     path = ROLE_PILE_PATH / name
@@ -539,6 +548,14 @@ def get_square_avatar_path(resource_id: Union[int, str]) -> Path:
 
 async def get_square_avatar(resource_id: Union[int, str]) -> Image.Image:
     return Image.open(get_square_avatar_path(resource_id)).convert("RGBA")
+
+
+def paste_masked_avatar(canvas: Image.Image, pic: Image.Image, mask_pic: Image.Image, size: int, pos: Tuple[int, int]):
+    """遮罩缩放到 size 贴在 pos, 头像按遮罩圆的实际包围盒自适应缩放后贴入 (完整显示方形头像)。"""
+    mask = mask_pic.resize((size, size))
+    box = mask.getchannel("A").getbbox() or (0, 0, size, size)
+    w, h = box[2] - box[0], box[3] - box[1]
+    canvas.paste(crop_center_img(pic, w, h), (pos[0] + box[0], pos[1] + box[1]), mask.crop(box))
 
 
 async def cropped_square_avatar(item_icon: Image.Image, size: int) -> Image.Image:
@@ -1007,6 +1024,7 @@ async def pic_download_from_url(
         img = Image.open(_path).convert("RGBA")
     except Exception as e:
         logger.warning(f"[鸣潮·图像] 打开图片失败: {_path}, {e}")
+        _path.unlink(missing_ok=True)
         raise
 
     if _path != webp_path:

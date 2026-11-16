@@ -3,25 +3,39 @@ from gsuid_core.bot import Bot
 from gsuid_core.models import Event
 
 from .pool import get_pool_data_by_type
+from ..utils.util import use_longest_keyword
 
 sv_pool_countdown = SV("鸣潮卡池倒计时")
 
 
+_GET_POOL_COUNTDOWN_KEYWORDS = (
+    "卡池倒计时",
+    "复刻",
+    "未复刻",
+    "复刻统计",
+    "复刻倒计时",
+    "复刻时间",
+    "角色复刻",
+    "武器复刻",
+    "復刻",
+    "未復刻",
+    "未复刻统计",
+    "未复刻角色",
+    "未复刻角色统计",
+    "未复刻武器",
+    "未复刻武器统计",
+    "卡池倒計時",
+    "未復刻統計",
+    "未復刻角色",
+    "未復刻角色統計",
+    "未復刻武器",
+    "未復刻武器統計",
+)
+
+
 @sv_pool_countdown.on_command(
-    (
-        "卡池倒计时",
-        "未复刻统计",
-        "未复刻角色",
-        "未复刻角色统计",
-        "未复刻武器",
-        "未复刻武器统计",
-        "卡池倒計時",
-        "未復刻統計",
-        "未復刻角色",
-        "未復刻角色統計",
-        "未復刻武器",
-        "未復刻武器統計",
-    ),
+    _GET_POOL_COUNTDOWN_KEYWORDS,
+    block=True,
     to_ai="""查询鸣潮未复刻角色或武器倒计时一览图。
 
 当用户问「哪些角色还没复刻 / 武器复刻倒计时 / 未复刻5星 / 卡池倒计时」时调用。
@@ -32,6 +46,7 @@ Args:
 """,
 )
 async def get_pool_countdown(bot: Bot, ev: Event):
+    use_longest_keyword(ev, _GET_POOL_COUNTDOWN_KEYWORDS)
     star = 5
     if ev.text.strip():
         text = ev.text.strip()

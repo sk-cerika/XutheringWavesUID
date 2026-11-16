@@ -43,6 +43,7 @@ CONFIG_DEFAULT: Dict[str, GSC] = {
             "吃我无痕",
             "巡游天国FM",
             "猫眼石攻略组",
+            "拉格朗日变分主义",
             "社区攻略",
         ],
     ),
@@ -105,6 +106,11 @@ CONFIG_DEFAULT: Dict[str, GSC] = {
         "自动资源更新时间设置 重载生效",
         "每天自动下载全部资源时间设置（时，分），将在该时间点后一小时内随机时间下载资源，注意可能伴随重载，请避开自动签到",
         ["22", "0"],
+    ),
+    "ResourceUseCNB": GsBoolConfig(
+        "资源下载启用CNB源",
+        "开启后 CNB 镜像仓参与资源源测速选择，走 git 拉取，需要本机装有 git 命令，仓库另占约 900M",
+        False,
     ),
     "AnnMinuteCheck": GsIntConfig(
         "公告推送时间检测（单位min）", "公告推送时间检测（单位min）", 10, 60
@@ -323,5 +329,15 @@ CONFIG_DEFAULT: Dict[str, GSC] = {
         "开启后，发送【ww<角色名>面板】查询单角色面板时自动先刷新该角色再渲染。"
         "仅对查自己面板生效，伤害/PK/换装/极限/查别人 等场景跳过；尊重 RefreshSingleCharInterval 冷却",
         False,
+    ),
+    "CustomWeightEnable": GsBoolConfig(
+        "启用自定义权重",
+        "允许用户通过 cw_/ws_ ID 使用 www.loping151.site 上的玩家权重（总排行上传始终使用内置权重）",
+        True,
+    ),
+    "CustomWeightApi": GsStrConfig(
+        "自定义权重站地址",
+        "自定义权重的下载与订阅同步地址，一般保留默认",
+        "https://www.loping151.site",
     ),
 }

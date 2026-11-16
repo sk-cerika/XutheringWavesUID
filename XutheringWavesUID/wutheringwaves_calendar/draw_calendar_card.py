@@ -2,7 +2,6 @@ import random
 import asyncio
 from pathlib import Path
 from datetime import datetime, timedelta
-import re
 
 from PIL import Image, ImageDraw
 from PIL.ImageFile import ImageFile
@@ -20,55 +19,25 @@ from ..utils.image import (
     pic_download_from_url,
 )
 from .calendar_model import ImageItem, SpecialImages, VersionActivity
+from .version_calendar import draw_now_pointer, get_current_calendar
 from ..utils.waves_api import waves_api
-from ..utils.ascension.char import get_char_id
-from ..utils.ascension.weapon import get_weapon_id
+from ..wutheringwaves_up.pool import get_pool_data
+from ..wutheringwaves_up.model import WavesPool
+from ..utils.ascension.char import get_char_id, get_char_model
+from ..utils.ascension.weapon import get_weapon_id, get_weapon_model
 from ..utils.fonts.waves_fonts import ww_font_20, ww_font_24, ww_font_30
-from ..utils.resource.RESOURCE_PATH import CALENDAR_PATH
+from ..utils.resource.RESOURCE_PATH import CALENDAR_CACHE_PATH
 
 TEXT_PATH = Path(__file__).parent / "texture2d"
 time_icon = Image.open(TEXT_PATH / "time_icon.png")
 
-_CALENDAR_DATE_PATTERNS = (
-    re.compile(r"^(\d{4})(\d{2})(\d{2})\."),  # YYYYMMDD
-    re.compile(r"^(\d{2})-(\d{2})-(\d{2})\."),  # YY-MM-DD
-)
-
-
-def _parse_calendar_date(name: str) -> datetime | None:
-    for pattern in _CALENDAR_DATE_PATTERNS:
-        match = pattern.search(name)
-        if not match:
-            continue
-        y, m, d = map(int, match.groups())
-        if pattern is _CALENDAR_DATE_PATTERNS[1]:
-            y += 2000
-        try:
-            return datetime(y, m, d)
-        except ValueError:
-            return None
-    return None
-
-
-def get_latest_calendar_image(now: datetime) -> Path | None:
-    if not CALENDAR_PATH.exists():
-        return None
-
-    best_date = None
-    best_path = None
-    for file_path in CALENDAR_PATH.iterdir():
-        if not file_path.is_file():
-            continue
-        if file_path.suffix.lower() not in {".png", ".jpg", ".jpeg"}:
-            continue
-        date = _parse_calendar_date(file_path.name)
-        if not date or date >= now:
-            continue
-        if best_date is None or date > best_date:
-            best_date = date
-            best_path = file_path
-    return best_path
-
+# 忆旅唤取会与活动唤取同期开启且四星不同, 不并入卡池栏
+POOL_GACHA_TYPE = {
+    "角色活动唤取": "角色",
+    "角色联动唤取": "角色",
+    "武器活动唤取": "武器",
+    "武器联动唤取": "武器",
+}
 
 def tower_node(now: datetime):
     start_time = datetime(2025, 2, 3, 4, 0)
@@ -118,6 +87,78 @@ def shenhai_node(now: datetime):
     }
 
 
+def _resolve_gacha_id(name: str, resource_id: str, gacha_type: str):
+    if gacha_type == "角色":
+        if get_char_model(resource_id):
+            return resource_id
+        return get_char_id(name, loose=True)
+    if get_weapon_model(resource_id):
+        return resource_id
+    return get_weapon_id(name, loose=True)
+
+
+async def _build_gacha_node(name: str, resource_id: str, gacha_type: str):
+    name = name.replace("-前瞻", "")
+    if not name:
+        return None
+    id = _resolve_gacha_id(name, resource_id, gacha_type)
+    if id is None:
+        return None
+    if gacha_type == "角色":
+        pic = await get_square_avatar(id)
+    else:
+        pic = await get_square_weapon(id)
+    return {"name": name, "id": id, "pic": pic.resize((180, 180))}
+
+
+async def get_gacha_from_pool(now: datetime):
+    """从卡池接口取当前 UP, 返回 (角色, 武器); 取不到的一栏留空由 wiki 兜底"""
+    pools = await get_pool_data()
+    if not pools:
+        return [], []
+
+    current = {"角色": [], "武器": []}
+    for raw in pools:
+        try:
+            pool = WavesPool.model_validate(raw)
+        except Exception:
+            continue
+        gacha_type = POOL_GACHA_TYPE.get(pool.pool_type)
+        if not gacha_type:
+            continue
+        try:
+            start_time = datetime.strptime(pool.start_time, "%Y-%m-%d %H:%M:%S")
+            end_time = datetime.strptime(pool.end_time, "%Y-%m-%d %H:%M:%S")
+        except ValueError:
+            continue
+        if not start_time <= now <= end_time:
+            continue
+        date_range = [start_time.strftime("%Y-%m-%d %H:%M"), end_time.strftime("%Y-%m-%d %H:%M")]
+        current[gacha_type].append((pool, date_range))
+
+    result = {}
+    for gacha_type, items in current.items():
+        res_list = []
+        for i, (pool, date_range) in enumerate(items):
+            up_list = list(zip(pool.five_star_names, pool.five_star_ids))
+            # 四星只挂最后一栏, 对齐 draw_gacha 只取非末栏首个节点的排布
+            if i == len(items) - 1:
+                up_list += list(zip(pool.four_star_names, pool.four_star_ids))
+            tasks = [_build_gacha_node(name, resource_id, gacha_type) for name, resource_id in up_list]
+            nodes = await asyncio.gather(*tasks, return_exceptions=True)
+            res_list.append(
+                {
+                    "title": pool.pool_type,
+                    "dateRange": date_range,
+                    "description": pool.name,
+                    "nodes": [node for node in nodes if isinstance(node, dict)],
+                }
+            )
+        result[gacha_type] = res_list
+
+    return result["角色"], result["武器"]
+
+
 async def draw_calendar_img(ev: Event, uid: str):
     wiki_home = await waves_api.get_wiki_home()
     if not isinstance(wiki_home, dict) or wiki_home.get("code") != 200:
@@ -126,16 +167,19 @@ async def draw_calendar_img(ev: Event, uid: str):
     # 当前时间
     now = datetime.now()
 
-    gacha_char_list = []
-    gacha_weapon_list = []
+    pool_char_list, pool_weapon_list = await get_gacha_from_pool(now)
+    gacha_char_list = list(pool_char_list)
+    gacha_weapon_list = list(pool_weapon_list)
     content = None
     side_modules = wiki_home.get("data", {}).get("contentJson", {}).get("sideModules", [])
     for side_module in side_modules:
         if side_module["title"] in ("角色活动唤取", "角色联动唤取"):
-            gacha_char_list += await draw_calendar_gacha(side_module, "角色")
+            if not pool_char_list:
+                gacha_char_list += await draw_calendar_gacha(side_module, "角色")
 
         elif side_module["title"] in ("武器活动唤取", "武器联动唤取"):
-            gacha_weapon_list += await draw_calendar_gacha(side_module, "武器")
+            if not pool_weapon_list:
+                gacha_weapon_list += await draw_calendar_gacha(side_module, "武器")
 
         elif side_module["title"] == "版本活动":
             side_module["content"].insert(0, tower_node(now))
@@ -170,7 +214,7 @@ async def draw_calendar_img(ev: Event, uid: str):
     activity_icons = []
     for cont in content.content if content else []:
         if "http" in cont.contentUrl:
-            activity_icons.append(await pic_download_from_url(CALENDAR_PATH, cont.contentUrl))
+            activity_icons.append(await pic_download_from_url(CALENDAR_CACHE_PATH, cont.contentUrl))
         else:
             activity_icons.append(None)
 
@@ -359,14 +403,14 @@ def _compose_calendar_img(
 
     img = add_footer(img)
 
-    kuro_calendar_path = get_latest_calendar_image(now)
-    if kuro_calendar_path is None:
-        kuro_calendar_path = CALENDAR_PATH / "calendar.png"
-    if kuro_calendar_path.exists():
+    kuro_calendar = get_current_calendar(now)
+    if kuro_calendar is not None:
+        kuro_calendar_path, calendar_entry = kuro_calendar
         try:
             custom_calendar = Image.open(kuro_calendar_path).convert("RGBA")
             calendar_width = int(custom_calendar.width * img.height / custom_calendar.height)
             custom_calendar = custom_calendar.resize((calendar_width, img.height), Image.Resampling.LANCZOS)
+            custom_calendar = draw_now_pointer(custom_calendar, calendar_entry, now)
 
             new_img = Image.new("RGBA", (img.width + custom_calendar.width, img.height), (255, 255, 255, 0))
             new_img.paste(img, (0, 0))
@@ -446,7 +490,7 @@ async def _load_banner_bg(wiki_home):
             banner_bg = banner["url"]
             break
 
-    return await pic_download_from_url(CALENDAR_PATH, banner_bg)
+    return await pic_download_from_url(CALENDAR_CACHE_PATH, banner_bg)
 
 
 def _draw_banner_sync(banner_bg, img):

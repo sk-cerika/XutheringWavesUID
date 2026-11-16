@@ -11,6 +11,7 @@ from gsuid_core.utils.image.image_tools import crop_center_img
 from ..utils.hint import error_reply
 from ..utils.util import hide_uid, get_hide_uid_pref
 from ..utils.image import (
+    paste_masked_avatar,
     GREY,
     CHAIN_COLOR,
     SPECIAL_GOLD,
@@ -33,6 +34,7 @@ from ..wutheringwaves_config import PREFIX, WutheringWavesConfig
 from ..wutheringwaves_charinfo import base_info_cache
 from ..utils.ascension.weapon import get_breach
 from ..utils.fonts.waves_fonts import (
+    waves_font_14,
     waves_font_16,
     waves_font_18,
     waves_font_20,
@@ -94,6 +96,7 @@ async def draw_char_list_img(
     is_peek: bool = False,
     user_waves_id: str = "",
     star_filter: Optional[str] = None,
+    col: Optional[int] = None,
 ) -> Union[str, bytes]:
     is_self_ck, ck = await waves_api.get_ck_result(user_waves_id, user_id, ev.bot_id)
     if not ck:
@@ -137,7 +140,7 @@ async def draw_char_list_img(
     if not display_rank:
         return "[鸣潮] 暂无对应星级的角色"
 
-    two_col = total_count > 60
+    two_col = col == 2 if col else total_count > 50
 
     # 头像 头像环
     avatar = await draw_pic_with_ring(ev, is_peek)
@@ -219,10 +222,34 @@ async def draw_char_list_img(
     return await convert_img(card_img)
 
 
+_LINE_Y = 12
+_SCORE_X = 348
+
+
+def _mark_weight_id(bar_star: Image.Image, wid: str) -> None:
+    """分数上方的金线按文字宽度羽化出空隙, 顺着金线写权重 ID。"""
+    color = bar_star.getpixel((_SCORE_X, _LINE_Y))[:3]
+    text_w = int(waves_font_14.getlength(wid))
+    feather = 16
+    half = text_w // 2 + 6 + feather
+    x0, x1 = _SCORE_X - half, _SCORE_X + half
+    px = bar_star.load()
+    for x in range(max(0, x0), min(bar_star.width, x1)):
+        d = min(x - x0, x1 - 1 - x)
+        f = 0.0 if d >= feather else 1 - d / feather
+        f = f * f * (3 - 2 * f)
+        for y in range(_LINE_Y - 4, _LINE_Y + 5):
+            r, g, b, a = px[x, y]
+            px[x, y] = (r, g, b, int(a * f))
+    ImageDraw.Draw(bar_star).text((_SCORE_X, _LINE_Y), wid, color, waves_font_14, "mm")
+
+
 def _render_bar(asset) -> Image.Image:
     _rank: WavesCharRank = asset["rank"]
     role_detail: RoleDetailData = asset["role_detail"]
-    bar_star = Image.open(TEXT_PATH / f"bar_{_rank.starLevel}star.png")
+    bar_star = Image.open(TEXT_PATH / f"bar_{_rank.starLevel}star.png").convert("RGBA")
+    if _rank.weight_id:
+        _mark_weight_id(bar_star, _rank.weight_id)
     bar_star_draw = ImageDraw.Draw(bar_star)
     role_avatar = asset["role_avatar"]
 
@@ -405,7 +432,7 @@ def _compose_char_list(
 
     if two_col:
         hint_draw = ImageDraw.Draw(card_img)
-        hint = f"可指定  {PREFIX}练度统计 五星/四星/全部"
+        hint = f"可指定  {PREFIX}练度统计 五星/四星/全部  1/2 单列/双列"
         hint_draw.text((width // 2, header_h + rows * bar_star_h + 35), hint, SPECIAL_GOLD, waves_font_24, "mm")
 
     card_img = add_footer(card_img)
@@ -420,9 +447,7 @@ async def draw_pic_with_ring(ev: Event, is_peek: bool = False):
 
     mask_pic = Image.open(TEXT_PATH / "avatar_mask.png")
     img = Image.new("RGBA", (180, 180))
-    mask = mask_pic.resize((160, 160))
-    resize_pic = crop_center_img(pic, 160, 160)
-    img.paste(resize_pic, (20, 20), mask)
+    paste_masked_avatar(img, pic, mask_pic, 160, (20, 20))
 
     return img
 

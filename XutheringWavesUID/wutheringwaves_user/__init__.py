@@ -10,7 +10,7 @@ from gsuid_core.logger import logger
 from gsuid_core.models import Event
 
 from .deal import add_cookie, get_cookie, refresh_bind, delete_cookie
-from ..utils.util import build_uid_masker, get_hide_uid_pref, hide_uid
+from ..utils.util import build_uid_masker, get_hide_uid_pref, hide_uid, use_longest_keyword
 from ..utils.button import WavesButton
 from ..utils.constants import WAVES_GAME_ID
 from ..utils.database.models import WavesBind, WavesUser, WavesStaminaRecord
@@ -260,18 +260,22 @@ async def auto_delete_all_invalid_cookie():
         logger.exception(f"[鸣潮·用户] cron auto_delete_all_invalid_cookie 异常: {e}")
 
 
+_SEND_WAVES_BIND_UID_MSG_KEYWORDS = (
+    "绑定",
+    "切换",
+    "删除全部特征码",
+    "删除全部UID",
+    "删除",
+    "查看",
+)
+
+
 @waves_bind_uid.on_command(
-    (
-        "绑定",
-        "切换",
-        "删除全部特征码",
-        "删除全部UID",
-        "删除",
-        "查看",
-    ),
+    _SEND_WAVES_BIND_UID_MSG_KEYWORDS,
     block=True,
 )
 async def send_waves_bind_uid_msg(bot: Bot, ev: Event):
+    use_longest_keyword(ev, _SEND_WAVES_BIND_UID_MSG_KEYWORDS)
     uid = ''.join(filter(str.isdigit, ev.text.strip()))
     qid = ev.user_id
 

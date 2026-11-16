@@ -9,6 +9,9 @@ from .draw_char_hold_rate import get_char_hold_rate_img
 from .draw_matrix_appear_rate import draw_matrix_appear_rate
 from .draw_slash_appear_rate import draw_slash_use_rate
 from .draw_tower_appear_rate import draw_tower_use_rate
+from ..utils.util import use_longest_keyword
+from ..utils.name_convert import is_valid_char_name
+from ..utils.char_info_utils import PATTERN
 
 sv_char_hold_rate = SV("waves角色持有率")
 sv_tower_appear_rate = SV("waves深塔出场率", priority=1)
@@ -17,15 +20,24 @@ sv_matrix_appear_rate = SV("waves矩阵出场率", priority=1)
 
 
 # 角色持有率指令
+_HANDLE_CHAR_HOLD_RATE_KEYWORDS = (
+    "角色持有率",
+    "角色持有率列表",
+    "持有率",
+    "群角色持有率",
+    "群角色持有率列表",
+    "群持有率",
+    "本群持有率",
+    "总持有率",
+    "全服持有率",
+    "查看持有率",
+    "持有度",
+)
+
+
 @sv_char_hold_rate.on_command(
-    (
-        "角色持有率",
-        "角色持有率列表",
-        "持有率",
-        "群角色持有率",
-        "群角色持有率列表",
-        "群持有率",
-    ),
+    _HANDLE_CHAR_HOLD_RATE_KEYWORDS,
+    block=True,
     to_ai="""查询鸣潮角色持有率统计图。
 
 当用户问「哪些角色冷门 / 谁持有率最高 / UP 池谁多 / 群里大家都抽了谁」时调用。
@@ -36,7 +48,18 @@ Args:
 """,
 )
 async def handle_char_hold_rate(bot: Bot, ev: Event):
-    if "群" in ev.command:
+    use_longest_keyword(ev, _HANDLE_CHAR_HOLD_RATE_KEYWORDS)
+    await _send_char_hold_rate(bot, ev, "群" in ev.command)
+
+
+@sv_char_hold_rate.on_regex(rf"^(?P<char>{PATTERN}?)(?P<group>群)?持有率$")
+async def handle_one_char_hold_rate(bot: Bot, ev: Event):
+    if is_valid_char_name(ev.regex_dict.get("char") or ""):
+        await _send_char_hold_rate(bot, ev, bool(ev.regex_dict.get("group")))
+
+
+async def _send_char_hold_rate(bot: Bot, ev: Event, in_group: bool):
+    if in_group:
         if not ev.group_id:
             return await bot.send("请在群聊中使用")
         img = await get_char_hold_rate_img(ev, ev.group_id)
@@ -53,13 +76,16 @@ async def handle_char_hold_rate(bot: Bot, ev: Event):
 
 
 # 深塔出场率指令
+_HANDLE_TOWER_APPEAR_RATE_KEYWORDS = (
+    "深塔使用率",
+    "深塔出场率",
+    "深塔出场率列表",
+    "出场率",
+)
+
+
 @sv_tower_appear_rate.on_command(
-    (
-        "深塔使用率",
-        "深塔出场率",
-        "深塔出场率列表",
-        "出场率",
-    ),
+    _HANDLE_TOWER_APPEAR_RATE_KEYWORDS,
     block=True,
     to_ai="""查询本期逆境深塔角色使用率/出场率统计图。
 
@@ -71,6 +97,7 @@ Args:
 """,
 )
 async def handle_tower_appear_rate(bot: Bot, ev: Event):
+    use_longest_keyword(ev, _HANDLE_TOWER_APPEAR_RATE_KEYWORDS)
     img = await draw_tower_use_rate(ev)
     buttons: List[Any] = [
         WavesButton("深塔出场率", "深塔使用率"),
@@ -82,27 +109,30 @@ async def handle_tower_appear_rate(bot: Bot, ev: Event):
 
 
 # 冥想出场率指令
+_HANDLE_SLASH_APPEAR_RATE_KEYWORDS = (
+    "无尽总使用率",
+    "无尽总出场率",
+    "无尽总出场率列表",
+    "无尽使用率",
+    "无尽出场率",
+    "无尽出场率列表",
+    "冥海总使用率",
+    "冥海总出场率",
+    "冥海总出场率列表",
+    "冥海使用率",
+    "冥海出场率",
+    "冥海出场率列表",
+    "冥歌海墟总使用率",
+    "冥歌海墟总出场率",
+    "冥歌海墟总出场率列表",
+    "冥歌海墟使用率",
+    "冥歌海墟出场率",
+    "冥歌海墟出场率列表",
+)
+
+
 @sv_slash_appear_rate.on_command(
-    (
-        "无尽总使用率",
-        "无尽总出场率",
-        "无尽总出场率列表",
-        "无尽使用率",
-        "无尽出场率",
-        "无尽出场率列表",
-        "冥海总使用率",
-        "冥海总出场率",
-        "冥海总出场率列表",
-        "冥海使用率",
-        "冥海出场率",
-        "冥海出场率列表",
-        "冥歌海墟总使用率",
-        "冥歌海墟总出场率",
-        "冥歌海墟总出场率列表",
-        "冥歌海墟使用率",
-        "冥歌海墟出场率",
-        "冥歌海墟出场率列表",
-    ),
+    _HANDLE_SLASH_APPEAR_RATE_KEYWORDS,
     block=True,
     to_ai="""查询本期冥歌海墟（海墟/无尽）角色使用率/出场率统计图。
 
@@ -113,6 +143,7 @@ Args:
 """,
 )
 async def handle_slash_appear_rate(bot: Bot, ev: Event):
+    use_longest_keyword(ev, _HANDLE_SLASH_APPEAR_RATE_KEYWORDS)
     img = await draw_slash_use_rate(ev)
     buttons: List[Any] = [
         WavesButton("总出场率", "冥海出场率"),

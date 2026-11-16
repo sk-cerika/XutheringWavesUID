@@ -27,6 +27,8 @@ CACHE_PATH = MAIN_PATH / "cache"
 RESOURCE_PATH = MAIN_PATH / "resource"
 PHANTOM_PATH = RESOURCE_PATH / "phantom"
 MATERIAL_PATH = RESOURCE_PATH / "material"
+MONSTER_PATH = RESOURCE_PATH / "monster"
+SLASH_BUFF_PATH = RESOURCE_PATH / "slash_buff"
 AVATAR_PATH = RESOURCE_PATH / "waves_avatar"
 WEAPON_PATH = RESOURCE_PATH / "waves_weapon"
 ROLE_PILE_PATH = RESOURCE_PATH / "role_pile"
@@ -58,6 +60,8 @@ XFM_GUIDE_PATH = GUIDE_PATH / "XFM"
 KUROBBS_GUIDE_PATH = GUIDE_PATH / "KuroBBS"
 # 猫眼石 攻略库
 CHRYSOBERYL_GUIDE_PATH = GUIDE_PATH / "Chrysoberyl"
+# 拉格朗日变分主义 攻略库
+LAGVAR_GUIDE_PATH = GUIDE_PATH / "Lagvar"
 
 # 构建 和 详情文件
 BUILD_ROOT = Path(__file__).parent.parent
@@ -70,6 +74,9 @@ MAP_CHALLENGE_PATH = RESOURCE_PATH / "map" / "detail_json" / "challenge"
 MAP_FORTE_PATH = RESOURCE_PATH / "map" / "detail_json" / "forte"
 MAP_BUILD_PATH = BUILD_ROOT / "map" / "waves_build"
 MAP_BUILD_TEMP = MAIN_PATH / "build" / "map" / "waves_build"
+# 资源 hash 清单
+HASH_PATH = RESOURCE_PATH / "hash"
+HASH_CHECKED_PATH = RESOURCE_PATH / "hash_checked.json"
 MAP_ALIAS_PATH = MAP_PATH / "alias"
 LOCALIZATION_PATH = MAP_PATH / "i18n"
 
@@ -93,6 +100,7 @@ IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp"}
 # 其他的素材
 OTHER_PATH = MAIN_PATH / "other"
 CALENDAR_PATH = OTHER_PATH / "calendar"
+CALENDAR_CACHE_PATH = OTHER_PATH / "calendar_cache"
 SLASH_PATH = OTHER_PATH / "slash"
 MATRIX_PATH = OTHER_PATH / "matrix"
 CHALLENGE_PATH = OTHER_PATH / "challenge"
@@ -102,6 +110,7 @@ POKER_PATH = OTHER_PATH / "poker"
 WIKI_CACHE_PATH = OTHER_PATH / "wiki"
 BBS_PATH = OTHER_PATH / "bbs"
 SIGN_SURFACE_PATH = OTHER_PATH / "sign_surface"
+MATERIAL_ICON_PATH = OTHER_PATH / "material"
 
 # 基础别名文件路径
 ALIAS_PATH = MAIN_PATH / "alias"
@@ -120,6 +129,8 @@ def init_dir():
         RESOURCE_PATH,
         PHANTOM_PATH,
         MATERIAL_PATH,
+        MONSTER_PATH,
+        SLASH_BUFF_PATH,
         AVATAR_PATH,
         WEAPON_PATH,
         ROLE_PILE_PATH,
@@ -141,16 +152,19 @@ def init_dir():
         CUSTOM_CARD_PATH,
         OTHER_PATH,
         CALENDAR_PATH,
+        CALENDAR_CACHE_PATH,
         MATRIX_PATH,
         ANN_CARD_PATH,
         BAKE_PATH,
         WIKI_CACHE_PATH,
         BBS_PATH,
         SIGN_SURFACE_PATH,
+        MATERIAL_ICON_PATH,
         BUILD_PATH,
         BUILD_TEMP,
         MAP_BUILD_PATH,
         MAP_BUILD_TEMP,
+        HASH_PATH,
         MAP_PATH,
         MAP_CHAR_PATH,
         MAP_DETAIL_PATH,

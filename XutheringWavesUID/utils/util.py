@@ -341,3 +341,29 @@ def login_platform() -> str:
     # LoginType = WutheringWavesConfig.get_config("WavesLoginTypeNew").data
     # return LoginType if LoginType else "ios"
     return "ios"
+
+
+def use_longest_keyword(ev, keywords: tuple[str, ...]) -> None:
+    """关键词互为前缀时（如 删除 / 删除全部UID），按实际输入改用最长的那个并去掉参数里的残留"""
+    text = ev.text.strip()
+    for k in sorted(keywords, key=len, reverse=True):
+        tail = k[len(ev.command):]
+        if tail and k.startswith(ev.command) and text.startswith(tail):
+            ev.command, ev.text = k, text[len(tail):].strip()
+            return
+
+
+REFRESH_WORDS = ("刷新", "更新")
+
+
+def refresh_aliases(keywords: tuple[str, ...], suffix: bool = True) -> tuple[str, ...]:
+    """刷新X / 更新X (suffix 时含 X刷新 / X更新) 别名, 查询X 不加"""
+    bases = [k for k in keywords if not k.startswith("查询")]
+    aliases = [f"{w}{k}" for k in bases for w in REFRESH_WORDS]
+    if suffix:
+        aliases += [f"{k}{w}" for k in bases for w in REFRESH_WORDS]
+    return tuple(aliases)
+
+
+def with_refresh_alias(keywords: tuple[str, ...], suffix: bool = True) -> tuple[str, ...]:
+    return keywords + refresh_aliases(keywords, suffix)

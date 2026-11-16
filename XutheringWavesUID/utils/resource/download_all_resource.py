@@ -8,6 +8,8 @@ from gsuid_core.logger import logger
 from gsuid_core.utils.download_resource.download_core import download_all_file
 import httpx
 
+from .download_cnb import download_all_file_cnb
+from ..download_utils import check_resource_hash
 from .RESOURCE_PATH import (
     MAP_PATH,
     BUILD_TEMP,
@@ -20,6 +22,8 @@ from .RESOURCE_PATH import (
     MAP_CHAR_PATH,
     MAP_FORTE_PATH,
     MATERIAL_PATH,
+    MONSTER_PATH,
+    SLASH_BUFF_PATH,
     SHARE_BG_PATH,
     TITLE_BG_PATH,
     CARD_POLYGON_PATH,
@@ -31,6 +35,7 @@ from .RESOURCE_PATH import (
     XMU_GUIDE_PATH,
     KUROBBS_GUIDE_PATH,
     CHRYSOBERYL_GUIDE_PATH,
+    LAGVAR_GUIDE_PATH,
     MAP_DETAIL_PATH,
     WUHEN_GUIDE_PATH,
     VANZI_GUIDE_PATH,
@@ -40,14 +45,21 @@ from .RESOURCE_PATH import (
     ROLE_DETAIL_SKILL_PATH,
     ROLE_DETAIL_CHAINS_PATH,
     WIKI_CACHE_PATH,
+    HASH_PATH,
+    HASH_CHECKED_PATH,
 )
 
-async def check_speed(plugin_name):
+async def check_speed(plugin_name, exclude_cnb: bool = False):
     URL_LIB = {
         "小维1号": "https://ww1.loping151.top/",
         "小维2号": "https://ww2.loping151.top/",
-        "小维3号": "https://ww3.loping151.cn/"
+        "小维3号": "https://ww3.loping151.cn/",
+        "小维CNB": "https://cnb.cool/loping151/XutheringWavesUID-Resources/-/git/raw/main/",
     }
+    from ...wutheringwaves_config import WutheringWavesConfig
+
+    if exclude_cnb or not WutheringWavesConfig.get_config("ResourceUseCNB").data:
+        URL_LIB = {tag: url for tag, url in URL_LIB.items() if "cnb.cool" not in url}
 
     async def _measure_speed(
         client: httpx.AsyncClient, base_url: str, deadline: float
@@ -187,6 +199,7 @@ async def download_all_resource(force: bool = False):
             shutil.rmtree(MAP_BUILD_TEMP, ignore_errors=True)
             shutil.rmtree(MAP_CHAR_PATH, ignore_errors=True)
             shutil.rmtree(WIKI_CACHE_PATH, ignore_errors=True)
+            HASH_CHECKED_PATH.unlink(missing_ok=True)
             BUILD_TEMP.mkdir(parents=True, exist_ok=True)
             MAP_BUILD_TEMP.mkdir(parents=True, exist_ok=True)
             MAP_CHAR_PATH.mkdir(parents=True, exist_ok=True)
@@ -195,43 +208,53 @@ async def download_all_resource(force: bool = False):
         plugin_name = "XutheringWavesUID"
         url, tag = await check_speed(plugin_name)
 
-        await download_all_file(
-            plugin_name,
-            {
-                "resource/avatar": AVATAR_PATH,
-                "resource/weapon": WEAPON_PATH,
-                "resource/role_pile": ROLE_PILE_PATH,
-                "resource/role_bg": ROLE_BG_PATH,
-                "resource/role_detail/skill": ROLE_DETAIL_SKILL_PATH,
-                "resource/role_detail/chains": ROLE_DETAIL_CHAINS_PATH,
-                "resource/share": SHARE_BG_PATH,
-                "resource/title_bg": TITLE_BG_PATH,
-                "resource/card_polygon": CARD_POLYGON_PATH,
-                "resource/phantom": PHANTOM_PATH,
-                "resource/material": MATERIAL_PATH,
-                "resource/calendar": CALENDAR_PATH,
-                "resource/guide/XMu": XMU_GUIDE_PATH,
-                "resource/guide/Moealkyne": MOEALKYNE_GUIDE_PATH,
-                "resource/guide/JinLingZi": JINLINGZI_GUIDE_PATH,
-                "resource/guide/VanZi": VANZI_GUIDE_PATH,
-                "resource/guide/XiaoYang": XIAOYANG_GUIDE_PATH,
-                "resource/guide/WuHen": WUHEN_GUIDE_PATH,
-                "resource/guide/XFM": XFM_GUIDE_PATH,
-                "resource/guide/KuroBBS": KUROBBS_GUIDE_PATH,
-                "resource/guide/Chrysoberyl": CHRYSOBERYL_GUIDE_PATH,
-                f"resource/build/{PLATFORM}/waves_build": BUILD_TEMP,
-                f"resource/build/{PLATFORM}/map/waves_build": MAP_BUILD_TEMP,
-                "resource/map": MAP_PATH,
-                "resource/map/character": MAP_CHAR_PATH,
-                "resource/map/detail_json": MAP_DETAIL_PATH,
-                "resource/map/detail_json/challenge": MAP_CHALLENGE_PATH,
-                "resource/map/detail_json/forte": MAP_FORTE_PATH,
-                "resource/map/alias": MAP_ALIAS_PATH,
-                "resource/map/i18n": LOCALIZATION_PATH,
-            },
-            url,
-            tag,
-        )
+        epath_map = {
+            "resource/avatar": AVATAR_PATH,
+            "resource/weapon": WEAPON_PATH,
+            "resource/role_pile": ROLE_PILE_PATH,
+            "resource/role_bg": ROLE_BG_PATH,
+            "resource/role_detail/skill": ROLE_DETAIL_SKILL_PATH,
+            "resource/role_detail/chains": ROLE_DETAIL_CHAINS_PATH,
+            "resource/share": SHARE_BG_PATH,
+            "resource/title_bg": TITLE_BG_PATH,
+            "resource/card_polygon": CARD_POLYGON_PATH,
+            "resource/phantom": PHANTOM_PATH,
+            "resource/material": MATERIAL_PATH,
+            "resource/monster": MONSTER_PATH,
+            "resource/slash_buff": SLASH_BUFF_PATH,
+            "resource/calendar": CALENDAR_PATH,
+            "resource/guide/XMu": XMU_GUIDE_PATH,
+            "resource/guide/Moealkyne": MOEALKYNE_GUIDE_PATH,
+            "resource/guide/JinLingZi": JINLINGZI_GUIDE_PATH,
+            "resource/guide/VanZi": VANZI_GUIDE_PATH,
+            "resource/guide/XiaoYang": XIAOYANG_GUIDE_PATH,
+            "resource/guide/WuHen": WUHEN_GUIDE_PATH,
+            "resource/guide/XFM": XFM_GUIDE_PATH,
+            "resource/guide/KuroBBS": KUROBBS_GUIDE_PATH,
+            "resource/guide/Chrysoberyl": CHRYSOBERYL_GUIDE_PATH,
+            "resource/guide/Lagvar": LAGVAR_GUIDE_PATH,
+            f"resource/build/{PLATFORM}/waves_build": BUILD_TEMP,
+            f"resource/build/{PLATFORM}/map/waves_build": MAP_BUILD_TEMP,
+            "resource/map": MAP_PATH,
+            "resource/map/character": MAP_CHAR_PATH,
+            "resource/map/detail_json": MAP_DETAIL_PATH,
+            "resource/map/detail_json/challenge": MAP_CHALLENGE_PATH,
+            "resource/map/detail_json/forte": MAP_FORTE_PATH,
+            "resource/map/alias": MAP_ALIAS_PATH,
+            "resource/map/i18n": LOCALIZATION_PATH,
+            "resource/hash": HASH_PATH,
+        }
+
+        if "cnb.cool" in url:
+            if await download_all_file_cnb(plugin_name, epath_map, url, tag):
+                return
+            logger.warning("[鸣潮·资源下载] CNB 清单不可用, 改用 http 镜像")
+            url, tag = await check_speed(plugin_name, exclude_cnb=True)
+
+        await download_all_file(plugin_name, epath_map, url, tag)
+        if await asyncio.to_thread(check_resource_hash, epath_map):
+            await download_all_file(plugin_name, epath_map, url, tag)
+            await asyncio.to_thread(check_resource_hash, epath_map, False)
 
 
 async def reload_all_modules():

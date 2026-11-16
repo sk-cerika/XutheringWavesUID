@@ -64,7 +64,7 @@ from ..utils.fonts.waves_fonts import (
     waves_font_44,
     waves_font_58,
 )
-from ..utils.resource.constant import randomize_special_char_id
+from ..utils.resource.constant import SPECIAL_CHAR_RANK_MAP, randomize_special_char_id
 from ..wutheringwaves_abyss.period import (
     MATRIX_BASE_TIMESTAMP,
     parse_rank_date,
@@ -156,11 +156,20 @@ def _paste_matrix_chain_badge(
     avatar.paste(badge, badge_pos, badge)
 
 
-def _matrix_team_label(char_ids: Optional[List[int]]) -> str:
+def _matrix_team_label(char_ids: Optional[List[int]], char_chains: Optional[List[Optional[int]]] = None) -> str:
     if not char_ids:
         return ""
-    names = [char_id_to_char_name(str(cid)) or str(cid) for cid in char_ids]
+    chains = list(char_chains or []) + [None] * len(char_ids)
+    names = [
+        f"{'' if chain is None else f'{chain}链'}{char_id_to_char_name(str(cid)) or cid}"
+        for cid, chain in zip(char_ids, chains)
+    ]
     return " / ".join(names)
+
+
+async def _team_chains_match(uid: str, want: Dict[int, int]) -> bool:
+    counts = await asyncio.gather(*(get_role_chain_count(uid, cid) for cid in want))
+    return all(count == chain for count, chain in zip(counts, want.values()))
 
 
 def _draw_subtitle_suffix(draw, text: str, pos, prev_text: str) -> None:
@@ -205,6 +214,7 @@ async def draw_all_matrix_rank_card(
     single_team: bool = False,
     page: int = 1,
     char_ids: Optional[List[int]] = None,
+    char_chains: Optional[List[Optional[int]]] = None,
 ):
     waves_id = await WavesBind.get_uid_by_game(ev.user_id, ev.bot_id)
     page_num = RANK_PAGE_SIZE
@@ -215,6 +225,7 @@ async def draw_all_matrix_rank_card(
         version=get_version(dynamic=True, waves_id=waves_id or "", pages=page),
         single_team=single_team,
         char_ids=char_ids or [],
+        char_chains=char_chains or [],
     )
 
     rankInfoList = await get_rank(item)
@@ -281,7 +292,7 @@ async def draw_all_matrix_rank_card(
         )
         _draw_subtitle_suffix(
             title_bg_draw,
-            _matrix_team_label(char_ids),
+            _matrix_team_label(char_ids, char_chains),
             (period_pos[0] + period_width + 16, period_pos[1]),
             date_text,
         )
@@ -617,7 +628,9 @@ class MatrixRankListInfo:
                         indexed_teams = [
                             (idx, t)
                             for idx, t in indexed_teams
-                            if tuple(sorted(matched.get(f"1_{idx}", []))) == team_key
+                            if tuple(sorted(
+                                int(SPECIAL_CHAR_RANK_MAP.get(str(cid), cid)) for cid in matched.get(f"1_{idx}", [])
+                            )) == team_key
                         ][:1]
                     for orig_idx, t in indexed_teams[:2]:
                         ids = matched.get(f"1_{orig_idx}", [])
@@ -738,6 +751,7 @@ async def draw_matrix_rank_list(
     single_team: bool = False,
     page: int = 1,
     char_ids: Optional[List[int]] = None,
+    char_chains: Optional[List[Optional[int]]] = None,
 ):
     """绘制矩阵群排行 (PIL)"""
     team_key = tuple(sorted(char_ids)) if char_ids else None
@@ -779,6 +793,13 @@ async def draw_matrix_rank_list(
                 f"[鸣潮] 群【{ev.group_id}】暂无矩阵单队排行数据\n"
                 f"请先使用【{PREFIX}矩阵】保存单队记录！"
             )
+
+    want = {cid: chain for cid, chain in zip(char_ids or [], char_chains or []) if chain is not None}
+    if want:
+        matched = await asyncio.gather(*(_team_chains_match(i.uid, want) for i in rankInfoList))
+        rankInfoList = [i for i, ok in zip(rankInfoList, matched) if ok]
+        if not rankInfoList:
+            return f"[鸣潮] 群【{ev.group_id}】暂无【{_matrix_team_label(char_ids, char_chains)}】的矩阵记录"
 
     # 总排行按总分，单队排行按最高单队分排序
     rankInfoList.sort(key=lambda i: _get_matrix_rank_score(i, single_team), reverse=True)
@@ -856,7 +877,7 @@ async def draw_matrix_rank_list(
         period_width = waves_font_20.getsize(period_label)[0]
     title_bg_draw.text((225 + period_width + 16, 360), date_text, GREY, waves_font_20, "lm")
     _draw_subtitle_suffix(
-        title_bg_draw, _matrix_team_label(char_ids), (225 + period_width + 16, 360), date_text
+        title_bg_draw, _matrix_team_label(char_ids, char_chains), (225 + period_width + 16, 360), date_text
     )
 
     # 遮罩

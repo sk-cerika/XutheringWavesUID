@@ -22,31 +22,21 @@ from gsuid_core.logger import logger
 from ..utils.util import hide_uid
 from ..utils.at_help import ruser_id, is_valid_at
 from ..utils.waves_api import waves_api
-from ..utils.error_reply import ERROR_CODE, WAVES_CODE_102, WAVES_CODE_103
 from ..utils.database.models import WavesBind
 from ..wutheringwaves_config import WutheringWavesConfig
+from ..wutheringwaves_gachalog import send_gacha_log_card_info
 from ..wutheringwaves_gachalog.draw_gachalogs import draw_card
 
 # priority 数值小于 wutheringwaves_gachalog 默认的 5，确保抢占同名 trigger
 sv_at_view_gacha = SV("waves@查抽卡记录", priority=2)
 
 
-async def _self_view(bot: Bot, ev: Event, user_id: str) -> None:
-    """自查路径：与原版 ``send_gacha_log_card_info`` 等价。"""
-    uid = await WavesBind.get_uid_by_game(user_id, ev.bot_id)
-    if not uid:
-        await bot.send(ERROR_CODE[WAVES_CODE_103])
-        return
-    _, ck = await waves_api.get_ck_result(uid, user_id, ev.bot_id)
-    if not ck:
-        await bot.send(ERROR_CODE[WAVES_CODE_102])
-        return
-    im = await draw_card(uid, ev)
-    await bot.send(im)
-
-
 @sv_at_view_gacha.on_fullmatch(
-    ("抽卡记录", "查看抽卡记录", "gacha", "ckjl"), block=True
+    (
+        "抽卡记录", "抽卡記錄", "查看抽卡记录", "我的抽卡记录", "gacha", "ckjl",
+        "抽卡", "抽卡分析", "抽卡统计", "抽卡查询",
+    ),
+    block=True,
 )
 async def at_view_gacha_handler(bot: Bot, ev: Event):
     inviter_id = ev.user_id
@@ -55,9 +45,9 @@ async def at_view_gacha_handler(bot: Bot, ev: Event):
 
     enabled = WutheringWavesConfig.get_config("WavesAtViewGacha").data
 
-    # 自查 / 功能未启用 → 走原版等价路径
+    # 自查 / 功能未启用 → 复用原版，国际服读取本地记录时跳过 CK 校验
     if not is_at or not enabled:
-        await _self_view(bot, ev, inviter_id)
+        await send_gacha_log_card_info(bot, ev)
         return
 
     # 以下: @ 别人 且 功能已启用

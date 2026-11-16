@@ -34,6 +34,7 @@ from ..utils.image import (
     get_role_pile_default,
     get_sonata_effect_image,
 )
+from ..utils.pile_offset import place_rank_pile, read_rank_offset
 from ..utils.api.wwapi import (
     GET_RANK_URL,
     GET_CARDS_RANK_URL,
@@ -49,6 +50,7 @@ from ..utils.ascension.char import get_char_model
 from ..utils.database.models import WavesBind
 from ..wutheringwaves_config import WutheringWavesConfig
 from ..utils.damage.modal import get_modal_name, get_modal_options, get_role_modal, get_default_modal
+from ..utils.rank_cond import RankCond
 from .draw_rank_card import find_role_detail
 from ..utils.ascension.weapon import get_weapon_model
 from ..utils.fonts.waves_fonts import (
@@ -131,7 +133,16 @@ async def get_cards_rank(item: CardsRankRequest) -> Optional[CardsRankResponse]:
 
 
 # TODO: PIL 卸到线程池 (loop 内 await get_attribute / get_attribute_effect / get_square_weapon 多处, 需要批量预取重构)
-async def draw_all_rank_card(bot: Bot, ev: Event, char: str, rank_type: str, pages: int, modal: str = "", group_uids: Optional[list] = None) -> Union[str, bytes]:
+async def draw_all_rank_card(
+    bot: Bot,
+    ev: Event,
+    char: str,
+    rank_type: str,
+    pages: int,
+    modal: str = "",
+    group_uids: Optional[list] = None,
+    cond: RankCond = RankCond(),
+) -> Union[str, bytes]:
     is_self_ck = False
     self_uid = ""
     try:
@@ -168,12 +179,13 @@ async def draw_all_rank_card(bot: Bot, ev: Event, char: str, rank_type: str, pag
                 rank_type=rank_type_num,
                 modal=modal,
                 waves_ids=[str(u) for u in group_uids if u],
+                **cond.params(),
             )
         )
         if not resp:
             return "获取群排行失败"
         if not resp.data or not resp.data.details:
-            return "暂无排行数据"
+            return f"暂无{cond.label}的排行数据" if cond.active else "暂无排行数据"
         details = [d for d in resp.data.details if d.overall_score > 0]
         if not details:
             return "[鸣潮] 群内暂无该角色综合评分数据\n需【登录】并【刷新单角色面板】上传后才会上榜"
@@ -199,6 +211,7 @@ async def draw_all_rank_card(bot: Bot, ev: Event, char: str, rank_type: str, pag
             waves_id=self_uid,
             version=get_version(dynamic=True, waves_id=self_uid, char_id=char_id, rank_type=rank_type, pages=pages),
             modal=modal,
+            **cond.params(),
         )
         rankInfoList = await get_rank(item)
         if not rankInfoList:
@@ -206,7 +219,7 @@ async def draw_all_rank_card(bot: Bot, ev: Event, char: str, rank_type: str, pag
         if rankInfoList.message and not rankInfoList.data:
             return rankInfoList.message
         if not rankInfoList.data or not rankInfoList.data.details:
-            return "暂无排行数据"
+            return f"暂无{cond.label}的排行数据" if cond.active else "暂无排行数据"
         details = rankInfoList.data.details
 
     totalNum = len([rank for rank in details if rank.rank > 0])
@@ -239,6 +252,8 @@ async def draw_all_rank_card(bot: Bot, ev: Event, char: str, rank_type: str, pag
         current_modal_name = get_modal_name(int(char_id), modal)
         if current_modal_name:
             text_bar_draw.text((1260, 120), f"当前模态: {current_modal_name}", SPECIAL_GOLD, waves_font_20, "rm")
+    if cond.active:
+        text_bar_draw.text((1260, 50), f"当前筛选: {cond.label}", SPECIAL_GOLD, waves_font_20, "rm")
 
     # 备注
     if rank_type == "伤害":
@@ -246,7 +261,11 @@ async def draw_all_rank_card(bot: Bot, ev: Event, char: str, rank_type: str, pag
     elif rank_type == "综合评分":
         temp_notes = "综合评分为个性化标准，按各自配置估算得出，仅供参考，非公平对比。"
     else:
-        temp_notes = "排行标准：以声骸分数（声骸评分高，不代表实际伤害高) 为排序的排名"
+        from .draw_rank_card import rank_standard
+        from ..utils.custom_weight import builtin_only
+
+        with builtin_only():
+            temp_notes = rank_standard(char_id, char)
     text_bar_draw.text((1260, text_bar_h - 30), temp_notes, SPECIAL_GOLD, waves_font_16, "rm")
 
     card_img.alpha_composite(text_bar_img, (0, title_h))
@@ -442,8 +461,9 @@ async def draw_all_rank_card(bot: Bot, ev: Event, char: str, rank_type: str, pag
     img_temp = Image.new("RGBA", char_mask2.size)
     img_temp.alpha_composite(title, (-300, 0))
     # 人物bg
-    pile, _ = await get_role_pile_default(char_id, custom=True)
-    img_temp.alpha_composite(pile, (600, -120))
+    pile, pile_path = await get_role_pile_default(char_id, custom=True)
+    pile, pos = place_rank_pile(pile, (600, -120), read_rank_offset(pile_path))
+    img_temp.alpha_composite(pile, pos)
 
     img_temp2 = Image.new("RGBA", char_mask2.size)
     img_temp2.paste(img_temp, (0, 0), char_mask2.copy())

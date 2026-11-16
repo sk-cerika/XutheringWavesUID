@@ -10,6 +10,7 @@ import asyncio
 import json
 import secrets
 from typing import Dict, List, Optional, Tuple
+from collections import Counter
 from datetime import datetime
 from pathlib import Path
 
@@ -327,6 +328,7 @@ def _build_pool_view(name: str, logs: List[Dict]) -> Dict:
     """
     total = len(logs)
     asc = list(reversed(logs))  # 老到新
+    same_time = Counter(log.get("time") for log in logs)
 
     five_stars: List[Dict] = []
     period_4stars: Dict[int, Dict[str, Dict]] = {}
@@ -363,6 +365,7 @@ def _build_pool_view(name: str, logs: List[Dict]) -> Dict:
                     "resourceId": log.get("resourceId"),
                     "resourceType": log.get("resourceType"),
                     "time": log.get("time"),
+                    "ten": same_time[log.get("time")] == 10,
                     "pity": pity,
                     "is_up": is_up,
                 }

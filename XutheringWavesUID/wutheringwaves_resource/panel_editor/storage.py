@@ -15,7 +15,17 @@ from PIL import Image
 from gsuid_core.logger import logger
 
 from ...utils import name_convert
+from ...utils.image_meta import (
+    CacheFingerprint,
+    crop_image,
+    file_fingerprint,
+    move_image_meta,
+    read_crop,
+    read_pile_only,
+    update_image_meta,
+)
 from ...utils.name_convert import easy_id_to_name
+from ...utils.pile_offset import has_rank_offset, offset_dict, read_rank_offset
 from ...utils.resource.RESOURCE_PATH import (
     BAKE_PATH,
     CUSTOM_DIRS as TYPE_PATHS,
@@ -162,6 +172,10 @@ def list_folders(t: str) -> List[dict]:
     return sorted(seen.values(), key=lambda x: x["char_id"])
 
 
+def rank_offset_of(p: Path) -> Optional[dict]:
+    return offset_dict(read_rank_offset(p)) if has_rank_offset(p) else None
+
+
 def list_images(t: str, char_id: str) -> List[dict]:
     folder = char_dir_for(t, char_id)
     items = []
@@ -173,13 +187,14 @@ def list_images(t: str, char_id: str) -> List[dict]:
                 "hash_id": hash_id_for(p.name),
                 "size": info.st_size,
                 "mtime": int(info.st_mtime),
+                "ver": file_fingerprint(p),
+                "rank_offset": rank_offset_of(p) if t == "stamina" else None,
+                "only": read_pile_only(p) if t == "stamina" else None,
+                "crop": read_crop(p),
             }
         )
     return items
 
-
-# 缩略图按"角色卡实际显示区"裁剪的版本号; 改裁剪逻辑时 +1 使旧缓存失效。
-_THUMB_VERSION = 4
 
 # card 自定义图经 contain 缩放居中进 PANEL_OUT, 仅 PANEL_VIS 窗口在角色卡可见
 # (与 card_utils._PANEL_VISIBLE_BOX_LOCAL / 前端 app.js panelVisibleRectInCrop 对齐)。
@@ -227,12 +242,15 @@ def _display_crop_box(t: Optional[str], w: int, h: int) -> Optional[Tuple[int, i
     return None
 
 
+def _thumb_prefix(target: Path, max_size: int, t: Optional[str]) -> str:
+    """同一 pending 图既要整图又要按类型裁剪两种缓存, 故 t 纳入 key。"""
+    digest = hashlib.md5(f"{target.resolve()}|{t or ''}".encode()).hexdigest()[:12]
+    return f"{digest}_{max_size}_"
+
+
 def thumb_path_for(target: Path, max_size: int, t: Optional[str] = None) -> Path:
-    """缩略图缓存路径, 基于源图绝对路径 + 裁剪类型 hash 防冲突
-    (同一 pending 图既要整图又要按类型裁剪两种缓存, 故 t 纳入 key)。"""
-    abs_str = f"{target.resolve()}|{t or ''}"
-    digest = hashlib.md5(abs_str.encode()).hexdigest()[:12]
-    return PANEL_EDIT_THUMBS / f"{digest}_{max_size}_v{_THUMB_VERSION}.webp"
+    digest = hashlib.md5(thumb_fingerprint(target).encode()).hexdigest()[:12]
+    return PANEL_EDIT_THUMBS / f"{_thumb_prefix(target, max_size, t)}{digest}.webp"
 
 
 def get_or_make_thumb(target: Path, max_size: int = 360, t: Optional[str] = None) -> Optional[Path]:
@@ -243,14 +261,15 @@ def get_or_make_thumb(target: Path, max_size: int = 360, t: Optional[str] = None
     if not target.is_file():
         return None
     cache = thumb_path_for(target, max_size, t)
-    try:
-        if cache.exists() and cache.stat().st_mtime >= target.stat().st_mtime:
-            return cache
-    except OSError:
-        pass
+    if cache.exists():
+        return cache
+    for stale in PANEL_EDIT_THUMBS.glob(f"{_thumb_prefix(target, max_size, t)}*.webp"):
+        stale.unlink(missing_ok=True)
 
     try:
         with Image.open(target) as im:
+            if t:
+                im = crop_image(im, read_crop(target))
             box = _display_crop_box(t, im.width, im.height)
             if box:
                 im = im.crop(box)
@@ -262,6 +281,18 @@ def get_or_make_thumb(target: Path, max_size: int = 360, t: Optional[str] = None
     except Exception as e:
         logger.warning(f"[鸣潮·面板编辑] 生成缩略图失败 {target}: {e}")
         return None
+
+
+thumb_fingerprint = CacheFingerprint(
+    get_or_make_thumb,
+    _display_crop_box,
+    _panel_visible_box,
+    _cover_box,
+    crop_image,
+    _PANEL_OUT,
+    _PANEL_VIS,
+    _BG_DISPLAY_RATIO,
+)
 
 
 def new_tmp_token() -> str:
@@ -278,27 +309,20 @@ def write_tmp_image(token: str, suffix: str, data: bytes) -> Path:
     return target
 
 
-def find_tmp_files(token: str) -> Tuple[Optional[Path], Optional[Path]]:
-    """返回 (current_path, original_path) — 当前 (可能已裁剪的) 与原始备份。"""
+def find_tmp_file(token: str) -> Optional[Path]:
     if not is_safe_token(token):
-        return None, None
-    current: Optional[Path] = None
-    original: Optional[Path] = None
+        return None
     for p in PANEL_EDIT_TMP.iterdir():
-        if not p.is_file():
-            continue
-        if p.stem == token:
-            current = p
-        elif p.stem == f"{token}.orig":
-            original = p
-    return current, original
+        if p.is_file() and p.stem == token and p.suffix.lower() in IMAGE_EXTS:
+            return p
+    return None
 
 
 def cleanup_tmp(token: str) -> None:
     if not is_safe_token(token):
         return
     for p in PANEL_EDIT_TMP.iterdir():
-        if p.is_file() and (p.stem == token or p.stem == f"{token}.orig"):
+        if p.is_file() and p.stem == token:
             try:
                 p.unlink()
             except OSError:
@@ -336,6 +360,7 @@ def relocate_to_target(t: str, char_id: str, src: Path, suffix_hint: Optional[st
             break
         counter += 1
     shutil.move(str(src), str(dst))
+    move_image_meta(src, dst)
     return dst
 
 
@@ -468,10 +493,14 @@ def delete_pending(t: str, char_id: str, name: str) -> bool:
 
 
 def stage_pending(t: str, char_id: str, name: str) -> Optional[dict]:
-    """把待审核图复制进一个 tmp token(current+orig), 之后复用裁剪/确认流程。"""
+    """把待审核图复制进一个 tmp token, 之后复用框选/确认流程。"""
     src = safe_pending_image(t, char_id, name)
     if src is None or not src.is_file():
         return None
+    return stage_file(src)
+
+
+def stage_file(src: Path, crop: Optional[dict] = None) -> Optional[dict]:
     data = src.read_bytes()
     suffix = src.suffix.lower()
     if suffix not in IMAGE_EXTS:
@@ -482,6 +511,5 @@ def stage_pending(t: str, char_id: str, name: str) -> Optional[dict]:
     except Exception:
         return None
     token = new_tmp_token()
-    write_tmp_image(token, suffix, data)
-    write_tmp_image(f"{token}.orig", suffix, data)
-    return {"token": token, "suffix": suffix, "width": w, "height": h, "size": len(data)}
+    update_image_meta(write_tmp_image(token, suffix, data), "crop", crop)
+    return {"token": token, "suffix": suffix, "width": w, "height": h, "size": len(data), "crop": crop}

@@ -3,7 +3,7 @@ from gsuid_core.bot import Bot
 from gsuid_core.models import Event
 from gsuid_core.segment import MessageSegment
 
-from .guide import get_guide
+from .guide import get_guide, get_matrix_guide
 from .draw_char import draw_char_wiki
 from .draw_echo import draw_wiki_echo
 from .draw_list import draw_sonata_list, draw_weapon_list
@@ -157,8 +157,27 @@ async def send_role_guide_pic(bot: Bot, ev: Event):
     char_name = ev.regex_dict.get("char", "") or "dps"
     if "设置排除" in char_name:
         return
+    if char_name in ("矩阵", "矩陣"):
+        return await get_matrix_guide(bot, ev)
 
     await get_guide(bot, ev, char_name)
+
+
+@sv_waves_guide.on_regex(
+    r"^(?P<ver_pre>\d+\.\d+)?(?:矩阵|矩陣)(?P<ver_mid>\d+\.\d+)?(?:攻略|gl)(?P<ver_post>\d+\.\d+)?$",
+    block=True,
+    to_ai="""查询全息矩阵（终焉矩阵）攻略图（拉格朗日变分主义等攻略组按版本整理的配队/打法）。
+
+当用户问「矩阵攻略 / 矩阵怎么打 / 3.5矩阵攻略」时调用。
+不带版本号时发送最新版本；版本号为 X.Y 格式，可写在 "矩阵" 前、"矩阵" 与 "攻略" 之间或 "攻略" 后。
+
+Args:
+    text: 例: "矩阵攻略" (最新) / "矩阵3.5攻略" / "矩阵攻略3.5" / "3.5矩阵攻略"。
+""",
+)
+async def send_matrix_guide_pic(bot: Bot, ev: Event):
+    version = ev.regex_dict.get("ver_pre") or ev.regex_dict.get("ver_mid") or ev.regex_dict.get("ver_post") or ""
+    await get_matrix_guide(bot, ev, version)
 
 
 @sv_waves_guide.on_regex(
@@ -180,7 +199,7 @@ async def send_weapon_list(bot: Bot, ev: Event):
 
 
 @sv_waves_guide.on_regex(
-    r"^(?:(?P<version_pre>\d+\.\d+))?(?:套装|套裝)(列表)?(?:(?P<version_post>\d+\.\d+))?$",
+    r"^(?:(?P<version_pre>\d+\.\d+))?(?:声骸|聲骸|合鸣|合鳴)?(?:套装|套裝)(?:列表|效果|信息)?(?:(?P<version_post>\d+\.\d+))?$",
     block=True,
     to_ai="""查询鸣潮全部合鸣套装一览图（含 2/5 件套效果）。
 
@@ -247,7 +266,7 @@ async def send_slash_challenge_info(bot: Bot, ev: Event):
 
 
 @sv_waves_matrix_info.on_regex(
-    r"^(?:第?(?P<period_pre>\d+|下(?:一)?期|下下期|上(?:一)?期|上上期)期?(?:矩阵|矩陣|jz信息|matrix)(?:信息)?|(?:矩阵|矩陣|jz信息|matrix)(?:(?:信息(?:第)?|第)(?P<period>\d+|下(?:一)?期|下下期|上(?:一)?期|上上期)?|(?P<period_force>\d+|下(?:一)?期|下下期|上(?:一)?期|上上期))期?)$",
+    r"^(?:第?(?P<period_pre>\d+|下(?:一)?期|下下期|上(?:一)?期|上上期)期?(?:矩阵|矩陣|jz信息|matrix)(?:信息)?|(?:矩阵|矩陣|jz(?=信息|第|上|下|\d{1,3}(?!\d))|matrix)(?:(?:信息(?:第)?|第)(?P<period>\d+|下(?:一)?期|下下期|上(?:一)?期|上上期)?|(?P<period_force>\d+|下(?:一)?期|下下期|上(?:一)?期|上上期))期?)$",
     block=True,
     to_ai="""查询全息矩阵（终焉矩阵）某期的关卡配置图（稳态协议+奇点扩张，含 Buff、敌人、推荐角色）。
 

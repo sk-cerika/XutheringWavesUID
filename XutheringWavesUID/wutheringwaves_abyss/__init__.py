@@ -13,6 +13,7 @@ from ..utils.error_reply import WAVES_CODE_103
 from .draw_challenge_card import draw_challenge_img
 from ..utils.database.models import WavesBind
 from .draw_abyss_card import draw_abyss_img
+from ..utils.util import use_longest_keyword, with_refresh_alias
 
 sv_waves_abyss = SV("waves查询深渊")
 sv_waves_challenge = SV("waves查询全息")
@@ -29,20 +30,20 @@ def _is_matrix_single_team_command(ev: Event) -> bool:
 
 
 def _parse_matrix_rank_args(ev: Event, strict: bool):
-    """返回 (char_ids, page, 错误提示); strict=False 时队伍解析失败按无队伍参数处理"""
+    """返回 (char_ids, 各角色共鸣链筛选, page, 错误提示); strict=False 时队伍解析失败按无队伍参数处理"""
     from ..utils.team_query import parse_matrix_team, split_team_and_page
     from ..wutheringwaves_rank.pagination import normalize_rank_page
 
     team_text, tail_page = split_team_and_page(ev.regex_dict.get("team"))
     page = normalize_rank_page(ev.regex_dict.get("pages") or tail_page)
-    char_ids, err = parse_matrix_team(team_text)
+    char_ids, chains, err = parse_matrix_team(team_text)
     if err and not strict:
-        return [], page, None
-    return char_ids, page, err
+        return [], [], page, None
+    return char_ids, chains, page, err
 
 
 @sv_waves_abyss.on_fullmatch(
-    (
+    with_refresh_alias((
         "查询深渊",
         "sy",
         "st",
@@ -55,7 +56,7 @@ def _parse_matrix_rank_args(ev: Event, strict: bool):
         "稳定区",
         "实验",
         "实验区",
-    ),
+    )),
     block=True,
     to_ai="""查询用户本人在鸣潮「逆境深塔」（深境区/超载/稳定/实验）当前期数的挑战记录。
 
@@ -94,13 +95,13 @@ async def send_waves_abyss_info(bot: Bot, ev: Event):
 
 
 @sv_waves_challenge.on_fullmatch(
-    (
+    with_refresh_alias((
         "查询全息",
         "查询全息战略",
         "全息",
         "qx",
         "全息战略",
-    ),
+    )),
     block=True,
     to_ai="""查询用户本人在鸣潮「全息战略」（同步挑战）的通关记录。
 
@@ -132,23 +133,27 @@ async def send_waves_challenge_info(bot: Bot, ev: Event):
         return await bot.send(im)
 
 
+_SEND_WAVES_SLASH_INFO_KEYWORDS = with_refresh_alias((
+    "冥海",
+    "mh",
+    "hx",
+    "海墟",
+    "海虚",
+    "冥歌海墟",
+    "查询冥海",
+    "查询无尽",
+    "查询海墟",
+    "无尽",
+    "wj",
+    "无尽深渊",
+    "禁忌",
+    "禁忌海域",
+    "再生海域",
+), suffix=False)
+
+
 @sv_waves_slash.on_command(
-    (
-        "冥海",
-        "mh",
-        "hx",
-        "海墟",
-        "冥歌海墟",
-        "查询冥海",
-        "查询无尽",
-        "查询海墟",
-        "无尽",
-        "wj",
-        "无尽深渊",
-        "禁忌",
-        "禁忌海域",
-        "再生海域",
-    ),
+    _SEND_WAVES_SLASH_INFO_KEYWORDS,
     block=True,
     to_ai="""查询用户本人在鸣潮「冥歌海墟」（海墟 / 无尽深渊 / 禁忌海域 / 再生海域）的通关记录。
 
@@ -161,6 +166,7 @@ Args:
 """,
 )
 async def send_waves_slash_info(bot: Bot, ev: Event):
+    use_longest_keyword(ev, _SEND_WAVES_SLASH_INFO_KEYWORDS)
     user_id = ruser_id(ev)
     uid = await WavesBind.get_uid_by_game(user_id, ev.bot_id)
     if not uid:
@@ -184,7 +190,7 @@ async def send_waves_slash_info(bot: Bot, ev: Event):
 
 
 @sv_waves_matrix.on_fullmatch(
-    (
+    with_refresh_alias((
         "矩阵",
         "终焉",
         "终焉矩阵",
@@ -194,7 +200,7 @@ async def send_waves_slash_info(bot: Bot, ev: Event):
         "稳态协议",
         "囚笼",
         "jz"
-    ),
+    )),
     block=True,
     to_ai="""查询用户本人在鸣潮「全息矩阵」（矩阵叠兵 / 终焉矩阵 / 奇点扩张 / 稳态协议）的挑战记录。
 
@@ -266,7 +272,7 @@ async def send_waves_rank_slash_list_info(bot: Bot, ev: Event):
 
 
 @sv_waves_rank_matrix.on_regex(
-    r"^(?:矩阵总排行|jzzph|jzzpm|jzddzph|jzddzpm|jzdwzph|jzdwzpm|矩阵总排行榜|矩阵单队总排行|矩阵单队总排行榜|矩阵队伍总排行|矩阵队伍总排行榜)(?P<pages>\d+)?(?P<team>[\s,，、/|]*[一-鿿\d][\s\S]*)?$",
+    r"^(?:矩阵总排行|jzzph|jzzpm|jzddzph|jzddzpm|jzdwzph|jzdwzpm|矩阵总排行榜|矩阵总榜|矩阵单队总排行|矩阵单队总排行榜|矩阵队伍总排行|矩阵队伍总排行榜)(?P<pages>\d+(?![一-鿿]))?(?P<team>[\s,，、/|]*[一-鿿\d][\s\S]*)?$",
     block=True,
     to_ai='''查询全体终焉矩阵积分总排行（跨群）。
 
@@ -274,14 +280,15 @@ async def send_waves_rank_slash_list_info(bot: Bot, ev: Event):
 
 Args:
     text: 可加页码（命令后或末尾均可）。带三个角色名 / 三字首字缩写时只排该队伍（顺序无关、buff 不限）。
-        例: "矩阵总排行2"、"矩阵单队总排行 今汐 折枝 守岸人"、"矩阵单队总排行 今折守 2"。
+        角色前加数字按该角色共鸣链筛选，如 "6爱达千" = 爱弥斯 6 链、另两人不限。
+        例: "矩阵总排行2"、"矩阵单队总排行 今汐 折枝 守岸人"、"矩阵单队总排行 6爱0达0千 2"。
 ''',
 )
 async def send_waves_rank_matrix_info(bot: Bot, ev: Event):
     from ..wutheringwaves_rank.matrix_rank import draw_all_matrix_rank_card
 
     single_team_cmd = _is_matrix_single_team_command(ev)
-    char_ids, page, err = _parse_matrix_rank_args(ev, single_team_cmd)
+    char_ids, chains, page, err = _parse_matrix_rank_args(ev, single_team_cmd)
     if err:
         return await bot.send(err)
 
@@ -292,12 +299,13 @@ async def send_waves_rank_matrix_info(bot: Bot, ev: Event):
         single_team=single_team,
         page=page,
         char_ids=char_ids,
+        char_chains=chains,
     )
     return await bot.send(im)
 
 
 @sv_waves_rank_matrix_list.on_regex(
-    r"^(?:矩阵排行|jzph|jzpm|jzddph|jzddpm|jzdwph|jzdwpm|矩阵排行榜|矩阵排名|矩阵群排行|矩阵群排行榜|矩阵群排名|群矩阵排行|群矩阵排名|矩阵单队排行|矩阵单队排行榜|矩阵队伍排行|矩阵队伍排行榜)(?P<pages>\d+)?(?P<team>[\s,，、/|]*[一-鿿\d][\s\S]*)?$",
+    r"^(?:矩阵排行|jzph|jzpm|jzddph|jzddpm|jzdwph|jzdwpm|矩阵排行榜|矩阵排名|矩阵群排行|矩阵群排行榜|矩阵群排名|群矩阵排行|群矩阵排名|矩阵单队排行|矩阵单队排行榜|矩阵单队群排行|矩阵单队群排行榜|jzddqph|矩阵队伍排行|矩阵队伍排行榜|矩阵队伍群排行|矩阵队伍群排行榜|jzdwqph)(?P<pages>\d+(?![一-鿿]))?(?P<team>[\s,，、/|]*[一-鿿\d][\s\S]*)?$",
     block=True,
     to_ai='''查询本群终焉矩阵积分排行，仅群聊可用。
 
@@ -305,7 +313,8 @@ async def send_waves_rank_matrix_info(bot: Bot, ev: Event):
 
 Args:
     text: 可加页码（命令后或末尾均可）。带三个角色名 / 三字首字缩写时只排该队伍（顺序无关、buff 不限）。
-        例: "矩阵排行2"、"矩阵单队排行 今汐 折枝 守岸人"、"矩阵单队排行 今折守 2"。
+        角色前加数字按该角色共鸣链筛选，如 "6爱达千" = 爱弥斯 6 链、另两人不限。
+        例: "矩阵排行2"、"矩阵单队排行 今汐 折枝 守岸人"、"矩阵单队排行 6爱0达0千 2"。
 ''',
 )
 async def send_waves_rank_matrix_list_info(bot: Bot, ev: Event):
@@ -314,12 +323,12 @@ async def send_waves_rank_matrix_list_info(bot: Bot, ev: Event):
     from ..wutheringwaves_rank.matrix_rank import draw_matrix_rank_list
 
     single_team_cmd = _is_matrix_single_team_command(ev)
-    char_ids, page, err = _parse_matrix_rank_args(ev, single_team_cmd)
+    char_ids, chains, page, err = _parse_matrix_rank_args(ev, single_team_cmd)
     if err:
         return await bot.send(err)
 
     single_team = single_team_cmd or bool(char_ids)
     im = await draw_matrix_rank_list(
-        bot, ev, single_team=single_team, page=page, char_ids=char_ids
+        bot, ev, single_team=single_team, page=page, char_ids=char_ids, char_chains=chains
     )
     return await bot.send(im)
